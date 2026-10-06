@@ -1,0 +1,145 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+await import('../extension/settings-core.js');
+const S = globalThis.readglossSettings;
+
+test('normalize: 빈 입력은 기본값', () => {
+  for (const raw of [undefined, null, {}, 'x', []]) assert.deepEqual(S.normalize(raw), S.DEFAULTS);
+  assert.equal(S.DEFAULTS.level, 'C1');
+  assert.equal(S.DEFAULTS.maxPerParagraph, 3);
+  assert.equal(S.DEFAULTS.repeat, 'page');
+  assert.deepEqual(S.LEVELS, ['A2', 'B1', 'B2', 'C1', 'C2']);
+});
+
+test('normalize: 범위 밖 값은 가장 가까운 허용값, 잘못된 종류는 기본값', () => {
+  const n = (p) => S.normalize(p);
+  assert.equal(n({ annotation: { sizePct: 10 } }).annotation.sizePct, 40);
+  assert.equal(n({ annotation: { sizePct: 300 } }).annotation.sizePct, 100);
+  assert.equal(n({ annotation: { opacityPct: 0 } }).annotation.opacityPct, 30);
+  assert.equal(n({ annotation: { gapEm: 9 } }).annotation.gapEm, 0.3);
+  assert.equal(n({ annotation: { gapEm: -1 } }).annotation.gapEm, 0);
+  assert.equal(n({ annotation: { gapEm: 0.15 } }).annotation.gapEm, 0.15);
+  assert.equal(n({ maxPerParagraph: 99 }).maxPerParagraph, 10);
+  assert.equal(n({ maxPerParagraph: -5 }).maxPerParagraph, 0);
+  assert.equal(n({ maxPerParagraph: 2.6 }).maxPerParagraph, 3);
+  assert.equal(n({ floatingButton: { top: 5 } }).floatingButton.top, 40);
+  assert.equal(n({ level: 'Z' }).level, 'C1');
+  assert.equal(n({ level: 'B2' }).level, 'B2');
+  assert.equal(n({ repeat: 'never' }).repeat, 'page');
+  assert.equal(n({ annotation: { position: 'left' } }).annotation.position, 'top');
+  assert.equal(n({ annotation: { customColor: 'red' } }).annotation.customColor, '#2f6feb');
+  assert.equal(n({ annotation: { customColor: '#ABCDEF' } }).annotation.customColor, '#abcdef');
+  assert.equal(n({ maxPerParagraph: 'many' }).maxPerParagraph, 3);
+  assert.equal(n({ enabled: 'yes' }).enabled, true);
+  assert.equal(n({ annotation: 7 }).annotation.sizePct, 55);
+});
+
+test('normalize: 모르는 키는 버리고 예전 키도 남기지 않는다', () => {
+  const n = S.normalize({ foo: 1, annotateEnabled: false, annotation: { bar: 2, sizePct: 60 }, floatingButton: { baz: 1 } });
+  assert.equal('foo' in n, false);
+  assert.equal('annotateEnabled' in n, false);
+  assert.equal('bar' in n.annotation, false);
+  assert.equal('baz' in n.floatingButton, false);
+  assert.equal(n.annotation.sizePct, 60);
+});
+
+test('normalize: sites 는 문자열만, 공백 제거·소문자·중복 제거, 최대 200개', () => {
+  assert.deepEqual(S.normalize({ sites: [' Example.COM ', 3, '', 'example.com', null, 'a.b'] }).sites, ['example.com', 'a.b']);
+  assert.equal(S.normalize({ sites: Array.from({ length: 300 }, (_, i) => `s${i}.com`) }).sites.length, 200);
+  assert.deepEqual(S.normalize({ sites: 'a.com' }).sites, []);
+});
+
+test('normalize: 결과를 바꿔도 DEFAULTS 는 그대로', () => {
+  const n = S.normalize({});
+  n.sites.push('x.com'); n.annotation.sizePct = 99;
+  assert.deepEqual(S.normalize({}), S.DEFAULTS);
+  assert.deepEqual(S.DEFAULTS.sites, []);
+  assert.equal(S.DEFAULTS.annotation.sizePct, 55);
+});
+
+test('merge: 깊은 병합, 나머지는 유지, 결과는 정규화', () => {
+  const cur = S.normalize({ annotation: { sizePct: 80, color: 'accent' }, level: 'B1' });
+  const m = S.merge(cur, { annotation: { sizePct: 10 }, mark: 'underline' });
+  assert.equal(m.annotation.sizePct, 40);
+  assert.equal(m.annotation.color, 'accent');
+  assert.equal(m.level, 'B1');
+  assert.equal(m.mark, 'underline');
+  assert.deepEqual(cur.annotation.sizePct, 80); // 입력은 안 바뀐다
+  assert.deepEqual(S.merge(cur, { sites: ['a.com'] }).sites, ['a.com']);
+  assert.deepEqual(S.merge(S.merge(cur, { sites: ['a.com'] }), { sites: [] }).sites, []);
+  assert.deepEqual(S.merge(undefined, undefined), S.DEFAULTS);
+});
+
+test('siteBlocked: 정확히 같은 도메인, * 와일드카드', () => {
+  const s = (...sites) => ({ sites });
+  assert.equal(S.siteBlocked(s('example.com'), 'example.com'), true);
+  assert.equal(S.siteBlocked(s('example.com'), 'docs.example.com'), false);
+  assert.equal(S.siteBlocked(s('example.com'), 'badexample.com'), false);
+  assert.equal(S.siteBlocked(s('*.example.com'), 'docs.example.com'), true);
+  assert.equal(S.siteBlocked(s('*.example.com'), 'a.b.example.com'), true);
+  assert.equal(S.siteBlocked(s('*.example.com'), 'example.com'), false);
+  assert.equal(S.siteBlocked(s('*.example.com'), 'xexample.com'), false);
+  assert.equal(S.siteBlocked(s('docs.*'), 'docs.python.org'), true);
+  assert.equal(S.siteBlocked(s('EXAMPLE.com'), 'Example.COM'), true);
+  assert.equal(S.siteBlocked(s('example.com'), 'exampleXcom'), false); // . 는 글자 그대로
+  assert.equal(S.siteBlocked(s(), 'example.com'), false);
+  assert.equal(S.siteBlocked({}, 'example.com'), false);
+  assert.equal(S.siteBlocked(s('example.com'), ''), false);
+});
+
+// 가짜 chrome.storage: 토큰 같은 다른 키가 살아 있는지, set 이 'settings' 만 쓰는지 본다.
+function fakeChrome(initial = {}) {
+  const store = { ...initial };
+  const sets = [];
+  const listeners = [];
+  globalThis.chrome = {
+    storage: {
+      local: {
+        async get(k) { return typeof k === 'string' ? (k in store ? { [k]: store[k] } : {}) : { ...store }; },
+        async set(o) { sets.push(Object.keys(o)); Object.assign(store, o); },
+        async clear() { throw new Error('clear 금지'); },
+        async remove() { throw new Error('remove 금지'); },
+      },
+      onChanged: { addListener: (f) => listeners.push(f) },
+    },
+  };
+  return { store, sets, listeners };
+}
+
+test('load: 저장 없으면 기본값, 있으면 정규화', async () => {
+  fakeChrome();
+  assert.deepEqual(await S.load(), S.DEFAULTS);
+  fakeChrome({ settings: { level: 'Z', annotation: { sizePct: 500 } } });
+  const s = await S.load();
+  assert.equal(s.level, 'C1');
+  assert.equal(s.annotation.sizePct, 100);
+});
+
+test('save: settings 키만 쓰고 token 등 다른 키는 그대로, 병합해서 돌려준다', async () => {
+  const { store, sets } = fakeChrome({ token: 'secret', settings: { level: 'B1' } });
+  const r = await S.save({ annotation: { sizePct: 70 } });
+  assert.deepEqual(sets, [['settings']]);
+  assert.equal(store.token, 'secret');
+  assert.equal(store.settings.level, 'B1');
+  assert.equal(store.settings.annotation.sizePct, 70);
+  assert.deepEqual(r, store.settings);
+  await S.save({ level: 'Z' }); // 잘못된 값도 정규화되어 저장
+  assert.equal(store.settings.level, 'C1');
+  assert.deepEqual(sets, [['settings'], ['settings']]);
+});
+
+test('onChange: settings 변경만 정규화해서 전달', () => {
+  const { listeners } = fakeChrome();
+  const got = [];
+  S.onChange((s) => got.push(s));
+  assert.equal(listeners.length, 1);
+  listeners[0]({ token: { newValue: 'x' } }, 'local');
+  listeners[0]({ settings: { newValue: { level: 'A2' } } }, 'sync');
+  assert.equal(got.length, 0);
+  listeners[0]({ settings: { newValue: { level: 'A2' } } }, 'local');
+  assert.equal(got.length, 1);
+  assert.equal(got[0].level, 'A2');
+  listeners[0]({ settings: { newValue: undefined } }, 'local'); // 지워지면 기본값
+  assert.deepEqual(got[1], S.DEFAULTS);
+});

@@ -184,6 +184,7 @@ test('buttonPosition: 첫 줄 정보가 없으면 블록 맨 위를 쓴다', () 
 test('manifest: content script 목록에 paragraph-core.js, paragraph.js 가 이어서 있다(ES 모듈 import 없음)', () => {
   const m = JSON.parse(readFileSync(new URL('../extension/manifest.json', import.meta.url), 'utf8'));
   const js = m.content_scripts[0].js;
-  assert.deepEqual(js.slice(2, 4), ['paragraph-core.js', 'paragraph.js']); // 뒤에 붙는 스크립트(annotate)는 각자 시험한다
+  const i = js.indexOf('paragraph-core.js');
+  assert.ok(i > 0 && js[i + 1] === 'paragraph.js', js.join()); // 뒤에 붙는 스크립트(annotate)는 각자 시험한다
   for (const f of ['paragraph-core.js', 'paragraph.js']) assert.doesNotMatch(readFileSync(new URL(`../extension/${f}`, import.meta.url), 'utf8'), /^\s*(import|export)\s/m, f);
 });

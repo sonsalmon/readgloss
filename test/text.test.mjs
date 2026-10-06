@@ -98,7 +98,9 @@ test('manifest: MV3, 필요한 권한만, content script 순서(text.js 먼저)'
   assert.equal(m.background.service_worker, 'background.js');
   assert.deepEqual(m.content_scripts[0].matches, ['http://*/*', 'https://*/*']);
   assert.equal(m.content_scripts[0].all_frames, false);
-  assert.deepEqual(m.content_scripts[0].js.slice(0, 2), ['text.js', 'content.js']); // 뒤에 붙는 스크립트는 각자 시험한다
+  const js = m.content_scripts[0].js;
+  assert.equal(js[0], 'text.js'); // 먼저
+  assert.ok(js.indexOf('content.js') > 0 && js.indexOf('settings-core.js') === 1, js.join()); // 나머지 순서는 각자 시험한다
 });
 
 // --- 자동 주석(rt)과 문장 뽑기의 맞물림 ---
