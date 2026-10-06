@@ -45,15 +45,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // 더블클릭 사전 카드: 맥 영한사전 조회(/dict). 구독 호출이 아니라 즉시·무료.
-async function dict({ word }, retried = false) {
+async function dict({ word, host, domains }, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
   const res = await bridgeFetch('/dict', {
     method: 'POST',
     headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ word }),
+    body: JSON.stringify({ word, host, domains }), // 용어집 힌트는 있으면 그대로 넘긴다(없으면 JSON 에서 빠진다)
   });
-  if (res.status === 401 && !retried) return dict({ word }, true);
+  if (res.status === 401 && !retried) return dict({ word, host, domains }, true);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return { error: data.error || `http-${res.status}` };
   return data;
@@ -66,15 +66,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // --- 문단 번역(T2): 위 lookup 과 같은 흐름. content script 의 'translate' 요청을 다리 /translate 로 전달한다. ---
-async function translate({ text, force }, retried = false) {
+async function translate({ text, force, host, domains }, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
   const res = await bridgeFetch('/translate', {
     method: 'POST',
     headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, force: force === true }),
+    body: JSON.stringify({ text, force: force === true, host, domains }),
   });
-  if (res.status === 401 && !retried) return translate({ text, force }, true);
+  if (res.status === 401 && !retried) return translate({ text, force, host, domains }, true);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return { error: data.error || `http-${res.status}` };
   return { translation: data.translation, cached: data.cached };
@@ -87,15 +87,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // --- 자동 주석(T3): content script 의 'annotate' 요청(단어 목록)을 다리 /annotate(맥 사전)로 전달한다. ---
-async function annotate({ words, level }, retried = false) {
+async function annotate({ words, level, host, domains }, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
   const res = await bridgeFetch('/annotate', {
     method: 'POST',
     headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ words, level }),
+    body: JSON.stringify({ words, level, host, domains }),
   });
-  if (res.status === 401 && !retried) return annotate({ words, level }, true);
+  if (res.status === 401 && !retried) return annotate({ words, level, host, domains }, true);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return { error: data.error || `http-${res.status}` };
   return { items: data.items };

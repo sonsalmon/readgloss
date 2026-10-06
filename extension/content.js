@@ -23,6 +23,8 @@
       font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif; }
     @media (prefers-color-scheme: dark) { :host(:not([data-theme="light"])) .card { ${DARK} } }
     :host([data-theme="dark"]) .card { ${DARK} }
+    .term { display: none; padding: 10px 16px 0; color: var(--rg-accent); font-size: 12px; font-weight: 600; word-break: keep-all; overflow-wrap: anywhere; }
+    .term.on { display: block; }
     .scroll { max-height: 360px; overflow-y: auto; overscroll-behavior: contain; padding: 14px 16px 8px; }
     .scroll:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: -2px; }
     .msg { color: var(--rg-muted); padding-bottom: 6px; word-break: keep-all; overflow-wrap: anywhere; }
@@ -53,10 +55,12 @@
 
   // 테마(설정 'theme'): auto 면 속성 없이 prefers-color-scheme, light·dark 면 호스트에 data-theme 로 강제
   let theme = 'auto';
+  let glossary = 'auto'; // 설정 '분야 용어집'. 'off' 면 사전 요청에 host·domains 를 싣지 않는다
   try {
-    globalThis.readglossSettings.load().then((s) => { theme = s.theme; }, () => {});
+    globalThis.readglossSettings.load().then((s) => { theme = s.theme; glossary = s.glossary; }, () => {});
     globalThis.readglossSettings.onChange((s) => {
       theme = s.theme;
+      glossary = s.glossary;
       if (host) applyTheme();
     });
   } catch { /* 설정을 못 읽으면 자동 */ }
@@ -87,6 +91,7 @@
     card.setAttribute('aria-label', `${current.word} 사전`);
     const scroll = el('div', 'scroll');
     scroll.tabIndex = 0;
+    const term = el('div', 'term'); // 분야 용어집 뜻("용어: 전치(행렬) · 수학"). 사전 결과가 오면 채운다
     const ai = el('div', 'ai');
     ai.hidden = true;
     ai.setAttribute('role', 'status');
@@ -112,10 +117,10 @@
     const knownBtn = mkWordBtn('known');
     foot.append(saveBtn, knownBtn, aiBtn, naver);
 
-    card.append(scroll, ai, foot);
+    card.append(term, scroll, ai, foot);
     shadow.append(style, card);
     document.documentElement.append(host);
-    ui = { card, scroll, ai, aiBtn, saveBtn, knownBtn };
+    ui = { card, term, scroll, ai, aiBtn, saveBtn, knownBtn };
     paintWordButtons();
   }
 
@@ -233,8 +238,11 @@
   async function askDict() {
     const my = ++seq;
     showMessage('찾는 중…');
-    const r = await send({ type: 'dict', word: current.word });
+    const r = await send({ type: 'dict', word: current.word, ...(globalThis.readglossGlossary?.hint({ glossary }, document, location.hostname) ?? {}) });
     if (my !== seq) return;
+    const line = globalThis.readglossGlossary?.termLine(r?.term) ?? '';
+    ui.term.textContent = line;
+    ui.term.classList.toggle('on', line !== '');
     if (r?.found && r.entries?.length) renderEntries(r.entries);
     else if (r?.found === false) showMessage('사전에 없어요');
     else showMessage(MESSAGES[r?.error] ?? `문제가 생겼어요(${r?.error ?? '응답 없음'})`);

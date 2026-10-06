@@ -6,11 +6,11 @@
   const DEFAULTS = Object.freeze({
     enabled: true, level: 'C1', maxPerParagraph: 3, repeat: 'page',
     annotation: { position: 'top', sizePct: 55, color: 'text', customColor: '#2f6feb', opacityPct: 70, weight: 'normal', gapEm: 0 },
-    mark: 'none', allowCopy: false, theme: 'auto', sites: [],
+    mark: 'none', allowCopy: false, theme: 'auto', glossary: 'auto', sites: [],
     floatingButton: { show: true, top: 60 },
   });
   const ENUMS = {
-    level: LEVELS, repeat: ['page', 'paragraph', 'always'], mark: ['none', 'color', 'underline', 'background'], theme: ['auto', 'light', 'dark'],
+    level: LEVELS, repeat: ['page', 'paragraph', 'always'], mark: ['none', 'color', 'underline', 'background'], theme: ['auto', 'light', 'dark'], glossary: ['auto', 'off'],
     position: ['top', 'right', 'none'], color: ['text', 'accent', 'custom'], weight: ['light', 'normal', 'bold'],
   };
   const MAX_SITES = 200;
@@ -50,6 +50,7 @@
       mark: pickEnum(r.mark, ENUMS.mark, D.mark),
       allowCopy: bool(r.allowCopy, D.allowCopy),
       theme: pickEnum(r.theme, ENUMS.theme, D.theme),
+      glossary: pickEnum(r.glossary, ENUMS.glossary, D.glossary),
       sites,
       // 위쪽 한계(창 높이-40)는 창 크기를 아는 쪽(버튼)이 맞춘다. 여기서는 40 이상만 보장.
       floatingButton: { show: bool(f.show, DF.show), top: num(f.top, 40, Infinity, DF.top) },

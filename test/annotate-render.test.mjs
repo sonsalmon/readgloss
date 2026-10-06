@@ -326,9 +326,9 @@ test('끄기 범위: enabled=false · 이 페이지만 끄기 · 끌 사이트 �
   assert.equal(annotating(s, 'example.com'), true);
 });
 
-test('structuralKey: 위치·단어 표시·반복·개수·수준이 바뀔 때만 달라진다(크기·색·불투명도·굵기·간격·복사는 변수만)', () => {
+test('structuralKey: 위치·단어 표시·반복·개수·수준·분야 용어집이 바뀔 때만 달라진다(크기·색·불투명도·굵기·간격·복사는 변수만)', () => {
   const base = structuralKey(cfg());
-  for (const patch of [{ annotation: { position: 'right' } }, { mark: 'color' }, { repeat: 'always' }, { maxPerParagraph: 5 }, { level: 'C2' }]) assert.notEqual(structuralKey(cfg(patch)), base, JSON.stringify(patch));
+  for (const patch of [{ annotation: { position: 'right' } }, { mark: 'color' }, { repeat: 'always' }, { maxPerParagraph: 5 }, { level: 'C2' }, { glossary: 'off' }]) assert.notEqual(structuralKey(cfg(patch)), base, JSON.stringify(patch));
   for (const patch of [{ annotation: { sizePct: 80 } }, { annotation: { color: 'accent' } }, { annotation: { opacityPct: 100 } }, { annotation: { weight: 'bold' } }, { annotation: { gapEm: 0.2 } }, { allowCopy: true }, { theme: 'dark' }, { enabled: false }]) {
     assert.equal(structuralKey(cfg(patch)), base, JSON.stringify(patch));
   }

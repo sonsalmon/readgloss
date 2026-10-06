@@ -54,6 +54,7 @@
     { path: 'annotation.weight', options: [['light', '얇게'], ['normal', '보통'], ['bold', '굵게']] },
     { path: 'mark', options: [['none', '없음'], ['color', '글자색'], ['underline', '점선 밑줄'], ['background', '옅은 배경']] },
     { path: 'theme', options: [['auto', '자동'], ['light', '밝게'], ['dark', '어둡게']] },
+    { path: 'glossary', options: [['auto', '자동'], ['off', '끄기']] },
   ];
   const TOGGLES = [{ path: 'enabled' }, { path: 'allowCopy' }, { path: 'floatingButton.show' }];
 
@@ -463,7 +464,7 @@
   const LABEL = {
     level: '수준', maxPerParagraph: '문단당 최대', repeat: '반복', 'annotation.position': '위치', 'annotation.sizePct': '크기',
     'annotation.color': '색', 'annotation.opacityPct': '불투명도', 'annotation.weight': '굵기', 'annotation.gapEm': '단어 간격',
-    mark: '단어 표시', theme: '테마', enabled: '주석 켜기', allowCopy: '주석 글자 복사 허용', 'floatingButton.show': '떠 있는 버튼 보이기',
+    mark: '단어 표시', theme: '테마', glossary: '분야 용어집', enabled: '주석 켜기', allowCopy: '주석 글자 복사 허용', 'floatingButton.show': '떠 있는 버튼 보이기',
   };
   const LEVEL_HINT = {
     A2: 'A2 이상: 거의 모든 단어에 뜻이 붙어요',
@@ -497,11 +498,11 @@
       return h('div', { class: 'row' }, h('div', { class: 'rowhead' }, h('label', { for: id, text: LABEL[path] }), out), input, hint);
     };
 
-    const choice = (path, extra) => {
+    const choice = (path, extra, hint) => {
       const spec = find(C.CHOICES, path);
       const btns = spec.options.map(([value, text]) => h('button', { type: 'button', text, 'aria-pressed': 'false', onclick: () => ctx.setSettings(C.patchFor(path, value)) }));
       refreshers.push((s) => btns.forEach((b, i) => b.setAttribute('aria-pressed', String(C.getPath(s, path) === spec.options[i][0]))));
-      return h('div', { class: 'row' }, h('div', { class: 'rowhead', text: LABEL[path] }), h('div', { class: 'seg', role: 'group', 'aria-label': LABEL[path] }, ...btns, extra));
+      return h('div', { class: 'row' }, h('div', { class: 'rowhead', text: LABEL[path] }), h('div', { class: 'seg', role: 'group', 'aria-label': LABEL[path] }, ...btns, extra), hint ? h('p', { class: 'hint', text: hint }) : null);
     };
 
     const color = h('input', { type: 'color', 'aria-label': '직접 고른 색' });
@@ -583,7 +584,7 @@
     box.append(
       previewBox,
       h('h3', { class: 'sec', text: '켜기' }), toggle('enabled'), offRow,
-      h('h3', { class: 'sec', text: '어떤 단어에' }), slider('level'), slider('maxPerParagraph'), choice('repeat'),
+      h('h3', { class: 'sec', text: '어떤 단어에' }), slider('level'), slider('maxPerParagraph'), choice('repeat'), choice('glossary', null, 'HTB 같은 보안·ML 사이트와 수식이 있는 페이지에서 전치행렬처럼 분야 용어로 보여 줘요.'),
       h('h3', { class: 'sec', text: '주석 모양' }), choice('annotation.position'), slider('annotation.sizePct'), choice('annotation.color', color),
       slider('annotation.opacityPct'), choice('annotation.weight'), slider('annotation.gapEm'),
       h('h3', { class: 'sec', text: '단어 표시' }), choice('mark'),

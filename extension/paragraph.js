@@ -186,7 +186,7 @@
         refresh();
         let r;
         try {
-          r = await chrome.runtime.sendMessage({ type: 'translate', text });
+          r = await chrome.runtime.sendMessage({ type: 'translate', text, ...(globalThis.readglossGlossary?.hint(settings, document, location.hostname) ?? {}) });
         } catch {
           r = { error: 'ext-reloaded' }; // 확장이 다시 로드되면 이 페이지의 연결이 끊긴다
         }

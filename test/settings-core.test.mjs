@@ -143,3 +143,12 @@ test('onChange: settings 변경만 정규화해서 전달', () => {
   listeners[0]({ settings: { newValue: undefined } }, 'local'); // 지워지면 기본값
   assert.deepEqual(got[1], S.DEFAULTS);
 });
+
+test('glossary: 자동(기본)·끄기만 받고 그 밖은 기본값, 병합해도 유지', () => {
+  assert.equal(S.DEFAULTS.glossary, 'auto');
+  assert.equal(S.normalize({}).glossary, 'auto');
+  assert.equal(S.normalize({ glossary: 'off' }).glossary, 'off');
+  for (const bad of ['on', true, 0, null, 'OFF']) assert.equal(S.normalize({ glossary: bad }).glossary, 'auto');
+  assert.equal(S.merge({ glossary: 'off' }, { level: 'B2' }).glossary, 'off');
+  assert.equal(S.merge({}, { glossary: 'off' }).glossary, 'off');
+});

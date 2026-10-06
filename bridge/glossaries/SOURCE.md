@@ -13,7 +13,7 @@
 2. 거른 것
    - confidence `low` 5건은 뺐다: stationary(수학), module(수학, 보안 `module`=모듈은 high 라 남김), loot, detonate, tarpit.
    - 값에 한글이 없는 약어 14건(DNS·TLS·VPN 등)은 뺐다. 번역어가 아니라 원문 그대로라 "용어:" 줄이 의미 없다.
-   - 일상어라 분야 뜻으로 덮으면 오히려 틀리는 낱말은 뺐다(수학 52개, ML 11개). HTB 후보 용어는 이 거르기에서 보호했다.
+   - 일상어라 분야 뜻으로 덮으면 오히려 틀리는 낱말은 뺐다(수학 52개, ML 12개). HTB 후보 용어는 이 거르기에서 보호했다.
 3. 조사에 없던 HTB 모듈 용어 19개는 표준 용어로 직접 보충했다: euclidean, summation, subscript, superscript, manhattan, regression(수학) / classification, clustering, cluster, dimensionality, margin, support, classifier, testing, perceptron, tanh(ML) / spam, fraud, intrusion(보안). 복수형(matrices·features·weights·layers 등)은 키로 넣지 않고 코드가 복수 규칙(`bridge/glossary.mjs` 의 `variants`)으로 단수를 찾는다.
 4. 통계 용어는 수학, 딥러닝 용어는 ML 파일에 합쳤다(파일은 세 개뿐).
 5. 같은 낱말이 여러 분야에 있으면(vector=벡터/벡터(경로), kernel=핵(커널)/커널 등) 활성 분야 순서의 앞쪽이 이긴다. 순서는 페이지가 알려 준 힌트(수식이 있으면 math)가 앞, 사이트 규칙이 뒤다.

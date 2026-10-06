@@ -4,6 +4,7 @@
   const core = globalThis.readglossAnnotate;
   const style = globalThis.readglossAnnotStyle;
   const S = globalThis.readglossSettings;
+  const G = globalThis.readglossGlossary; // 분야 용어집 힌트(host·domains). 없어도 주석은 그대로 동작한다
   if (!core || !S || !globalThis.chrome?.runtime?.id) return;
   const { MAX_WORDS, blockCandidates, chunk, annotating, structuralKey, annotateBlock, unwrapAnnotations, applyWords } = core;
 
@@ -34,6 +35,7 @@
   const dirty = new Set(); // 글이 바뀐 블록
   const cache = Object.create(null); // 낱말 -> { lemma, gloss } | null(어렵지 않음). 기준 등급이 바뀌면 비운다.
   let cacheLevel = settings.level;
+  let cacheHint = ''; // 캐시를 채울 때의 용어집 힌트 키(같은 단어도 분야가 다르면 뜻이 다르다)
   const state = { pageSeen: new Set(), skip: new Set() }; // pageSeen: 이 페이지에서 이미 주석 붙인 원형, skip: 아는 단어 원형(readgloss:words)
 
   const elementOf = (n) => (n?.nodeType === 1 ? n : n?.parentElement);
@@ -49,11 +51,11 @@
     return out;
   }
 
-  async function request(words) {
+  async function request(words, hint) {
     if (dead || Date.now() < offUntil) return null;
     let r;
     try {
-      r = await chrome.runtime.sendMessage({ type: 'annotate', words, level: settings.level });
+      r = await chrome.runtime.sendMessage({ type: 'annotate', words, level: settings.level, ...hint });
     } catch {
       dead = true;
       stop();
@@ -67,9 +69,9 @@
   }
 
   // 아직 모르는 낱말을 300개씩 물어 cache 에 채운다. 하나라도 실패하거나 기다리는 사이 다시 그리기 시작했으면(mine !== epoch, 답이 낡았다) false.
-  async function learn(words, mine) {
+  async function learn(words, mine, hint) {
     for (const part of chunk(words, MAX_WORDS)) {
-      const items = await request(part);
+      const items = await request(part, hint);
       if (!items || mine !== epoch) return false;
       for (const w of part) cache[w] = Object.hasOwn(items, w) ? items[w] : null; // items.constructor 같은 상속 속성을 낱말로 착각하지 않는다
     }
@@ -83,9 +85,14 @@
     if (!running || dead || !blocks.length) return;
     const mine = epoch;
     const when = settings;
-    if (cacheLevel !== when.level) {
-      for (const k of Object.keys(cache)) delete cache[k]; // 기준 등급이 바뀌면 지난 답은 못 쓴다
+    // 수학 페이지 판단은 페이지가 바뀔 수 있어(SPA) 요청마다 다시 한다. 분야 조합이 달라지면 지난 답은 못 쓴다.
+    // ponytail: 이미 그려 둔 블록은 그대로 둔다. 새로 처리하는 블록부터 새 분야 뜻이 붙는다.
+    const hint = G ? G.hint(when, document, location.hostname) : {};
+    const hintKey = G ? G.hintKey(hint) : '';
+    if (cacheLevel !== when.level || cacheHint !== hintKey) {
+      for (const k of Object.keys(cache)) delete cache[k]; // 기준 등급·용어집 분야가 바뀌면 지난 답은 못 쓴다
       cacheLevel = when.level;
+      cacheHint = hintKey;
     }
     const jobs = [];
     const wanted = new Set();
@@ -97,7 +104,7 @@
       jobs.push({ block, nodes, texts, occs });
       for (const o of occs) if (!(o.word in cache)) wanted.add(o.word);
     }
-    const ok = await learn([...wanted], mine);
+    const ok = await learn([...wanted], mine, hint);
     if (mine !== epoch) return; // 기다리는 사이 설정이 바뀌어 다시 그리는 중: 이 결과는 버린다
     if (!ok) {
       for (const j of jobs) done.delete(j.block);
