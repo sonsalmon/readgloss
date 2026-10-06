@@ -100,3 +100,22 @@ test('Object.prototype 이름(constructor·toString 등)은 용어가 아니다:
   }
   assert.deepEqual(G.termsIn('call the constructor of the vector', ['security', 'ml', 'math']), ['vector=벡터']);
 });
+
+test('용어 검토 반영: 일반어 뜻이 HTB 본문에 나오는 낱말과 표준 표기', () => {
+  const v = (d, k) => loadGlossaries()[d][k];
+  assert.equal(v('math', 'cross'), '교차', 'cross validation 의 cross (외적은 phrases 의 cross product)');
+  assert.equal(v('math', 'tangent'), '탄젠트');
+  assert.equal(v('math', 'metric'), '지표(거리 함수)');
+  assert.equal(v('math', 'cardinality'), '농도(원소의 개수)', 'cardinal number(기수)와 구분');
+  assert.equal(v('math', 'outcome'), '결과');
+  assert.equal(v('math', 'critical'), '임계(중요한)');
+  assert.equal(v('math', 'significant'), '유의한(통계)·상당한');
+  assert.equal(v('ml', 'dimensionality'), '차원');
+  assert.equal(v('security', 'capability'), '능력(역량)');
+  assert.equal(v('security', 'handle'), '처리하다(핸들)');
+  assert.equal(v('security', 'origin'), '원점(오리진)');
+  assert.equal(v('security', 'symbol'), '기호(심볼)');
+  assert.equal(v('security', 'key'), '키(암호 키)');
+  assert.equal(v('security', 'apt'), 'APT(지능형 지속 공격)');
+  assert.equal(v('security', 'xss'), 'XSS(크로스 사이트 스크립팅)');
+});
