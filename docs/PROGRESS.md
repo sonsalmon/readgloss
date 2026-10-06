@@ -18,6 +18,8 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 | T6b 떠 있는 버튼·퀵 메뉴·패널·설정 탭·미리보기·사이트·테마 | 완료 | main 15d0c3d | verifier 통과, 합칠 때 manifest·background·테스트 충돌 해소 |
 | T7 내 단어: 단어장 추가·아는 단어·최근 찾은 단어(35,36) | 완료 | main | verifier 통과, 테스트 합계 226 |
 | T8 어휘량 추정(6) | 대기 | — | T6·T7 합친 뒤 |
+| T12 드래그 번역(맥 번역 + [문맥 번역] AI) | 진행 중(task wvzjf8x4o) | feat/t12-selection | spec "변경 기록 6" |
+| T13 뜻 고르기 개선(용어집 보충 + 사전 분야 표시 뜻 우선) | 진행 중(task wwmg6g27h) | feat/t13-sense | multiplication→곱셈 |
 | T11 용어집 사이트 목록(보안 사이트 기본 19개 + 패널 추가/삭제, 사이트 규칙은 확장 설정 한 곳) | 완료(Aside 수동 확인 대기) | main cec62ac | 사용자 결정: 보안 사이트 목록 + 패널 추가. 다리는 요청 힌트만 씀 |
 | T9 분야 용어집(수학·ML·보안, HTB 최적화) | 완료(Aside 수동 확인 대기) | main 51c86f9 + 7d638ce | HTB 모듈 290(Fundamentals of AI) 15개 섹션 기준, 용어 검토 15건 반영, transposed 원형 고침. HTB 는 수식이 평문이라 수학 감지는 사이트 규칙이 대신함 |
 
