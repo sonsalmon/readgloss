@@ -9,6 +9,7 @@ import { extensionIdFromKey } from './ext-id.mjs';
 import { AiParseError } from './parse.mjs';
 import { SYSTEM_PROMPT, WORD_RE, buildPrompt, createLookup } from './lookup.mjs';
 import { DictUnavailableError, createDict } from './dict.mjs';
+import { MtUnavailableError, createMt } from './mt.mjs';
 import { ANNOTATE_LEVELS, DEFAULT_LEVEL, createAnnotate, isCommon, lemmaOf, loadWordLevels, pickSense, shortGloss, taggedGlosses } from './annotate.mjs';
 import { createWords, parseWordsOp } from './words.mjs';
 import { createGlossary } from './glossary.mjs';
@@ -19,6 +20,7 @@ const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DN
 const MAX_BODY = 16 * 1024;
 const MAX_SENTENCE = 1000;
 const MAX_ANNOTATE_WORDS = 300;
+const MAX_MT_TEXT = 1000; // 드래그 번역 선택 글 상한(확장의 selection-core.js 와 맞춘다)
 
 function loadOrCreateToken(file) {
   try {
@@ -71,7 +73,7 @@ function sendAiError(res, e, cors) {
 }
 
 // ask({word, sentence}) / askTranslate(문단, 용어 지정 목록) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
-export function createBridge({ ask, askTranslate, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), tokenFile, extensionId, dict = createDict() }) {
+export function createBridge({ ask, askTranslate, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
   const token = loadOrCreateToken(tokenFile);
   const tokenBuf = Buffer.from(token);
   const lookup = createLookup({ cache: createCache(cacheFile), ask });
@@ -114,6 +116,22 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
       send(res, 200, await translate({ text: norm, force: force === true, domainsKey: glossary.keyOf(active), terms: glossary.termsIn(norm, active) }), cors);
     } catch (e) {
       sendAiError(res, e, cors);
+    }
+  }
+
+  // 드래그 번역 1단계: 맥 번역(기기 안, AI 아님). 구가 분야 구 용어집과 같으면 term 도 붙인다.
+  async function handleMt(req, res, cors) {
+    const { value, status } = await readJson(req);
+    if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+    const text = normalizeText(value?.text);
+    if (!text) return send(res, 400, { error: 'bad-request' }, cors);
+    if (text.length > MAX_MT_TEXT) return send(res, 413, { error: 'too-large' }, cors);
+    try {
+      const term = glossary.findPhrase(text, glossary.domains(value));
+      send(res, 200, { translation: await mt.translate(text), engine: 'apple', ...(term ? { term } : {}) }, cors);
+    } catch (e) {
+      if (e instanceof MtUnavailableError) send(res, 503, { error: 'mt-unavailable' }, cors);
+      else send(res, 502, { error: 'mt-failed' }, cors);
     }
   }
 
@@ -196,6 +214,10 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleLookup(req, res, cors);
     }
+    if (path === '/mt') {
+      if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleMt(req, res, cors);
+    }
     if (path === '/dict') {
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleDict(req, res, cors);
@@ -231,6 +253,7 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
     close: () =>
       new Promise((resolve) => {
         dict.close();
+        mt.close();
         server.close(() => resolve());
         server.closeAllConnections();
       }),
