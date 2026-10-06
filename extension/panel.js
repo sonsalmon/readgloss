@@ -90,5 +90,516 @@
     cleanSite, addSite, removeSite, clampTop, dragTop, mergePatch, themeAttr, MAX_SITES,
   };
 
-  if (typeof document === 'undefined') return; // node 시험: 여기까지
+  if (typeof document === 'undefined' || globalThis.readglossPanelLoaded) return; // node 시험·중복 주입: 여기까지
+  globalThis.readglossPanelLoaded = true;
+  // ======================= 여기부터 DOM (페이지 안에서만) =======================
+  const S = globalThis.readglossSettings;
+  const C = globalThis.readglossPanelCore;
+  const SAVE_DELAY = 100; // 슬라이더를 끄는 동안 저장을 모아서 한 번에(화면 반영은 바로)
+  const FONT = '-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif';
+  const LIGHT = `--rg-bg: #ffffff; --rg-fg: #1f2328; --rg-muted: #656d76; --rg-border: #e3e6ea; --rg-accent: #2f6feb;
+    --rg-accent-soft: rgba(47,111,235,.10); --rg-shadow: 0 8px 28px rgba(15,23,42,.14), 0 1px 3px rgba(15,23,42,.08); color-scheme: light;`;
+  const DARK = `--rg-bg: #1e2127; --rg-fg: #e6e8eb; --rg-muted: #9aa3ad; --rg-border: #343a44; --rg-accent: #6b9bff;
+    --rg-accent-soft: rgba(107,155,255,.14); --rg-shadow: 0 8px 28px rgba(0,0,0,.45); color-scheme: dark;`;
+  const BRIDGE_HELP = '터미널에서 node ~/dev/readgloss/bridge/server.mjs 를 실행해 주세요';
+
+  const CSS = `
+    :host { ${LIGHT} --rg-radius: 10px; }
+    @media (prefers-color-scheme: dark) { :host(:not([data-theme="light"])) { ${DARK} } }
+    :host([data-theme="dark"]) { ${DARK} }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: 2px; }
+    .root { font: 14px/1.5 ${FONT}; color: var(--rg-fg); }
+
+    .dock { position: fixed; right: 10px; top: 60px; z-index: 2; transition: right .2s ease; }
+    .open .dock { right: 350px; }
+    .fab { width: 36px; height: 36px; padding: 0; border-radius: 50%; border: 1px solid var(--rg-border); background: var(--rg-bg);
+      color: var(--rg-accent); box-shadow: var(--rg-shadow); display: grid; place-items: center; touch-action: none; cursor: grab; }
+    .fab:active { cursor: grabbing; }
+    .fab:hover { background: var(--rg-accent-soft); }
+    .fab svg { width: 20px; height: 20px; pointer-events: none; }
+    .menu { position: absolute; right: 100%; top: 0; padding-right: 8px; display: none; }
+    .up .menu { top: auto; bottom: 0; }
+    .dock:hover .menu, .dock:has(:focus-visible) .menu { display: block; }
+    .menu-card { display: flex; flex-direction: column; min-width: 150px; padding: 4px; border-radius: var(--rg-radius);
+      background: var(--rg-bg); border: 1px solid var(--rg-border); box-shadow: var(--rg-shadow); }
+    .mitem { all: unset; box-sizing: border-box; cursor: pointer; padding: 6px 10px; border-radius: 7px; white-space: nowrap; font-size: 13px; }
+    .mitem:hover { background: var(--rg-accent-soft); color: var(--rg-accent); }
+    .mitem:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: -2px; }
+
+    .panel { position: fixed; top: 0; right: 0; z-index: 1; width: 340px; max-width: 100vw; height: 100vh; height: 100dvh; display: flex; flex-direction: column;
+      background: var(--rg-bg); color: var(--rg-fg); border-left: 1px solid var(--rg-border); box-shadow: var(--rg-shadow);
+      transform: translateX(105%); visibility: hidden; transition: transform .2s ease, visibility 0s .2s; }
+    .open .panel { transform: none; visibility: visible; transition: transform .2s ease; }
+    @media (prefers-reduced-motion: reduce) { .panel, .dock { transition: none !important; } }
+    .head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--rg-border); }
+    .title { font-weight: 700; font-size: 15px; }
+    .status { margin-left: auto; display: flex; align-items: center; gap: 6px; color: var(--rg-muted); font-size: 12px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rg-muted); }
+    .dot.on { background: #2da44e; }
+    .dot.off { background: #d1242f; }
+    .close { all: unset; box-sizing: border-box; cursor: pointer; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; color: var(--rg-muted); font-size: 16px; }
+    .close:hover { background: var(--rg-accent-soft); color: var(--rg-fg); }
+    .close:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: -2px; }
+    .tabs { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--rg-border); }
+    .tab { all: unset; box-sizing: border-box; cursor: pointer; padding: 8px 10px; color: var(--rg-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .tab:hover { color: var(--rg-fg); }
+    .tab[aria-selected="true"] { color: var(--rg-accent); border-bottom-color: var(--rg-accent); font-weight: 600; }
+    .tab:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: -2px; }
+    .body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 14px 16px 28px; }
+
+    .preview { padding: 14px; margin-bottom: 14px; border: 1px solid var(--rg-border); border-radius: var(--rg-radius); background: var(--rg-bg); font-size: 16px; line-height: 2.1; }
+    .sec { margin: 18px 0 8px; font-size: 12px; font-weight: 700; letter-spacing: .02em; color: var(--rg-muted); }
+    .sec:first-of-type { margin-top: 0; }
+    .row { margin-bottom: 12px; }
+    .rowhead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .rowhead output { color: var(--rg-accent); font-variant-numeric: tabular-nums; font-size: 13px; }
+    .hint { margin: 2px 0 0; color: var(--rg-muted); font-size: 12px; }
+    input[type="range"] { width: 100%; margin: 4px 0 0; accent-color: var(--rg-accent); }
+    .seg { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+    .seg button { padding: 3px 10px; border-radius: 7px; border: 1px solid var(--rg-border); background: transparent; font-size: 13px; }
+    .seg button:hover { border-color: var(--rg-accent); }
+    .seg button[aria-pressed="true"] { background: var(--rg-accent-soft); border-color: var(--rg-accent); color: var(--rg-accent); font-weight: 600; }
+    input[type="color"] { width: 32px; height: 26px; padding: 0; border: 1px solid var(--rg-border); border-radius: 6px; background: none; cursor: pointer; vertical-align: middle; }
+    .check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+    .check input { margin: 4px 0 0; accent-color: var(--rg-accent); }
+    .sites { list-style: none; margin: 0 0 8px; padding: 0; }
+    .sites li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--rg-border); }
+    .sites li.empty { color: var(--rg-muted); font-size: 12px; border: 0; }
+    .sites .name { overflow-wrap: anywhere; font-size: 13px; }
+    .btn { padding: 3px 10px; border-radius: 7px; border: 1px solid var(--rg-border); background: transparent; font-size: 12.5px; white-space: nowrap; }
+    .btn:hover:not(:disabled) { background: var(--rg-accent-soft); border-color: var(--rg-accent); color: var(--rg-accent); }
+    .btn:disabled { opacity: .55; cursor: default; }
+    .addrow { display: flex; gap: 6px; margin-top: 8px; }
+    .addrow input { flex: 1; min-width: 0; padding: 3px 8px; border-radius: 7px; border: 1px solid var(--rg-border); background: var(--rg-bg); color: var(--rg-fg); font: inherit; font-size: 13px; }
+    .msg { margin: 4px 0 0; color: var(--rg-muted); font-size: 12px; min-height: 1.5em; }
+    .reset { margin-top: 22px; }
+  `;
+
+  // ---- 설정 상태: 화면은 바로 바꾸고, 저장은 모아서 한 번에(저장 순서는 줄 세운다) ----
+  let state = S.normalize({});
+  let pageOff = globalThis.readglossPageOff === true;
+  let pend = null; // 아직 저장 안 한 patch
+  let inflight = 0; // 저장 중인 횟수
+  let timer = 0;
+  let chain = Promise.resolve();
+  let waiters = [];
+  const listeners = new Set(); // 설정이 바뀔 때 부르는 곳(탭)
+  const pageOffCbs = new Set();
+
+  function setSettings(patch) {
+    state = S.merge(state, patch);
+    notify();
+    pend = C.mergePatch(pend, patch);
+    clearTimeout(timer);
+    timer = setTimeout(flush, SAVE_DELAY);
+    return new Promise((r) => waiters.push(r));
+  }
+  function flush() {
+    const patch = pend;
+    const ws = waiters;
+    pend = null;
+    waiters = [];
+    inflight++;
+    chain = chain
+      .then(() => S.save(patch))
+      .then(
+        (next) => {
+          inflight--;
+          if (!pend && !inflight) { state = next; notify(); } // 마지막 저장이 끝난 뒤에만 저장된 값으로 맞춘다
+        },
+        () => { inflight--; }, // ponytail: 확장이 다시 로드돼 저장이 막히면 화면 값만 남는다(새로고침하면 저장된 값으로 돌아감)
+      )
+      .then(() => ws.forEach((r) => r(state)));
+  }
+
+  // ---- DOM 도우미 ----
+  function h(tag, attrs = {}, ...kids) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v == null || v === false) continue;
+      if (k === 'class') n.className = v;
+      else if (k === 'text') n.textContent = v;
+      else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v === true ? '' : String(v));
+    }
+    n.append(...kids.filter((k) => k != null && k !== false));
+    return n;
+  }
+  const svgIcon = () => {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    const p = document.createElementNS(ns, 'path');
+    p.setAttribute('d', 'M3 5.5h6.5a2.5 2.5 0 0 1 2.5 2.5v11a2 2 0 0 0-2-2H3zM21 5.5h-6.5A2.5 2.5 0 0 0 12 8v11a2 2 0 0 1 2-2h7z');
+    svg.append(p);
+    return svg;
+  };
+  async function send(msg) {
+    try {
+      return await chrome.runtime.sendMessage(msg);
+    } catch {
+      return { error: 'ext-reloaded' };
+    }
+  }
+
+  // ---- 호스트(버튼·퀵 메뉴·패널 한 덩어리, 페이지 CSS 와 격리) ----
+  const host = document.createElement('readgloss-ui');
+  host.style.cssText = 'all: initial; position: fixed; top: 0; left: 0; width: 0; height: 0; z-index: 2147483647;';
+  const shadow = host.attachShadow({ mode: 'open' }); // ponytail: 시험에서 안을 들여다보려고 open. 페이지 스크립트가 읽을 수는 있다
+  const root = h('div', { class: 'root' });
+
+  // 떠 있는 버튼 + 퀵 메뉴
+  const fab = h('button', { class: 'fab', type: 'button', 'aria-expanded': 'false' }, svgIcon());
+  const pageOffItem = h('button', { class: 'mitem', type: 'button', onclick: () => setPageOff(!pageOff) });
+  const menu = h('div', { class: 'menu' },
+    h('div', { class: 'menu-card', role: 'group', 'aria-label': '빠른 메뉴' },
+      pageOffItem,
+      h('button', { class: 'mitem', type: 'button', text: '설정', onclick: () => openPanel('settings') }),
+      h('button', { class: 'mitem', type: 'button', text: '내 단어', onclick: () => openPanel('words') }),
+      h('button', { class: 'mitem', type: 'button', text: '버튼 숨기기', onclick: () => setSettings({ floatingButton: { show: false } }) })));
+  const dock = h('div', { class: 'dock' }, menu, fab);
+  dock.hidden = true; // 저장된 위치를 읽기 전에는 숨겨 둔다(깜빡임 방지)
+
+  // 패널
+  const statusDot = h('span', { class: 'dot' });
+  const statusText = h('span', { text: '확인 중…' });
+  const status = h('div', { class: 'status', role: 'status' }, statusDot, statusText);
+  const closeBtn = h('button', { class: 'close', type: 'button', 'aria-label': '닫기', text: '✕', onclick: () => closePanel() });
+  const tablist = h('div', { class: 'tabs', role: 'tablist', 'aria-label': 'readgloss 탭' });
+  const body = h('div', { class: 'body' });
+  const panel = h('aside', { class: 'panel', role: 'dialog', 'aria-label': 'readgloss 패널' },
+    h('div', { class: 'head' }, h('span', { class: 'title', text: 'readgloss' }), status, closeBtn), tablist, body);
+
+  root.append(dock, panel);
+  const style = h('style');
+  style.textContent = CSS;
+  shadow.append(style, root);
+  document.documentElement.append(host); // body 가 아니라 documentElement: 자동 주석이 body 글을 훑어도 섞이지 않게
+
+  // ---- 이 페이지만 끄기(저장 안 함) ----
+  function setPageOff(off) {
+    globalThis.readglossPageOff = off;
+    window.dispatchEvent(new CustomEvent('readgloss:pageoff', { detail: { off } }));
+  }
+  window.addEventListener('readgloss:pageoff', (e) => {
+    pageOff = e.detail?.off === true;
+    pageOffItem.textContent = pageOff ? '이 페이지 주석 켜기' : '이 페이지 주석 끄기';
+    pageOffCbs.forEach((cb) => cb(pageOff));
+  });
+  pageOffItem.textContent = pageOff ? '이 페이지 주석 켜기' : '이 페이지 주석 끄기';
+
+  // ---- 설정이 바뀔 때 버튼·테마·탭에 알린다 ----
+  function positionDock(top) {
+    dock.style.top = `${top}px`;
+    dock.classList.toggle('up', top > innerHeight / 2); // 아래쪽이면 메뉴를 위로 펼친다
+  }
+  function notify() {
+    const t = C.themeAttr(state.theme);
+    if (t) host.setAttribute('data-theme', t);
+    else host.removeAttribute('data-theme');
+    dock.hidden = !state.floatingButton.show;
+    if (!drag) positionDock(C.clampTop(state.floatingButton.top, innerHeight));
+    for (const cb of [...listeners]) {
+      try { cb(state); } catch { /* 탭 하나가 망가져도 나머지는 이어서 */ }
+    }
+  }
+  window.addEventListener('resize', () => !drag && positionDock(C.clampTop(state.floatingButton.top, innerHeight)));
+
+  // ---- 버튼 끌기·클릭 ----
+  let drag = null;
+  let suppressClick = false;
+  fab.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    drag = { startY: e.clientY, startTop: C.clampTop(state.floatingButton.top, innerHeight), moved: false, top: null };
+    try { fab.setPointerCapture(e.pointerId); } catch { /* 합성 이벤트 */ }
+  });
+  fab.addEventListener('pointermove', (e) => {
+    if (!drag || (!drag.moved && Math.abs(e.clientY - drag.startY) < 4)) return; // 4px 미만은 클릭
+    drag.moved = true;
+    drag.top = C.dragTop({ startTop: drag.startTop, startY: drag.startY, y: e.clientY, vh: innerHeight });
+    positionDock(drag.top);
+  });
+  const endDrag = () => {
+    if (!drag) return;
+    const d = drag;
+    drag = null;
+    if (!d.moved) return;
+    suppressClick = true; // 끌기 끝의 click 은 패널 토글이 아니다
+    setTimeout(() => { suppressClick = false; }, 0);
+    setSettings({ floatingButton: { top: d.top } });
+  };
+  fab.addEventListener('pointerup', endDrag);
+  fab.addEventListener('pointercancel', endDrag);
+  fab.addEventListener('click', () => !suppressClick && (isOpen ? closePanel() : openPanel()));
+
+  // ---- 패널 열기·닫기·탭 ----
+  let isOpen = false;
+  let tabs = [];
+  let selected = null;
+  let prevFocus = null;
+  let cleanups = [];
+
+  const ctx = {
+    send,
+    get settings() { return state; },
+    setSettings,
+    onSettings(cb) {
+      listeners.add(cb);
+      const off = () => listeners.delete(cb);
+      cleanups.push(off);
+      return off;
+    },
+  };
+
+  function renderTabs() {
+    cleanups.forEach((f) => f());
+    cleanups = [];
+    tabs = C.sortTabs(globalThis.readglossPanelTabs); // 열 때마다 읽는다(나중에 등록된 탭도 보인다)
+    tablist.replaceChildren();
+    body.replaceChildren();
+    for (const t of tabs) {
+      const btn = h('button', { class: 'tab', type: 'button', role: 'tab', id: `tab-${t.id}`, 'aria-controls': `pane-${t.id}`, text: t.title, onclick: () => selectTab(t.id) });
+      const pane = h('div', { role: 'tabpanel', id: `pane-${t.id}`, 'aria-labelledby': `tab-${t.id}`, hidden: true });
+      try {
+        t.render(pane, ctx);
+      } catch {
+        pane.replaceChildren(h('p', { class: 'msg', text: '이 탭을 그리지 못했어요.' }));
+      }
+      tablist.append(btn);
+      body.append(pane);
+    }
+  }
+  function selectTab(id) {
+    const t = tabs.find((x) => x.id === id) ?? tabs[0];
+    selected = t?.id ?? null;
+    for (const x of tabs) {
+      const on = x.id === selected;
+      const btn = shadow.getElementById(`tab-${x.id}`);
+      btn.setAttribute('aria-selected', String(on));
+      btn.tabIndex = on ? 0 : -1;
+      shadow.getElementById(`pane-${x.id}`).hidden = !on;
+    }
+    body.scrollTop = 0;
+  }
+  tablist.addEventListener('keydown', (e) => {
+    const i = tabs.findIndex((t) => t.id === selected);
+    const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+    if (to == null || !tabs.length) return;
+    e.preventDefault();
+    selectTab(tabs[(to + tabs.length) % tabs.length].id);
+    shadow.getElementById(`tab-${selected}`).focus();
+  });
+
+  function setStatus(kind) {
+    statusDot.className = `dot ${kind === 'on' ? 'on' : kind === 'off' ? 'off' : ''}`;
+    statusText.textContent = kind === 'on' ? '다리 연결됨' : kind === 'off' ? '다리 꺼짐' : '확인 중…';
+    status.title = kind === 'off' ? BRIDGE_HELP : '';
+  }
+  async function refreshStatus() {
+    setStatus('checking');
+    const r = await send({ type: 'ping' });
+    if (isOpen) setStatus(r?.ok ? 'on' : 'off');
+  }
+
+  function openPanel(id) {
+    if (!isOpen) {
+      prevFocus = document.activeElement && document.activeElement !== host ? document.activeElement : null;
+      renderTabs();
+      isOpen = true;
+      root.classList.add('open');
+      fab.setAttribute('aria-expanded', 'true');
+      fab.setAttribute('aria-label', 'readgloss 패널 닫기');
+      refreshStatus();
+    }
+    selectTab(id ?? selected);
+    shadow.getElementById(`tab-${selected}`)?.focus({ preventScroll: true });
+  }
+  function closePanel({ restoreFocus = true } = {}) {
+    if (!isOpen) return;
+    isOpen = false;
+    root.classList.remove('open');
+    fab.setAttribute('aria-expanded', 'false');
+    fab.setAttribute('aria-label', 'readgloss 패널 열기');
+    if (restoreFocus && document.activeElement === host) {
+      if (prevFocus?.isConnected) prevFocus.focus({ preventScroll: true });
+      else shadow.activeElement?.blur();
+    }
+  }
+  fab.setAttribute('aria-label', 'readgloss 패널 열기');
+
+  document.addEventListener('mousedown', (e) => isOpen && !e.composedPath().includes(host) && closePanel({ restoreFocus: false }), true);
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && isOpen && closePanel(), true);
+  window.addEventListener('readgloss:open-panel', (e) => openPanel(e.detail?.tab));
+  try {
+    chrome.runtime.onMessage.addListener((msg, sender) => {
+      if (sender.id !== chrome.runtime.id || msg?.type !== 'open-panel') return; // 툴바 아이콘(background.js 가 보낸다)
+      isOpen ? closePanel() : openPanel();
+    });
+  } catch { /* 확장 밖(시험 페이지) */ }
+
+  // ---- 설정 탭 ----
+  let uid = 0;
+  const FMT = {
+    level: (i) => S.LEVELS[i],
+    maxPerParagraph: (n) => (n === 0 ? '제한 없음' : `${n}개`),
+    'annotation.sizePct': (n) => `${n}%`,
+    'annotation.opacityPct': (n) => `${n}%`,
+    'annotation.gapEm': (n) => `${(n * 5) / 100}em`,
+  };
+  const LABEL = {
+    level: '수준', maxPerParagraph: '문단당 최대', repeat: '반복', 'annotation.position': '위치', 'annotation.sizePct': '크기',
+    'annotation.color': '색', 'annotation.opacityPct': '불투명도', 'annotation.weight': '굵기', 'annotation.gapEm': '단어 간격',
+    mark: '단어 표시', theme: '테마', enabled: '주석 켜기', allowCopy: '주석 글자 복사 허용', 'floatingButton.show': '떠 있는 버튼 보이기',
+  };
+  const LEVEL_HINT = {
+    A2: 'A2 이상: 거의 모든 단어에 뜻이 붙어요',
+    B1: 'B1 이상: 중급 단어부터',
+    B2: 'B2 이상: 중상급 단어부터',
+    C1: 'C1 이상: 상급 단어부터(기본)',
+    C2: 'C2: 가장 어려운 단어에만',
+  };
+  const find = (list, path) => list.find((x) => x.path === path);
+
+  function renderSettings(box, ctx) {
+    const refreshers = [];
+    const focused = (el) => shadow.activeElement === el; // 만지고 있는 컨트롤은 값을 덮어쓰지 않는다
+
+    const slider = (path) => {
+      const spec = find(C.RANGES, path);
+      const id = `r${++uid}`;
+      const input = h('input', { type: 'range', id, min: spec.min, max: spec.max, step: spec.step });
+      const out = h('output', { for: id });
+      const hint = path === 'level' ? h('p', { class: 'hint' }) : null;
+      input.addEventListener('input', () => {
+        const patch = C.sliderPatch(spec, input.value);
+        if (patch) ctx.setSettings(patch);
+      });
+      refreshers.push((s) => {
+        const v = C.sliderValue(spec, s);
+        if (!focused(input)) input.value = v;
+        out.textContent = FMT[path](v);
+        if (hint) hint.textContent = `${LEVEL_HINT[S.LEVELS[v]]} · 목록에 없는 기술 단어 포함`;
+      });
+      return h('div', { class: 'row' }, h('div', { class: 'rowhead' }, h('label', { for: id, text: LABEL[path] }), out), input, hint);
+    };
+
+    const choice = (path, extra) => {
+      const spec = find(C.CHOICES, path);
+      const btns = spec.options.map(([value, text]) => h('button', { type: 'button', text, 'aria-pressed': 'false', onclick: () => ctx.setSettings(C.patchFor(path, value)) }));
+      refreshers.push((s) => btns.forEach((b, i) => b.setAttribute('aria-pressed', String(C.getPath(s, path) === spec.options[i][0]))));
+      return h('div', { class: 'row' }, h('div', { class: 'rowhead', text: LABEL[path] }), h('div', { class: 'seg', role: 'group', 'aria-label': LABEL[path] }, ...btns, extra));
+    };
+
+    const color = h('input', { type: 'color', 'aria-label': '직접 고른 색' });
+    color.addEventListener('input', () => ctx.setSettings({ annotation: { color: 'custom', customColor: color.value } }));
+    refreshers.push((s) => { if (!focused(color)) color.value = s.annotation.customColor; });
+
+    const toggle = (path, hint) => {
+      const input = h('input', { type: 'checkbox' });
+      input.addEventListener('change', () => ctx.setSettings(C.patchFor(path, input.checked)));
+      refreshers.push((s) => { input.checked = C.getPath(s, path) === true; });
+      return h('div', { class: 'row' }, h('label', { class: 'check' }, input, h('span', {}, LABEL[path], hint ? h('p', { class: 'hint', text: hint }) : null)));
+    };
+
+    const offInput = h('input', { type: 'checkbox' });
+    offInput.addEventListener('change', () => setPageOff(offInput.checked));
+    const onOff = (off) => { offInput.checked = off; };
+    onOff(pageOff);
+    pageOffCbs.add(onOff);
+    cleanups.push(() => pageOffCbs.delete(onOff));
+    const offRow = h('div', { class: 'row' }, h('label', { class: 'check' }, offInput, h('span', {}, '이 페이지만 끄기', h('p', { class: 'hint', text: '저장하지 않아요. 새로고침하면 다시 켜져요.' }))));
+
+    // 미리보기(16): 주석 그리기(T6a)가 내놓은 공유 스타일시트와 그리기 함수를 쓴다. 없으면 안내 문구.
+    const previewBox = h('div', { class: 'preview', 'aria-label': '주석 미리보기', role: 'group' });
+    const updatePreview = (s) => {
+      const A = globalThis.readglossAnnotStyle;
+      try {
+        if (!A) throw new Error('none');
+        if (!shadow.adoptedStyleSheets.includes(A.sheet)) shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, A.sheet];
+        A.apply(s, previewBox);
+        A.renderPreview(previewBox, s);
+      } catch {
+        previewBox.replaceChildren(h('p', { class: 'hint', text: '미리보기는 주석 기능이 켜진 뒤 보여요' }));
+      }
+    };
+
+    // 끌 사이트 목록(49)
+    const list = h('ul', { class: 'sites', 'aria-label': '끌 사이트 목록' });
+    const siteMsg = h('p', { class: 'msg', role: 'status' });
+    const here = location.hostname;
+    const hereBtn = h('button', { class: 'btn', type: 'button', onclick: () => addSite(here) });
+    const siteInput = h('input', { type: 'text', placeholder: 'example.com 또는 *.example.com', 'aria-label': '끌 사이트 직접 입력', spellcheck: 'false', autocomplete: 'off' });
+    function addSite(raw) {
+      const next = C.addSite(ctx.settings.sites, raw);
+      if (next.length === ctx.settings.sites.length) {
+        siteMsg.textContent = C.cleanSite(raw) ? (next.length >= C.MAX_SITES && !next.includes(C.cleanSite(raw)) ? '목록이 가득 찼어요(200개).' : '이미 목록에 있어요.') : '도메인 형태로 적어 주세요(예: example.com, *.example.com).';
+        return;
+      }
+      siteMsg.textContent = '';
+      siteInput.value = '';
+      ctx.setSettings({ sites: next });
+    }
+    siteInput.addEventListener('keydown', (e) => e.key === 'Enter' && (e.preventDefault(), addSite(siteInput.value)));
+    refreshers.push((s) => {
+      list.replaceChildren(...(s.sites.length
+        ? s.sites.map((site) => h('li', {}, h('span', { class: 'name', text: site }),
+          h('button', { class: 'btn', type: 'button', text: '삭제', 'aria-label': `${site} 삭제`, onclick: () => ctx.setSettings({ sites: C.removeSite(ctx.settings.sites, site) }) })))
+        : [h('li', { class: 'empty', text: '아직 없어요' })]));
+      hereBtn.textContent = `지금 사이트 추가(${here})`;
+      hereBtn.disabled = !here || s.sites.includes(here);
+      if (s.sites.includes(here)) hereBtn.textContent = `${here}: 목록에 있어요`;
+    });
+
+    // 기본값 복원: 한 번 더 눌러야 한다. 끌 사이트 목록은 남긴다.
+    let armed = 0;
+    const resetBtn = h('button', { class: 'btn', type: 'button', text: '기본값 복원' });
+    resetBtn.addEventListener('click', () => {
+      if (!armed) {
+        resetBtn.textContent = '한 번 더 누르면 복원돼요';
+        armed = setTimeout(() => { armed = 0; resetBtn.textContent = '기본값 복원'; }, 4000);
+        return;
+      }
+      clearTimeout(armed);
+      armed = 0;
+      resetBtn.textContent = '기본값 복원';
+      const { sites, ...rest } = S.DEFAULTS;
+      ctx.setSettings(structuredClone(rest));
+    });
+
+    box.append(
+      previewBox,
+      h('h3', { class: 'sec', text: '켜기' }), toggle('enabled'), offRow,
+      h('h3', { class: 'sec', text: '어떤 단어에' }), slider('level'), slider('maxPerParagraph'), choice('repeat'),
+      h('h3', { class: 'sec', text: '주석 모양' }), choice('annotation.position'), slider('annotation.sizePct'), choice('annotation.color', color),
+      slider('annotation.opacityPct'), choice('annotation.weight'), slider('annotation.gapEm'),
+      h('h3', { class: 'sec', text: '단어 표시' }), choice('mark'),
+      h('h3', { class: 'sec', text: '기타' }), toggle('allowCopy', '체크하지 않으면 복사할 때 주석 글자가 섞이지 않아요.'), choice('theme'), toggle('floatingButton.show', '숨겨도 브라우저 툴바의 readgloss 아이콘으로 패널을 열 수 있어요.'),
+      h('h3', { class: 'sec', text: '끌 사이트' }), list, hereBtn, h('div', { class: 'addrow' }, siteInput, h('button', { class: 'btn', type: 'button', text: '추가', onclick: () => addSite(siteInput.value) })), siteMsg,
+      h('div', { class: 'reset' }, resetBtn, h('p', { class: 'hint', text: '끌 사이트 목록은 그대로 둬요.' })),
+    );
+    const refresh = (s) => { refreshers.forEach((f) => f(s)); updatePreview(s); };
+    refresh(ctx.settings);
+    ctx.onSettings(refresh);
+  }
+
+  (globalThis.readglossPanelTabs ||= []).push({ id: 'settings', title: '설정', order: 10, render: renderSettings });
+
+  // ---- 시작: 저장된 설정을 읽고 따라간다 ----
+  S.load().then((s) => { state = s; notify(); }, notify); // 읽기 전에는 버튼을 숨겨 둔다(깜빡임 방지)
+  try {
+    S.onChange((s) => {
+      if (pend || inflight) return; // 우리가 저장하는 중이면 끝난 뒤 한 번에 맞춘다
+      state = s;
+      notify();
+    });
+  } catch { /* 확장 밖 */ }
 })();
