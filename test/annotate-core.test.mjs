@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 // extension/annotate-core.js 는 text.js 와 같은 classic script. 전역 readglossAnnotate 로 쓴다.
 await import('../extension/annotate-core.js');
-const { MAX_WORDS, candidates, blockCandidates, chooseSpans, splitText, chunk, annotationColor, isDarkColor } = globalThis.readglossAnnotate;
+const { MAX_WORDS, candidates, blockCandidates, chooseSpans, splitText, chunk, isDarkColor } = globalThis.readglossAnnotate;
 const words = (text, before) => candidates(text, before).map((c) => c.word);
 
 test('candidates: 4글자 이상 단어만, 소문자로', () => {
@@ -87,6 +87,18 @@ test('chooseSpans: 이미 주석 붙은 원형(seen)은 건너뛰고, 새로 고
   assert.deepEqual([...seen].sort(), ['delve', 'payload']);
 });
 
+test('chooseSpans: seen 이 null 이면 같은 원형도 매번, limit 은 개수 상한, skip 은 아는 단어 원형', () => {
+  const occs = [occ('payload', 0, 0), occ('payload', 0, 8), occ('delves', 0, 16), occ('delve', 0, 24)];
+  assert.equal(chooseSpans(occs, items, null).length, 4);
+  assert.equal(chooseSpans(occs, items, new Set()).length, 2);
+  assert.deepEqual(chooseSpans(occs, items, null, { limit: 3 }).map((s) => s.start), [0, 8, 16]);
+  assert.deepEqual(chooseSpans(occs, items, null, { limit: 0 }), []);
+  assert.deepEqual(chooseSpans(occs, items, new Set(), { skip: new Set(['payload']) }).map((s) => s.lemma), ['delve']);
+  const seen = new Set();
+  chooseSpans(occs, items, seen, { limit: 1 });
+  assert.deepEqual([...seen], ['payload']); // 상한에 걸려 못 붙인 원형은 seen 에 안 들어간다
+});
+
 test('splitText: 텍스트 + 위치 -> 조각(글자는 하나도 잃지 않는다)', () => {
   const t = 'The payload and delves deep';
   const spans = [{ start: 4, end: 11, gloss: '수익 하중', lemma: 'payload' }, { start: 16, end: 22, gloss: '파고들다', lemma: 'delve' }];
@@ -116,9 +128,7 @@ test('chunk: 300개씩 나눈다', () => {
   assert.deepEqual(chunk([], 300), []);
 });
 
-test('annotationColor: 밝은 글자(어두운 배경 페이지)나 어두운 모드면 밝은 파랑, 아니면 기본 파랑', () => {
-  assert.equal(annotationColor(false), 'rgba(47,111,235,.85)');
-  assert.equal(annotationColor(true), 'rgba(107,155,255,.9)');
+test('isDarkColor: 밝은 글자(어두운 배경 페이지)나 어두운 모드면 어두운 배경으로 본다', () => {
   assert.equal(isDarkColor('rgb(230, 232, 235)', false), true); // 밝은 글자 = 어두운 배경
   assert.equal(isDarkColor('rgb(31, 35, 40)', true), false); // 어두운 모드여도 글자가 어두우면 밝은 페이지
   assert.equal(isDarkColor('rgba(0, 0, 0, 0)', true), true); // 못 읽으면 어두운 모드 설정을 따른다
@@ -128,6 +138,6 @@ test('annotationColor: 밝은 글자(어두운 배경 페이지)나 어두운 �
 test('annotate-core.js: ES 모듈 import/export 없음, manifest 목록에 있다', () => {
   assert.doesNotMatch(readFileSync(new URL('../extension/annotate-core.js', import.meta.url), 'utf8'), /^\s*(import|export)\s/m);
   const js = JSON.parse(readFileSync(new URL('../extension/manifest.json', import.meta.url), 'utf8')).content_scripts[0].js;
-  assert.deepEqual(js.slice(-2), ['annotate-core.js', 'annotate.js']);
-  assert.ok(js.indexOf('annotate-core.js') > js.indexOf('paragraph.js'));
+  assert.ok(js.indexOf('annotate-core.js') > js.indexOf('paragraph-core.js') && js.indexOf('annotate-core.js') < js.indexOf('content.js'), js.join()); // 계약 G: 판단 로직은 content.js 앞
+  assert.ok(js.indexOf('annotate.js') > js.indexOf('paragraph.js'), js.join());
 });

@@ -10,7 +10,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["text.js", "settings-core.js", "content.js", "paragraph-core.js", "paragraph.js", "annotate-core.js", "annotate.js"],
+      "js": ["text.js", "settings-core.js", "paragraph-core.js", "annotate-core.js", "content.js", "paragraph.js", "annotate.js"],
       "all_frames": false
     }
   ]

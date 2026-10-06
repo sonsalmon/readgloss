@@ -2,6 +2,8 @@
 (() => {
   const core = globalThis.readglossParagraph;
   if (!core) return;
+  // 켜짐 범위 판정(계약 D)은 자동 주석과 같은 함수를 쓴다. 없으면(로드 순서가 어긋난 경우) 막지 않는다.
+  const enabledHere = globalThis.readglossAnnotate?.enabledHere ?? (() => true);
   const { MAX_TEXT, BUTTON_SIZE, TRANSLATION_TAG, TRANSLATION_STYLE, isTargetText, findBlock, insertPlacement, textOf, textExceeds, buttonPosition } = core;
 
   const MESSAGES = {
@@ -40,6 +42,9 @@
     .bubble[hidden] { display: none; }
   `;
 
+  let settings = globalThis.readglossSettings?.normalize({}) ?? { enabled: true, sites: [] }; // 저장된 값을 읽기 전에는 기본값
+  let pageOff = globalThis.readglossPageOff === true; // 이 페이지만 끄기(T6b 가 이벤트로 알리고 전역에도 둔다)
+  const allowed = () => enabledHere(settings, location.hostname, pageOff);
   let host = null;
   let ui = null; // { btn, bubble }
   let current = null; // 버튼이 붙어 있는 문단 블록
@@ -97,7 +102,7 @@
   // 블록의 첫 글자 줄 사각형(버튼을 첫 줄 높이에 맞추려고). 못 구하면 undefined -> 블록 맨 위.
   function firstLineRect(block) {
     const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
-      acceptNode: (t) => (t.nodeValue.trim() && !t.parentElement.closest('[data-readgloss]:not([data-readgloss="ann"]), rt') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT), // 자동 주석 단어는 글자, rt 는 아님
+      acceptNode: (t) => (t.nodeValue.trim() && !t.parentElement.closest('[data-readgloss]:not([data-readgloss="ann"])') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT), // 자동 주석 단어는 글자, 뜻 글자(gloss)·번역·버튼은 아님
     });
     const t = walker.nextNode();
     if (!t) return undefined;
@@ -116,7 +121,9 @@
       host.style.visibility = 'hidden'; // 문단이 화면 밖
       return;
     }
-    const pos = buttonPosition({ blockRect: rect, firstLine: firstLineRect(current) });
+    const cs = getComputedStyle(current);
+    const list = current.tagName === 'LI' && cs.display === 'list-item' && cs.listStyleType !== 'none' && cs.listStylePosition !== 'inside'; // 글머리표가 li 바깥에 있을 때만 비켜 둔다
+    const pos = buttonPosition({ blockRect: rect, firstLine: firstLineRect(current), list });
     // 긴 문단은 첫 줄이 화면 위로 넘어가도 버튼이 문단 안에 머문다
     const top = Math.min(Math.max(pos.top, 4), Math.max(rect.bottom - BUTTON_SIZE, 4));
     host.style.left = `${Math.max(pos.left, 2)}px`;
@@ -196,6 +203,7 @@
 
   function onClick(e) {
     if (host && e.composedPath().includes(host)) return; // 번역 버튼 안
+    if (!allowed()) return hide(); // 끄기 범위: 이 사이트·이 페이지·전체 끄기면 번역 버튼을 안 띄운다(더블클릭 사전 카드는 따로 계속 된다)
     const t = e.target;
     const block = findBlock(t?.nodeType === 1 ? t : t?.parentElement);
     // ponytail: 아주 큰 블록(레이아웃용 td 등)은 글자를 걷기 전에 거른다(주석 rt 글자는 세지 않는다). 4000자를 조금 넘는 문단은 버튼이 뜨고 "너무 길어요"를 보여 준다.
@@ -214,6 +222,17 @@
     },
     true,
   );
+  // 설정·이 페이지 끄기가 바뀌어 꺼지면 떠 있던 버튼을 거둔다(이미 끼워 넣은 번역문은 그대로 둔다)
+  addEventListener('readgloss:pageoff', (e) => {
+    pageOff = typeof e.detail?.off === 'boolean' ? e.detail.off : globalThis.readglossPageOff === true;
+    if (!allowed()) hide();
+  });
+  try {
+    globalThis.readglossSettings?.load().then((s) => ((settings = s), allowed() || hide()), () => {});
+    globalThis.readglossSettings?.onChange((s) => ((settings = s), allowed() || hide()));
+  } catch {
+    // 확장이 다시 로드된 뒤의 낡은 페이지: 기본값으로 둔다
+  }
   const follow = () => {
     if (!current || raf) return;
     raf = requestAnimationFrame(() => {
