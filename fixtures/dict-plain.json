@@ -1,0 +1,42 @@
+{
+ "mitigate": [
+  {
+   "text": "mit·i·gate | mítəɡèit | 동사(-gat·ed, -gat·ing)타동사《격식》 1.〈분노·슬픔·고통 등을〉 완화시키다, 누그러뜨리다; 〈형벌을〉 가볍게 하다 ▸ mitigate anger분노를 누그러뜨리다. 2.《드물게》 〈성격을〉 온순하게 하다. 자동사누그러지다, 가라앉다. ",
+   "homograph": 0,
+   "headword": "mitigate"
+  }
+ ],
+ "exploit": [
+  {
+   "homograph": 1,
+   "headword": "exploit",
+   "text": "ex·ploit 1 | éksplɔit | 명사（악센트에 주의） 《보통 exploits》영웅적 행위, 위업(偉業), 공적, 공훈, （아슬아슬한） 묘기 ▸ sing a person's exploits남의 공적을 칭송하다. "
+  },
+  {
+   "homograph": 2,
+   "text": "ex·ploit 2 | iksplɔ́it | 【ex(바깥으로)＋ploit(열다)】 동사, 타동사1.…을 （이익·영리를 위해） 이용[활용]하다; …을 （이기적 목적을 위해） 부당하게 사용하다, 착복하다; …을 착취하다 ▸ exploit one's privileges특권을 남용하다 ▸ They were exploited by the landlord.그들은 지주에게 착취당했다 ▸ He exploited workers by paying them very little.그는 매우 적은 임금을 지불함으로써 노동자들을 착취했다. 2.〈자원·시장 등을〉 개발[개척]하다; 〈판매를〉 （선전을 통해） 촉진하다, 판촉하다. ",
+   "headword": "exploit"
+  }
+ ],
+ "delve": [
+  {
+   "homograph": 0,
+   "text": "delve | delv | 동사(delved, delv·ing)자동사1.〔…의 속을〕 손으로 더듬다, 〔문제·자료·정보 등을〕 깊이 파고들다, 철저히 조사하다, 깊이 탐구하다〔in, into, among, between, through …〕 ▸ delve into a crime범죄를 규명하다 ▸ delve among the relics of antiquity고대 유물의 연구에 몰두하다 ▸ Don't delve in the past.과거를 들추지 마라. 2.〈도로 등이〉 갑자기 내려가다. 3.《고어》 （가래·괭이 등으로） 〔…을〕 파다〔for …〕. 타동사《고어》 〈도랑 등을〉 파다 (excavate). ",
+   "headword": "delve"
+  }
+ ],
+ "payload": [
+  {
+   "headword": "páylòad",
+   "text": "páy·lòad 명사1.〔상업〕 수익 하중. 2.〔항공〕 유료 하중. 3.（기업의） 임금 부담. 4.〔우주·군사〕 유효 탑재량; （미사일의 탄두·폭탄의） 폭발력. ",
+   "homograph": 0
+  }
+ ],
+ "privilege": [
+  {
+   "homograph": 0,
+   "text": "priv·i·lege | prívəliʤ | 【privi(개인의)＋lege(법률)】 명사1.[불][가]（…할） 특권, 특전, 명예, 영광 ▸ give[grant] a privilege to…에게 특권을 주다 ▸ He has the privilege of making the opening speech.그에게는 개회사를 할 명예가 주어져 있다. 2.[불][가]（관직·지위 등에 따르는） 특권, 특전; 면제특권, 특별면제[인가] ▸ have[enjoy] diplomatic privilege외교 특권이 있다. 3.[불][가]《보통 the privilege》기본적 권리 ▸ the privilege of citizenship시민권. 4.《미》 〔증권〕 주식판매 선택권. 동사, 타동사(-leged, -leg·ing)〈남에게〉 〔…할〕 특권[특전]을 주다 〔to do〕; 〈남을〉 〔…에서〕 면제하다(exempt)〔from …〕 ▸ privilege him to receive secret information그에게 극비 정보를 입수할 수 있는 특권을 주다 ▸ Members of Parliament are privileged from arrest during the sessions.국회 의원에게는 국회 회기 중에는 체포되지 않는다는 특권이 부여되어 있다. ",
+   "headword": "privilege"
+  }
+ ]
+}

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "build:dict": "swiftc -O native/macdict.swift -o native/macdict",
     "bench": "node scripts/bench.mjs"
   }
 }

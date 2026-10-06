@@ -8,6 +8,7 @@ import { createCache } from './cache.mjs';
 import { extensionIdFromKey } from './ext-id.mjs';
 import { AiParseError } from './parse.mjs';
 import { SYSTEM_PROMPT, WORD_RE, buildPrompt, createLookup } from './lookup.mjs';
+import { DictUnavailableError, createDict } from './dict.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
@@ -58,7 +59,7 @@ function readJson(req) {
 }
 
 // ask({word, sentence}) -> AI 원문. 테스트는 가짜 ask 를, 실제 실행은 claude 클라이언트를 넘긴다.
-export function createBridge({ ask, cacheFile, tokenFile, extensionId }) {
+export function createBridge({ ask, cacheFile, tokenFile, extensionId, dict = createDict() }) {
   const token = loadOrCreateToken(tokenFile);
   const tokenBuf = Buffer.from(token);
   const lookup = createLookup({ cache: createCache(cacheFile), ask });
@@ -83,6 +84,19 @@ export function createBridge({ ask, cacheFile, tokenFile, extensionId }) {
       if (e instanceof AiTimeoutError) send(res, 504, { error: 'timeout' }, cors);
       else if (e instanceof AiError || e instanceof AiParseError) send(res, 502, { error: 'ai-failed' }, cors);
       else send(res, 500, { error: 'internal' }, cors); // 내부 내용은 응답에 싣지 않는다
+    }
+  }
+
+  async function handleDict(req, res, cors) {
+    const { value, status } = await readJson(req);
+    if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+    const word = value?.word;
+    if (typeof word !== 'string' || !WORD_RE.test(word)) return send(res, 400, { error: 'bad-request' }, cors);
+    try {
+      send(res, 200, await dict.lookup(word), cors);
+    } catch (e) {
+      if (e instanceof DictUnavailableError) send(res, 503, { error: 'dict-unavailable' }, cors);
+      else send(res, 502, { error: 'dict-failed' }, cors);
     }
   }
 
@@ -117,6 +131,10 @@ export function createBridge({ ask, cacheFile, tokenFile, extensionId }) {
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleLookup(req, res, cors);
     }
+    if (path === '/dict') {
+      if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleDict(req, res, cors);
+    }
     return send(res, 404, { error: 'not-found' }, cors);
   }
 
@@ -135,6 +153,7 @@ export function createBridge({ ask, cacheFile, tokenFile, extensionId }) {
       }),
     close: () =>
       new Promise((resolve) => {
+        dict.close();
         server.close(() => resolve());
         server.closeAllConnections();
       }),
