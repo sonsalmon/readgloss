@@ -56,11 +56,13 @@
   // 테마(설정 'theme'): auto 면 속성 없이 prefers-color-scheme, light·dark 면 호스트에 data-theme 로 강제
   let theme = 'auto';
   let glossary = 'auto'; // 설정 '분야 용어집'. 'off' 면 사전 요청에 host·domains 를 싣지 않는다
+  let glossarySites = globalThis.readglossSettings?.DEFAULTS.glossarySites ?? []; // 용어집을 켤 사이트(설정을 읽기 전에는 기본 목록)
   try {
-    globalThis.readglossSettings.load().then((s) => { theme = s.theme; glossary = s.glossary; }, () => {});
+    globalThis.readglossSettings.load().then((s) => { theme = s.theme; glossary = s.glossary; glossarySites = s.glossarySites; }, () => {});
     globalThis.readglossSettings.onChange((s) => {
       theme = s.theme;
       glossary = s.glossary;
+      glossarySites = s.glossarySites;
       if (host) applyTheme();
     });
   } catch { /* 설정을 못 읽으면 자동 */ }
@@ -238,7 +240,7 @@
   async function askDict() {
     const my = ++seq;
     showMessage('찾는 중…');
-    const r = await send({ type: 'dict', word: current.word, ...(globalThis.readglossGlossary?.hint({ glossary }, document, location.hostname) ?? {}) });
+    const r = await send({ type: 'dict', word: current.word, ...(globalThis.readglossGlossary?.hint({ glossary, glossarySites }, document, location.hostname) ?? {}) });
     if (my !== seq) return;
     const line = globalThis.readglossGlossary?.termLine(r?.term) ?? '';
     ui.term.textContent = line;

@@ -32,7 +32,8 @@
     return { hasMathDom: !!doc.querySelector(MATH_DOM), codeTexts: texts(doc.querySelectorAll('code')), headingTexts: texts(doc.querySelectorAll('h1, h2, h3')) };
   }
 
-  // 다리 요청에 실을 필드. 설정이 'off' 면 아무것도 싣지 않는다(host 도 안 보낸다). domains 는 페이지가 알려 주는 분야(앞쪽이 우선): ML 글이면 'ml', 수학 글이면 'math'.
+  // 다리 요청에 실을 필드. 설정이 'off' 면 아무것도 싣지 않는다(host 도 안 보낸다).
+  // domains: 페이지 감지 분야(ML 글이면 'ml', 수학 글이면 'math', 앞쪽이 우선) 뒤에, 사이트가 설정 glossarySites 에 걸리면 'security','ml','math' 를 붙인다. 사이트 판단은 여기서만 한다(다리는 힌트만 믿는다).
   function hint(settings, doc, hostname) {
     if (settings?.glossary === 'off') return {};
     const domains = [];
@@ -43,7 +44,8 @@
     } catch {
       // 판단 실패는 "힌트 없음"
     }
-    return { host: hostname, domains };
+    if (globalThis.readglossSettings?.siteMatches(settings?.glossarySites, hostname)) domains.push('security', 'ml', 'math');
+    return { host: hostname, domains: [...new Set(domains)] };
   }
   const hintKey = (h) => (h?.host === undefined ? '' : `${h.host}|${(h.domains ?? []).join(',')}`);
 

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
+await import('../extension/settings-core.js'); // hint 가 siteMatches 를 쓴다(manifest 도 이 순서)
 await import('../extension/glossary-core.js');
 const G = globalThis.readglossGlossary;
 
@@ -58,17 +59,35 @@ test('detectMl: ML 낱말이 든 제목이 둘 이상이면 ML 글(HTB 머신러
   assert.equal(G.detectMl(), false);
 });
 
-test('hint: 자동이면 host 와 domains, 끄기면 빈 객체(아무것도 안 보낸다)', () => {
-  const doc = { querySelector: () => null, querySelectorAll: (s) => (s === 'code' ? htbLike.codeTexts : htbLike.headingTexts).map((t) => ({ textContent: t })) };
-  assert.deepEqual(G.hint({ glossary: 'auto' }, doc, 'academy.hackthebox.com'), { host: 'academy.hackthebox.com', domains: ['math'] });
-  assert.deepEqual(G.hint({}, doc, 'example.com'), { host: 'example.com', domains: ['math'] }, '설정 값이 없으면 자동');
-  assert.deepEqual(G.hint({ glossary: 'off' }, doc, 'academy.hackthebox.com'), {});
-  const mlDoc = { querySelector: () => null, querySelectorAll: (s) => (s === 'code' ? [] : [{ textContent: 'Neural Networks' }, { textContent: 'Gradient Descent' }]) };
-  assert.deepEqual(G.hint({}, mlDoc, 'academy.hackthebox.com'), { host: 'academy.hackthebox.com', domains: ['ml'] });
-  const both = { querySelector: () => null, querySelectorAll: (s) => (s === 'code' ? [{ textContent: 'x_t' }] : [{ textContent: 'Neural Networks' }, { textContent: 'Gradient Descent' }]) };
-  assert.deepEqual(G.hint({}, both, 'a.com').domains, ['ml', 'math']);
-  const plain = { querySelector: () => null, querySelectorAll: () => [] };
-  assert.deepEqual(G.hint({ glossary: 'auto' }, plain, 'example.com'), { host: 'example.com', domains: [] });
+const plainDoc = { querySelector: () => null, querySelectorAll: () => [] };
+const mathDoc = { querySelector: () => null, querySelectorAll: (s) => (s === 'code' ? htbLike.codeTexts : htbLike.headingTexts).map((t) => ({ textContent: t })) };
+const mlDoc = { querySelector: () => null, querySelectorAll: (s) => (s === 'code' ? [] : [{ textContent: 'Neural Networks' }, { textContent: 'Gradient Descent' }]) };
+const bothDoc = { querySelector: () => null, querySelectorAll: (s) => (s === 'code' ? [{ textContent: 'x_t' }] : [{ textContent: 'Neural Networks' }, { textContent: 'Gradient Descent' }]) };
+const sites = (...glossarySites) => ({ glossary: 'auto', glossarySites });
+
+test('hint: 목록 밖 사이트는 감지 힌트만(host 와 함께), 끄기면 빈 객체(아무것도 안 보낸다)', () => {
+  assert.deepEqual(G.hint({ glossary: 'auto' }, mathDoc, 'example.com'), { host: 'example.com', domains: ['math'] });
+  assert.deepEqual(G.hint({}, mathDoc, 'example.com'), { host: 'example.com', domains: ['math'] }, '설정 값이 없으면 자동, 목록도 없음');
+  assert.deepEqual(G.hint({ glossary: 'off' }, mathDoc, 'academy.hackthebox.com'), {});
+  assert.deepEqual(G.hint({ glossary: 'off', glossarySites: ['academy.hackthebox.com'] }, mathDoc, 'academy.hackthebox.com'), {});
+  assert.deepEqual(G.hint({}, mlDoc, 'example.com'), { host: 'example.com', domains: ['ml'] });
+  assert.deepEqual(G.hint({}, bothDoc, 'a.com').domains, ['ml', 'math']);
+  assert.deepEqual(G.hint({ glossary: 'auto' }, plainDoc, 'example.com'), { host: 'example.com', domains: [] });
+  assert.deepEqual(G.hint(sites('a.com'), plainDoc, 'b.com').domains, [], '목록 밖');
+  assert.deepEqual(G.hint({ glossarySites: 'a.com' }, plainDoc, 'a.com').domains, [], '목록이 배열이 아니면 없는 것');
+});
+
+test('hint: 목록에 걸린 사이트는 감지 힌트 뒤에 security·ml·math 를 붙인다(중복 없이, 앞쪽 우선)', () => {
+  assert.deepEqual(G.hint(sites('example.com'), plainDoc, 'example.com'), { host: 'example.com', domains: ['security', 'ml', 'math'] });
+  assert.deepEqual(G.hint(sites('example.com'), mathDoc, 'example.com').domains, ['math', 'security', 'ml']);
+  assert.deepEqual(G.hint(sites('example.com'), mlDoc, 'example.com').domains, ['ml', 'security', 'math']);
+  assert.deepEqual(G.hint(sites('example.com'), bothDoc, 'example.com').domains, ['ml', 'math', 'security']);
+  assert.deepEqual(G.hint(sites('*.example.com'), plainDoc, 'a.example.com').domains, ['security', 'ml', 'math']);
+  assert.deepEqual(G.hint(sites('*.example.com'), plainDoc, 'example.com').domains, [], '*. 는 하위 도메인만');
+  assert.deepEqual(G.hint(sites('example.com'), plainDoc, 'docs.example.com').domains, [], '도메인 하나만');
+  assert.deepEqual(G.hint(sites('example.com'), plainDoc, 'EXAMPLE.com').domains, ['security', 'ml', 'math']);
+  assert.deepEqual(G.hint(sites(), mathDoc, 'academy.hackthebox.com').domains, ['math'], '목록을 비우면 HTB 도 감지 힌트만');
+  assert.deepEqual(G.hint({ glossary: 'auto', glossarySites: globalThis.readglossSettings.DEFAULTS.glossarySites }, plainDoc, 'academy.hackthebox.com').domains, ['security', 'ml', 'math']);
 });
 
 test('hintKey: 분야 조합이 달라지면 키가 달라진다(확장 쪽 캐시를 비울 때 쓴다)', () => {
@@ -101,6 +120,6 @@ test('배선: 세 요청(annotate·dict·translate)이 host·domains 를 다리�
   for (const body of ['{ words, level, host, domains }', '{ word, host, domains }', '{ text, force: force === true, host, domains }']) assert.ok(bg.includes(`JSON.stringify(${body})`), body);
   assert.match(read('annotate.js'), /G\.hint\(when, document, location\.hostname\)/);
   assert.match(read('paragraph.js'), /readglossGlossary\?\.hint\(settings, document, location\.hostname\)/);
-  assert.match(read('content.js'), /readglossGlossary\?\.hint\(\{ glossary \}, document, location\.hostname\)/);
+  assert.match(read('content.js'), /readglossGlossary\?\.hint\(\{ glossary, glossarySites \}, document, location\.hostname\)/);
   assert.match(read('panel.js'), /path: 'glossary'/);
 });
