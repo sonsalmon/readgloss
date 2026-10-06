@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test",
+    "test": "node --test --test-concurrency=1",
     "build:dict": "swiftc -O native/macdict.swift -o native/macdict",
     "bench": "node scripts/bench.mjs"
   }

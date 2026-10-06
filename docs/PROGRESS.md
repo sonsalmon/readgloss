@@ -14,9 +14,9 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 | T3 어려운 단어 위 자동 주석(판정+ruby, 옛 T3·T4 합침) | 완료(Aside 수동 확인 대기) | main d46332a | 10-06 결정: 뜻 = 사전 첫 뜻. T1b·T2 합친 뒤 시작(사전 도우미 필요). spec "변경 기록 3" |
 | T5 상시 실행·켜기/끄기·수준 고르기 | 대기 | — | T3 뒤. launchd 등록은 승인 뒤 |
 | T6s 설정값 뼈대(settings-core.js) | 완료 | main 3641c0f | |
-| T6a 주석 그리기 개편(설정 반영·CSS 변수·걷기·끄기·오른쪽 위치) | 완료(통합 확인 중) | main | verifier 통과, P2 3건 |
-| T6b 떠 있는 버튼·퀵 메뉴·패널·설정 탭·미리보기·사이트·테마 | 완료(통합 확인 중) | main 15d0c3d | verifier 통과, 합칠 때 manifest·background·테스트 충돌 해소 |
-| T7 내 단어: 단어장 추가·아는 단어·최근 찾은 단어(35,36) | 완료(통합 확인 중) | main | verifier 통과, 테스트 합계 226 |
+| T6a 주석 그리기 개편(설정 반영·CSS 변수·걷기·끄기·오른쪽 위치) | 완료 | main | verifier 통과, P2 3건 |
+| T6b 떠 있는 버튼·퀵 메뉴·패널·설정 탭·미리보기·사이트·테마 | 완료 | main 15d0c3d | verifier 통과, 합칠 때 manifest·background·테스트 충돌 해소 |
+| T7 내 단어: 단어장 추가·아는 단어·최근 찾은 단어(35,36) | 완료 | main | verifier 통과, 테스트 합계 226 |
 | T8 어휘량 추정(6) | 대기 | — | T6·T7 합친 뒤 |
 | T9 분야 용어집(수학·ML·보안, HTB 최적화) | 진행 중(task wruhw4o7x) | feat/t9-glossary | spec "변경 기록 5" |
 
@@ -58,7 +58,8 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 
 - 격리 월드(content script)에서 document.adoptedStyleSheets 채택이 되는지. 안 되면 <style> 대체 경로로 들어간다(엄한 CSP 페이지에선 막힐 수 있음). 판가름: Aside 실사용.
 - 툴바 아이콘 → 패널 열기가 tabs 권한 없이 되는지. 판가름: Aside 실사용.
-- 통합 확인 워크플로 wato0ui0i(세 조각 맞물림) 진행 중.
+- 통합 확인(wato0ui0i): 13개 중 12개 통과, 미리보기 빈 화면(P1)과 P2 3건은 T10(main 935ac2a)에서 고침·독립 검증 통과.
+- npm test 는 하나씩 차례로 돈다(--test-concurrency=1). 머신 부하가 높을 때 시간 재는 테스트가 흔들렸기 때문.
 
 ## 다음 한 걸음
 
