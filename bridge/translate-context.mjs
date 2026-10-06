@@ -12,9 +12,12 @@ const CONTEXT_TASK =
   '출력은 JSON {"translation": "...", "note": "..."} 한 줄만(note 가 필요 없으면 생략).';
 
 // terms: ["transpose=전치(행렬)", ...] 분야 용어집에서 text 에 나온 단어. 입력 JSON 은 항상 마지막 줄. 빈 문맥 필드는 JSON 에서 뺀다.
-export function buildContextPrompt({ text, before, after, title, headings }, terms = []) {
+// wide: 더 넓은 문맥(글 앞뒤와 목차)을 실은 요청이면 과제 설명에 한 줄 더한다.
+const WIDE_NOTE = '이번 입력은 넓은 문맥(글 앞뒤와 목차)을 실었다. 그 넓은 문맥을 보고 text 의 뜻을 정한다.\n';
+
+export function buildContextPrompt({ text, before, after, title, headings }, terms = [], wide = false) {
   const input = { text: normalizeText(text), ...(before && { before }), ...(after && { after }), ...(title && { title }), ...(headings?.length && { headings }) };
-  return `${CONTEXT_TASK}\n${terms.length ? `용어 지정: ${terms.join(', ')}. 이 단어는 지정한 번역어를 쓴다.\n` : ''}${JSON.stringify(input)}`;
+  return `${CONTEXT_TASK}\n${wide ? WIDE_NOTE : ''}${terms.length ? `용어 지정: ${terms.join(', ')}. 이 단어는 지정한 번역어를 쓴다.\n` : ''}${JSON.stringify(input)}`;
 }
 
 // AI 출력 -> { translation, note? }. note 는 문자열일 때만 한 줄로 정리해 남긴다. 깨졌으면 AiParseError.
@@ -26,8 +29,9 @@ export function parseContextTranslation(text) {
 
 // ask(프롬프트 문자열) -> AI 원문. 캐시 값은 JSON 문자열 하나({translation, note?}). cache.mjs 는 문자열만 담는다.
 export function createContextTranslate({ cache, ask }) {
-  return async function translate({ text, context = null, force = false, domainsKey = '', terms = [] }) {
-    const key = contextKey(text, context, domainsKey);
+  // terms 앞쪽은 내 사전 용어 지정, 뒤쪽은 분야 용어집. mineKey 는 그중 내 사전 몫(캐시 키용: 내 사전이 바뀌면 다른 키).
+  return async function translate({ text, context = null, force = false, domainsKey = '', terms = [], wide = false, mineKey = '' }) {
+    const key = contextKey(text, context, domainsKey, { wide, mine: mineKey });
     if (!force) {
       try {
         const hit = JSON.parse(cache.get(key) ?? 'null');
@@ -36,7 +40,7 @@ export function createContextTranslate({ cache, ask }) {
         // 깨진 캐시 항목은 없는 것으로
       }
     }
-    const result = parseContextTranslation(await ask(buildContextPrompt({ text, ...context }, terms)));
+    const result = parseContextTranslation(await ask(buildContextPrompt({ text, ...context }, terms, wide)));
     cache.set(key, JSON.stringify(result));
     return { ...result, cached: false };
   };

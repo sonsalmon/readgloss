@@ -68,7 +68,7 @@ test('/words: 깨진 본문·모르는 op·잘못된 원형·http(s) 아닌 주�
       assert.equal((await s.words(body)).status, 400, JSON.stringify(body));
     }
     assert.equal((await s.words({ op: 'save', lemma: 'ab', sentence: 'x'.repeat(20_000) })).status, 413);
-    assert.deepEqual((await s.req('GET', '/words', { headers: s.auth })).json(), { known: {}, saved: {}, history: [] });
+    assert.deepEqual((await s.req('GET', '/words', { headers: s.auth })).json(), { known: {}, saved: {}, history: [], phrases: {} });
   } finally {
     await s.bridge.close();
   }
@@ -77,7 +77,7 @@ test('/words: 깨진 본문·모르는 op·잘못된 원형·http(s) 아닌 주�
 test('/words: GET 은 셋 다, POST 는 바뀐 전체 상태를 돌려주고 words.json 에 저장한다(AI 호출 0번)', async () => {
   const s = await start();
   try {
-    assert.deepEqual((await s.req('GET', '/words', { headers: s.auth })).json(), { known: {}, saved: {}, history: [] });
+    assert.deepEqual((await s.req('GET', '/words', { headers: s.auth })).json(), { known: {}, saved: {}, history: [], phrases: {} });
     const a = await s.words({ op: 'save', lemma: 'Mitigation', word: 'mitigations', gloss: '완화', sentence: 'Apply mitigations.', url: 'https://a.test/p' });
     assert.equal(a.status, 200);
     assert.equal(a.headers['access-control-allow-origin'], MINE);

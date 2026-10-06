@@ -9,6 +9,8 @@ export function loadGlossaries() {
   return Object.fromEntries(DOMAINS.map((d) => [d, JSON.parse(readFileSync(new URL(`./glossaries/${d}.json`, import.meta.url), 'utf8'))]));
 }
 
+export const loadAcronyms = () => JSON.parse(readFileSync(new URL('./glossaries/acronyms.json', import.meta.url), 'utf8'));
+
 export const loadPhrases = () => Object.fromEntries(DOMAINS.map((d) => [d, JSON.parse(readFileSync(new URL(`./glossaries/phrases-${d}.json`, import.meta.url), 'utf8'))]));
 
 // 낱말 -> 용어집에서 찾아볼 후보 철자(원형 먼저, 복수형 규칙만).
@@ -23,7 +25,7 @@ export function variants(word) {
   return out;
 }
 
-export function createGlossary(data = loadGlossaries(), phrases = loadPhrases()) {
+export function createGlossary(data = loadGlossaries(), phrases = loadPhrases(), acronyms = loadAcronyms()) {
   const find = (word, active = []) => {
     for (const v of variants(word)) {
       for (const d of active) {
@@ -45,9 +47,16 @@ export function createGlossary(data = loadGlossaries(), phrases = loadPhrases())
     return null;
   };
 
+  // 약어(소문자 키) -> { exp, ko, d } | null. active 를 주면 그 약어의 분야가 활성일 때만(/annotate), 안 주면 분야와 무관(/dict).
+  const acronym = (key, active) => {
+    const a = typeof key === 'string' && Object.hasOwn(acronyms, key) ? acronyms[key] : null;
+    return a && (!active || active.includes(a.d)) ? a : null;
+  };
+
   return {
     find,
     findPhrase,
+    acronym,
     // 요청 { domains? } -> 활성 분야(우선순위 순 = 힌트 순서). 어느 사이트에서 용어집을 켤지는 확장 설정(glossarySites)이 정하고, 다리는 보내 준 힌트만 믿는다(host 는 안 본다). 이상한 값은 조용히 버린다.
     domains(req) {
       const hints = Array.isArray(req?.domains) ? req.domains.filter((d) => DOMAINS.includes(d)) : [];

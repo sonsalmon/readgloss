@@ -12,14 +12,19 @@ import { DictUnavailableError, createDict } from './dict.mjs';
 import { MtUnavailableError, createMt } from './mt.mjs';
 import { ANNOTATE_LEVELS, DEFAULT_LEVEL, createAnnotate, isCommon, lemmaOf, loadWordLevels, pickSense, shortGloss, taggedGlosses } from './annotate.mjs';
 import { createWords, parseWordsOp } from './words.mjs';
-import { createGlossary } from './glossary.mjs';
+import { MAX_TERMS, createGlossary } from './glossary.mjs';
 import { MAX_TEXT, buildTranslatePrompt, createTranslate, normalizeText } from './translate.mjs';
-import { LIMITS, parseContext } from './context.mjs';
+import { LIMITS, parseContext, parseWide } from './context.mjs';
 import { createContextTranslate } from './translate-context.mjs';
+import { createMydict, parseMydictOp } from './mydict.mjs';
+import { createStudy, parseDays } from './study.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
 const MAX_BODY = 16 * 1024;
+const MAX_WIDE_BODY = 64 * 1024; // /translate-context·/lookup 은 "더 넓은 문맥"을 실을 수 있어 본문 상한이 크다
+const MAX_ACRONYMS = 100;
+const ACRONYM_RE = /^[A-Z]{2,6}$/;
 const MAX_SENTENCE = 1000;
 const MAX_ANNOTATE_WORDS = 300;
 
@@ -46,16 +51,16 @@ function send(res, status, body, headers = {}) {
   res.end(text);
 }
 
-function readJson(req) {
+function readJson(req, limit = MAX_BODY) {
   return new Promise((resolve) => {
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size <= MAX_BODY) chunks.push(c); // 넘치면 버리면서 끝까지 읽는다(응답을 먼저 보내려면 소켓을 닫지 말아야 한다)
+      if (size <= limit) chunks.push(c); // 넘치면 버리면서 끝까지 읽는다(응답을 먼저 보내려면 소켓을 닫지 말아야 한다)
     });
     req.on('end', () => {
-      if (size > MAX_BODY) return resolve({ status: 413 });
+      if (size > limit) return resolve({ status: 413 });
       try {
         resolve({ value: JSON.parse(Buffer.concat(chunks).toString('utf8')) });
       } catch {
@@ -74,7 +79,7 @@ function sendAiError(res, e, cors) {
 }
 
 // ask({word, sentence, context?}) / askTranslate(문단, 용어 지정 목록) / askContext(프롬프트 문자열) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
-export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
+export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
   const token = loadOrCreateToken(tokenFile);
   const tokenBuf = Buffer.from(token);
   const lookup = createLookup({ cache: createCache(cacheFile), ask });
@@ -82,8 +87,10 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
   const contextTranslate = createContextTranslate({ cache: createCache(contextFile), ask: askContext });
   const words = createWords({ file: wordsFile });
   const glossary = createGlossary();
+  const mydict = createMydict({ file: mydictFile, now });
+  const study = createStudy({ file: studyFile, now });
   const levels = loadWordLevels();
-  const annotate = createAnnotate({ dict, levels, isKnown: words.isKnown, glossary });
+  const annotate = createAnnotate({ dict, levels, isKnown: words.isKnown, glossary, mydict });
   const mine = `chrome-extension://${extensionId}`;
 
   const tokenOk = (h) => {
@@ -92,17 +99,39 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     return b.length === tokenBuf.length && timingSafeEqual(b, tokenBuf);
   };
 
+  // 공부 기록. 확장이 실어 보낸 page.url 이 있으면 그 주소를 쓴다. 기록 실패는 응답에 영향 주지 않는다.
+  const pageUrl = (v) => (typeof v?.page?.url === 'string' && v.page.url.length <= 2000 && /^https?:\/\//i.test(v.page.url) ? v.page.url : undefined);
+  const log = (kind, text, ko, value, url) => {
+    try {
+      study.record({ kind, text, ko, url: url || pageUrl(value) });
+    } catch {
+      // 기록이 안 돼도 번역·사전은 그대로 답한다
+    }
+  };
+
+  // 번역 프롬프트의 "용어 지정": 내 사전(본문에 나온 키)이 먼저, 그다음 분야 용어집. mineKey 는 내 사전 몫(캐시 키용).
+  function termsFor(text, active) {
+    const mine = mydict.termsIn(text, MAX_TERMS);
+    const taken = new Set(mine.map((t) => t.slice(0, t.indexOf('='))));
+    const terms = [...mine, ...glossary.termsIn(text, active).filter((t) => !taken.has(t.slice(0, t.indexOf('='))))].slice(0, MAX_TERMS);
+    return { terms, mineKey: mine.join(',') };
+  }
+
   async function handleLookup(req, res, cors) {
-    const { value, status } = await readJson(req);
+    const { value, status } = await readJson(req, MAX_WIDE_BODY);
     if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
     const { word, sentence = '', force } = value ?? {};
     if (typeof word !== 'string' || !WORD_RE.test(word) || typeof sentence !== 'string' || sentence.length > MAX_SENTENCE) {
       return send(res, 400, { error: 'bad-request' }, cors);
     }
-    const ctx = parseContext(value.context);
+    const wide = parseWide(value.wide);
+    if (wide === null) return send(res, 400, { error: 'bad-request' }, cors);
+    const ctx = parseContext(value.context, wide);
     if (ctx.status) return send(res, ctx.status, { error: ctx.status === 413 ? 'too-large' : 'bad-request' }, cors);
     try {
-      send(res, 200, await lookup({ word, sentence, context: ctx.context, force: force === true }), cors);
+      const r = await lookup({ word, sentence, context: ctx.context, force: force === true, terms: mydict.termsIn(`${word} ${sentence}`, MAX_TERMS), wide });
+      log('aigloss', word, r.gloss, value);
+      send(res, 200, r, cors);
     } catch (e) {
       sendAiError(res, e, cors);
     }
@@ -116,8 +145,11 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     if (!norm) return send(res, 400, { error: 'bad-request' }, cors);
     if (norm.length > MAX_TEXT) return send(res, 413, { error: 'too-large' }, cors);
     const active = glossary.domains(value);
+    const { terms, mineKey } = termsFor(norm, active);
     try {
-      send(res, 200, await translate({ text: norm, force: force === true, domainsKey: glossary.keyOf(active), terms: glossary.termsIn(norm, active) }), cors);
+      const r = await translate({ text: norm, force: force === true, domainsKey: [glossary.keyOf(active), mineKey && `mine:${mineKey}`].filter(Boolean).join('|'), terms });
+      log('paragraph', norm.slice(0, 200), r.translation, value);
+      send(res, 200, r, cors);
     } catch (e) {
       sendAiError(res, e, cors);
     }
@@ -125,16 +157,21 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
 
   // 드래그 번역 2단계: 앞뒤 문맥·제목을 보고 AI 가 번역(문맥 번역 버튼). 상한은 context.mjs 의 LIMITS.
   async function handleTranslateContext(req, res, cors) {
-    const { value, status } = await readJson(req);
+    const { value, status } = await readJson(req, MAX_WIDE_BODY);
     if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
     const text = normalizeText(value?.text);
     if (!text) return send(res, 400, { error: 'bad-request' }, cors);
     if (text.length > LIMITS.text) return send(res, 413, { error: 'too-large' }, cors);
-    const ctx = parseContext(value.context);
+    const wide = parseWide(value.wide);
+    if (wide === null) return send(res, 400, { error: 'bad-request' }, cors);
+    const ctx = parseContext(value.context, wide);
     if (ctx.status) return send(res, ctx.status, { error: ctx.status === 413 ? 'too-large' : 'bad-request' }, cors);
     const active = glossary.domains(value);
+    const { terms, mineKey } = termsFor(text, active);
     try {
-      send(res, 200, await contextTranslate({ text, context: ctx.context, force: value.force === true, domainsKey: glossary.keyOf(active), terms: glossary.termsIn(text, active) }), cors);
+      const r = await contextTranslate({ text, context: ctx.context, force: value.force === true, domainsKey: glossary.keyOf(active), terms, wide, mineKey });
+      log('context', text, r.translation, value);
+      send(res, 200, r, cors);
     } catch (e) {
       sendAiError(res, e, cors);
     }
@@ -149,7 +186,20 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     if (text.length > LIMITS.text) return send(res, 413, { error: 'too-large' }, cors);
     try {
       const term = glossary.findPhrase(text, glossary.domains(value));
-      send(res, 200, { translation: await mt.translate(text), engine: 'apple', ...(term ? { term } : {}) }, cors);
+      // 내 사전: 선택한 글 전체가 키와 같으면 응답에 mine 을 싣는다(맥 번역이 안 돼도 내 뜻은 답한다).
+      const m = mydict.findText(text);
+      const mine = m && { ko: m.ko, ...(m.exp && { exp: m.exp }), ...(m.note && { note: m.note }) };
+      let translation;
+      try {
+        translation = await mt.translate(text);
+      } catch (e) {
+        if (!mine) throw e;
+        send(res, 200, { translation: mine.ko, engine: 'mydict', mine, ...(term ? { term } : {}) }, cors);
+        log('mt', text, mine.ko, value);
+        return;
+      }
+      log('mt', text, mine?.ko ?? translation, value);
+      send(res, 200, { translation, engine: 'apple', ...(term ? { term } : {}), ...(mine ? { mine } : {}) }, cors);
     } catch (e) {
       if (e instanceof MtUnavailableError) send(res, 503, { error: 'mt-unavailable' }, cors);
       else send(res, 502, { error: 'mt-failed' }, cors);
@@ -172,7 +222,13 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       const t = glossary.find(lemma, active) ?? glossary.find(lower, active);
       // 용어집에 없으면 사전 뜻 중 활성 분야 표시(〔수학〕 등)가 붙은 것을 "분야 뜻"으로 덧붙인다(/annotate 와 같은 규칙: 흔한 낱말은 뺀다)
       const sense = !t && e && !isCommon(levels.get(lemma)) ? pickSense(taggedGlosses(r.entries), active) : null;
-      send(res, 200, { ...r, lemma, ...(e ? { gloss: shortGloss(e.senses?.[0]?.text) } : {}), ...(t ? { term: { ko: t.ko, domain: t.domain } } : {}), ...(sense ? { sense } : {}) }, cors);
+      // 내 사전(가장 우선, 캐시 밖에서 읽는다): 철자 -> 원형 순. 약어(전부 대문자 2~6자 원래 철자)면 약어집 풀이도 붙인다(분야와 무관).
+      const m = mydict.find(lower) ?? mydict.find(lemma);
+      const mine = m && { ko: m.ko, ...(m.exp && { exp: m.exp }), ...(m.note && { note: m.note }) };
+      const ac = ACRONYM_RE.test(word) ? glossary.acronym(lower) : null;
+      const acronym = ac && { exp: ac.exp, ko: ac.ko };
+      if (r.found || mine || t || acronym) log('dict', word, mine?.ko || t?.ko || sense?.ko || (e && shortGloss(e.senses?.[0]?.text)) || acronym?.ko, value);
+      send(res, 200, { ...r, lemma, ...(e ? { gloss: shortGloss(e.senses?.[0]?.text) } : {}), ...(t ? { term: { ko: t.ko, domain: t.domain } } : {}), ...(sense ? { sense } : {}), ...(mine ? { mine } : {}), ...(acronym ? { acronym } : {}) }, cors);
     } catch (e) {
       if (e instanceof DictUnavailableError) send(res, 503, { error: 'dict-unavailable' }, cors);
       else send(res, 502, { error: 'dict-failed' }, cors);
@@ -183,11 +239,12 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
   async function handleAnnotate(req, res, cors) {
     const { value, status } = await readJson(req);
     if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
-    const { words, level = DEFAULT_LEVEL } = value ?? {};
+    const { words, level = DEFAULT_LEVEL, acronyms = [] } = value ?? {};
     if (!Array.isArray(words) || words.some((w) => typeof w !== 'string') || !ANNOTATE_LEVELS.includes(level)) return send(res, 400, { error: 'bad-request' }, cors);
-    if (words.length > MAX_ANNOTATE_WORDS) return send(res, 413, { error: 'too-large' }, cors);
+    if (!Array.isArray(acronyms) || acronyms.some((a) => typeof a !== 'string')) return send(res, 400, { error: 'bad-request' }, cors);
+    if (words.length > MAX_ANNOTATE_WORDS || acronyms.length > MAX_ACRONYMS) return send(res, 413, { error: 'too-large' }, cors);
     try {
-      send(res, 200, { items: await annotate(words.map((w) => w.toLowerCase()).filter((w) => WORD_RE.test(w)), level, glossary.domains(value)) }, cors);
+      send(res, 200, { items: await annotate(words.map((w) => w.toLowerCase()).filter((w) => WORD_RE.test(w)), level, glossary.domains(value), acronyms.filter((a) => ACRONYM_RE.test(a))) }, cors);
     } catch (e) {
       if (e instanceof DictUnavailableError) send(res, 503, { error: 'dict-unavailable' }, cors);
       else send(res, 502, { error: 'dict-failed' }, cors);
@@ -201,7 +258,30 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
     const op = parseWordsOp(value);
     if (!op) return send(res, 400, { error: 'bad-request' }, cors);
-    send(res, 200, words.apply(op), cors);
+    const out = words.apply(op);
+    if (op.op === 'save') log('save', op.word, op.gloss, value, op.url);
+    else if (op.op === 'save-phrase') log('save', op.text, op.translation, value, op.url);
+    else if (op.op === 'known') log('known', op.lemma, undefined, value);
+    send(res, 200, out, cors);
+  }
+
+  // 내 사전: GET -> { entries }, POST { op:'set'|'delete', key, ... } -> 바뀐 { entries }
+  async function handleMydict(req, res, cors) {
+    if (req.method === 'GET') return send(res, 200, mydict.all(), cors);
+    const { value, status } = await readJson(req);
+    if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+    const op = parseMydictOp(value);
+    if (!op) return send(res, 400, { error: 'bad-request' }, cors);
+    const out = mydict.apply(op);
+    if (op.op === 'set') log('mydict', op.key, op.ko, value, op.url);
+    send(res, 200, out, cors);
+  }
+
+  // 공부 기록 집계: GET /study?days=N(1~60, 기본 7)
+  function handleStudy(req, res, cors) {
+    const days = parseDays(new URL(req.url, 'http://x').searchParams.get('days') ?? undefined);
+    if (days === null) return send(res, 400, { error: 'bad-request' }, cors);
+    send(res, 200, study.report(days), cors);
   }
 
   async function handle(req, res) {
@@ -254,6 +334,14 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     if (path === '/words') {
       if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleWords(req, res, cors);
+    }
+    if (path === '/mydict') {
+      if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleMydict(req, res, cors);
+    }
+    if (path === '/study') {
+      if (req.method !== 'GET') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleStudy(req, res, cors);
     }
     if (path === '/translate') {
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);

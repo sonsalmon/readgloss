@@ -117,7 +117,9 @@ export function lemmaOf(entry, word) {
 // dict: createDict() 같은 { lookup(word) }. levels: 낱말 -> 등급 Map. isKnown: 원형 -> 아는 단어인가(아는 단어는 결과에서 뺀다).
 // glossary: createGlossary() 같은 { find(word, 활성 분야) }. 돌려주는 함수: (words, level, domains) -> { word: { lemma, level, gloss } } — 어려운 단어만.
 // domains(활성 분야, 우선순위 순)에 용어집 뜻이 있으면 gloss 를 그 뜻으로 바꾸고 term:true, domain 을 붙인다. 용어집에 없고 사전 뜻에 활성 분야 표시(〔수학〕 등)가 있으면 그 뜻을 쓴다. 용어집 덮어쓰기는 사전 캐시(known) 밖에서 해서 분야마다 뜻이 달라도 캐시가 섞이지 않는다.
-export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () => false, glossary = createGlossary() }) {
+// mydict: createMydict() 같은 { find(word), get(key) }. 내 사전은 가장 우선이라 기준 등급·아는 단어 판정·사전 캐시 앞에서, 캐시 밖에서 읽는다(바뀌면 바로 반영).
+// 돌려주는 함수의 넷째 인자 acronyms(원래 대문자 철자 목록)는 키 = 원래 철자인 { lemma, gloss, term:true, acronym:true, domain|mine } 항목을 더한다. 맥 사전은 안 부른다.
+export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () => false, glossary = createGlossary(), mydict = { find: () => null, get: () => null } }) {
   const known = new Map(); // 낱말 -> { lemma, level, gloss(첫 뜻), tagged(분야 표시 뜻 목록) } | null(사전에 없음·뜻 없음). 기준 등급·분야와 무관해서 달라도 재사용한다. 분야에 맞는 뜻은 매번 고른다.
   const rank = (l) => LEVELS.indexOf(l);
 
@@ -136,10 +138,25 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
     return v;
   }
 
-  return async function annotate(words, level = DEFAULT_LEVEL, domains = []) {
+  return async function annotate(words, level = DEFAULT_LEVEL, domains = [], acronyms = []) {
     const min = rank(level);
     const items = {};
+    // 약어: 내 사전(분야와 무관) -> 약어집(그 약어의 분야가 활성일 때만). 아는 단어(원형 = 소문자 철자)는 뺀다.
+    for (const a of new Set(acronyms)) {
+      const key = a.toLowerCase();
+      const m = mydict.get(key);
+      if (m) items[a] = { lemma: key, gloss: m.ko, term: true, mine: true, acronym: true };
+      else if (!isKnown(key)) {
+        const g = glossary.acronym(key, domains);
+        if (g) items[a] = { lemma: key, gloss: g.ko, term: true, domain: g.d, acronym: true };
+      }
+    }
     for (const w of new Set(words)) {
+      const m = mydict.find(w);
+      if (m) {
+        items[w] = { lemma: m.key, gloss: m.ko, term: true, mine: true };
+        continue;
+      }
       // ponytail: 표면형이 목록에서 이미 기준 미만이면 원형 확인 없이 쉬움. 흔한 단어는 표제어가 많아 사전이 20ms 쯤 걸리기 때문이고, 어긋나면 주석이 덜 붙을 뿐이다.
       const own = levels.get(w);
       if (own !== undefined && rank(own) < min) continue;

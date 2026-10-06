@@ -38,7 +38,7 @@ test('parseWordsOp: 잘못된 op·lemma·word·타입, http(s) 아닌 주소는 
 
 test('createWords: 처음엔 비어 있고, known/unknown 은 원형별로 저장·취소된다', () => {
   const { file, w } = fresh();
-  assert.deepEqual(w.all(), { known: {}, saved: {}, history: [] });
+  assert.deepEqual(w.all(), { known: {}, saved: {}, history: [], phrases: {} });
   assert.equal(w.isKnown('mitigation'), false);
   run(w, { op: 'known', lemma: 'mitigation' });
   assert.equal(w.isKnown('mitigation'), true);
@@ -101,7 +101,7 @@ test('createWords: 깨진 파일은 빈 상태로 시작하되 원본을 .broken
   const file = tmp();
   writeFileSync(file, '{not json');
   const w = createWords({ file });
-  assert.deepEqual(w.all(), { known: {}, saved: {}, history: [] });
+  assert.deepEqual(w.all(), { known: {}, saved: {}, history: [], phrases: {} });
   assert.equal(readFileSync(`${file}.broken`, 'utf8'), '{not json');
   const file2 = tmp();
   writeFileSync(
