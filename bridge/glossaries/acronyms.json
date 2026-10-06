@@ -94,7 +94,6 @@
  "ddos": { "exp": "Distributed Denial of Service", "ko": "분산 서비스 거부", "d": "security" },
  "mitm": { "exp": "Man-in-the-Middle", "ko": "중간자 공격", "d": "security" },
  "rat": { "exp": "Remote Access Trojan", "ko": "원격 접근 트로이 목마", "d": "security" },
- "c2": { "exp": "Command and Control", "ko": "명령·제어 서버", "d": "security" },
  "dll": { "exp": "Dynamic-Link Library", "ko": "동적 연결 라이브러리", "d": "security" },
  "elf": { "exp": "Executable and Linkable Format", "ko": "ELF 실행 파일 형식", "d": "security" },
  "vm": { "exp": "Virtual Machine", "ko": "가상 머신", "d": "security" },

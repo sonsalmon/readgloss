@@ -6,11 +6,11 @@ import { createAnnotate } from '../bridge/annotate.mjs';
 
 const data = loadAcronyms();
 
-test('acronyms.json: 약 150개(150~200), 키는 소문자 2~6자, d 는 세 분야, exp·ko 는 비지 않고 ko 는 주석이라 짧다', () => {
+test('acronyms.json: 약 150개(150~200), 키는 소문자 알파벳 2~6자, d 는 세 분야, exp·ko 는 비지 않고 ko 는 주석이라 짧다', () => {
   const keys = Object.keys(data);
   assert.ok(keys.length >= 150 && keys.length <= 200, String(keys.length));
   for (const [k, v] of Object.entries(data)) {
-    assert.match(k, /^[a-z0-9]{2,6}$/, k);
+    assert.match(k, /^[a-z]{2,6}$/, k); // 확장이 모으는 약어 후보(문자만 2~6자)와 같은 모양
     assert.deepEqual(Object.keys(v).sort(), ['d', 'exp', 'ko'], k);
     assert.ok(['security', 'ml', 'math'].includes(v.d), k);
     assert.ok(v.exp.trim() && v.ko.trim(), k);

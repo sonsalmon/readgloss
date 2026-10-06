@@ -189,17 +189,15 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       // 내 사전: 선택한 글 전체가 키와 같으면 응답에 mine 을 싣는다(맥 번역이 안 돼도 내 뜻은 답한다).
       const m = mydict.findText(text);
       const mine = m && { ko: m.ko, ...(m.exp && { exp: m.exp }), ...(m.note && { note: m.note }) };
-      let translation;
+      // 맥 번역이 안 되고 내 사전 뜻이 있으면 내 뜻만이라도 답한다(translation 은 내 뜻, engine 은 'mydict').
+      let translation = null;
       try {
         translation = await mt.translate(text);
       } catch (e) {
         if (!mine) throw e;
-        send(res, 200, { translation: mine.ko, engine: 'mydict', mine, ...(term ? { term } : {}) }, cors);
-        log('mt', text, mine.ko, value);
-        return;
       }
       log('mt', text, mine?.ko ?? translation, value);
-      send(res, 200, { translation, engine: 'apple', ...(term ? { term } : {}), ...(mine ? { mine } : {}) }, cors);
+      send(res, 200, { translation: translation ?? mine.ko, engine: translation === null ? 'mydict' : 'apple', ...(term ? { term } : {}), ...(mine ? { mine } : {}) }, cors);
     } catch (e) {
       if (e instanceof MtUnavailableError) send(res, 503, { error: 'mt-unavailable' }, cors);
       else send(res, 502, { error: 'mt-failed' }, cors);
