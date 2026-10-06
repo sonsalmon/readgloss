@@ -1,3 +1,4 @@
+import { contextKey } from './context.mjs';
 import { parseGloss } from './parse.mjs';
 
 export const WORD_RE = /^[A-Za-z][A-Za-z'’-]{0,63}$/;
@@ -14,18 +15,24 @@ const LOOKUP_TASK =
   '취약점, 완화, 인젝션, 페이로드처럼 굳어진 보안 용어는 그 용어를 그대로 쓴다. ' +
   '출력은 JSON {"gloss": "..."} 한 줄만.';
 
-export const buildPrompt = ({ word, sentence }) => `${LOOKUP_TASK}\n${JSON.stringify({ word, sentence })}`;
+// context(앞뒤 글·글 제목·소제목)가 있으면 입력 JSON 에 싣고 과제 설명에 한 줄 더한다. 없으면 예전과 같다.
+const CONTEXT_NOTE = '입력에 context 가 있으면 그 앞뒤 문맥(before·after)과 글 제목·소제목(title·headings)도 참고해 이 글 안에서의 뜻을 고른다. ';
+
+export const buildPrompt = ({ word, sentence, context }) =>
+  context ? `${CONTEXT_NOTE}${LOOKUP_TASK}\n${JSON.stringify({ word, sentence, context })}` : `${LOOKUP_TASK}\n${JSON.stringify({ word, sentence })}`;
 
 // ask({word, sentence}) -> AI 가 낸 원문. 캐시 -> AI 순서. 깨진 출력은 캐시에 넣지 않고 에러로 올린다.
 export function createLookup({ cache, ask }) {
-  return async function lookup({ word, sentence, force = false }) {
+  return async function lookup({ word, sentence, context = null, force = false }) {
     // ponytail: 캐시 키는 소문자 단어일 뿐이라 mitigated/mitigate 는 따로 저장된다. 표제어 변환(wink-lemmatizer)은 T3.
-    const key = word.toLowerCase();
+    // 문맥이 있으면(문맥에 따라 뜻이 달라진다) 문장·문맥까지 키에 넣는다. 문맥 없는 키는 예전 그대로.
+    const lower = word.toLowerCase();
+    const key = context ? `${lower}\0${contextKey(sentence, context)}` : lower;
     if (!force) {
       const hit = cache.get(key);
       if (hit !== undefined) return { gloss: hit, cached: true };
     }
-    const gloss = parseGloss(await ask({ word, sentence }));
+    const gloss = parseGloss(await ask({ word, sentence, ...(context && { context }) }));
     cache.set(key, gloss);
     return { gloss, cached: false };
   };

@@ -99,8 +99,10 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     if (typeof word !== 'string' || !WORD_RE.test(word) || typeof sentence !== 'string' || sentence.length > MAX_SENTENCE) {
       return send(res, 400, { error: 'bad-request' }, cors);
     }
+    const ctx = parseContext(value.context);
+    if (ctx.status) return send(res, ctx.status, { error: ctx.status === 413 ? 'too-large' : 'bad-request' }, cors);
     try {
-      send(res, 200, await lookup({ word, sentence, force: force === true }), cors);
+      send(res, 200, await lookup({ word, sentence, context: ctx.context, force: force === true }), cors);
     } catch (e) {
       sendAiError(res, e, cors);
     }
