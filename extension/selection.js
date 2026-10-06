@@ -40,6 +40,27 @@
     .mderr[hidden] { display: none; }
   `;
 
+  // "기억할 표현" 목록의 모양(드래그 카드와 문단 번역 블록이 같이 쓴다). 토큰은 바깥(.card 또는 .blk)이 정한다.
+  const EXPR_CSS = `
+    .exps { margin-top: 10px; }
+    .exps-title { color: var(--rg-accent); font-size: 12px; font-weight: 700; }
+    .exps ul { list-style: none; margin: 2px 0 0; padding: 0; }
+    .exps li { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; }
+    .exp-text { flex: 1 1 auto; min-width: 0; font-size: 13px; word-break: keep-all; overflow-wrap: anywhere; }
+    .exp-en { font-weight: 700; }
+    .star { all: unset; flex: none; box-sizing: border-box; cursor: pointer; min-width: 28px; text-align: center; padding: 0 6px; border-radius: 7px;
+      border: 1px solid var(--rg-border, rgba(128,128,128,.45)); color: inherit; font-size: 13px; line-height: 1.6; }
+    .star:hover { background: var(--rg-accent-soft, rgba(47,111,235,.10)); border-color: var(--rg-accent); color: var(--rg-accent); }
+    .star:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: 2px; }
+    .star.on { color: var(--rg-accent); border-color: var(--rg-accent); }
+    .star[aria-disabled="true"] { opacity: .55; cursor: default; }
+    .exps-err { margin-top: 2px; font-size: 12px; opacity: .8; }
+    .exps-err[hidden] { display: none; }
+    .blk { --rg-accent: #2f6feb; --rg-accent-soft: rgba(47,111,235,.10); }
+    @media (prefers-color-scheme: dark) { :host(:not([data-theme="light"])) .blk { --rg-accent: #6b9bff; --rg-accent-soft: rgba(107,155,255,.14); } }
+    :host([data-theme="dark"]) .blk { --rg-accent: #6b9bff; --rg-accent-soft: rgba(107,155,255,.14); }
+  `;
+
   // 카드 디자인 토큰·모양은 content.js 의 사전 카드와 같다(바꿀 땐 같이 바꾼다).
   const DARK = `--rg-bg: #1e2127; --rg-fg: #e6e8eb; --rg-muted: #9aa3ad; --rg-border: #343a44; --rg-accent: #6b9bff;
     --rg-accent-soft: rgba(107,155,255,.14); --rg-shadow: 0 8px 28px rgba(0,0,0,.45);`;
@@ -72,6 +93,7 @@
     .notice { margin-top: 8px; }
     .notice[hidden] { display: none; }
     ${MD_CSS}
+    ${EXPR_CSS}
   `;
 
   let settings = globalThis.readglossSettings?.normalize({}) ?? { selectionTranslate: true, theme: 'auto' }; // 저장된 값을 읽기 전에는 기본값
@@ -237,6 +259,80 @@
   }
   globalThis.readglossMydict = { CSS: MD_CSS, create: createMydict }; // content.js 의 사전 카드도 클릭·그리기 때 참조한다(그쪽이 먼저 로드되므로 호출 때 읽는다)
 
+  // ---- 기억할 표현 목록: "en — ko [☆]" 줄들. 드래그 카드(문맥 번역)와 문단 번역 블록(paragraph.js)이 같이 쓴다. ----
+  let knownPhrases = {}; // 마지막으로 받은 단어장의 구·문장(★ 상태). 목록을 만들 때마다 다시 받는다
+  const liveLists = new Set(); // 지금 떠 있는 목록들의 새로고침(같은 표현이 짧은·넓은 문맥 목록에 같이 있을 때 ★ 이 같이 바뀌게)
+  const refreshLists = () => {
+    for (const f of liveLists) f() || liveLists.delete(f);
+  };
+  // list: 응답의 expressions. sentence: 표현이 나온 원문(1000자까지 저장). inline: 페이지 글 사이에 끼우는 모양. onChange(): 높이가 달라질 때.
+  // 반환: { el(없으면 null), rows }. 모든 글은 textContent 로만 넣는다.
+  function createExpressions(list, { sentence = '', inline = false, onChange = () => {} } = {}) {
+    const rows = core.expressionRows(list, knownPhrases);
+    if (!rows.length) return { el: null, rows };
+    const box = el('div', inline ? 'exps blk' : 'exps');
+    const ul = el('ul');
+    const err = el('div', 'exps-err');
+    err.hidden = true;
+    err.setAttribute('role', 'status');
+    const items = rows.map((row) => {
+      const text = el('span', 'exp-text');
+      text.append(el('span', 'exp-en', row.en), ` — ${row.ko}`);
+      const btn = el('button', 'star');
+      btn.type = 'button';
+      const li = el('li');
+      li.append(text, btn);
+      ul.append(li);
+      const it = { row, btn };
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation(); // 이 블록이 든 문단·링크의 페이지 동작에 닿지 않게(preventDefault 는 하지 않는다)
+        toggle(it);
+      });
+      return it;
+    });
+    const paint = () => {
+      for (const { row, btn } of items) {
+        const m = core.expressionButton(row.en, row.id != null);
+        btn.textContent = m.text;
+        btn.setAttribute('aria-label', m.label);
+        btn.classList.toggle('on', row.id != null);
+      }
+    };
+    const refresh = () => {
+      for (const it of items) it.row.id = core.findPhrase(knownPhrases, it.row.en);
+      paint();
+      return box.isConnected; // 카드가 닫혔거나 문단 번역을 걷었으면 false -> 목록에서 뺀다
+    };
+    async function toggle(it) {
+      if (it.btn.getAttribute('aria-disabled') === 'true') return;
+      it.btn.setAttribute('aria-disabled', 'true');
+      err.hidden = true;
+      const saved = it.row.id != null;
+      const r = await send(core.expressionToggle(it.row, { sentence, url: location.href, title: document.title }));
+      it.btn.removeAttribute('aria-disabled');
+      if (r && !r.error) {
+        it.row.id = saved ? null : (r.id ?? core.findPhrase(r.phrases, it.row.en));
+        if (r.phrases) knownPhrases = r.phrases;
+        refreshLists();
+      } else {
+        err.hidden = false;
+        err.textContent = errText(r);
+      }
+      paint();
+      onChange();
+    }
+    box.append(el('div', 'exps-title', '기억할 표현'), ul, err);
+    paint();
+    liveLists.add(refresh);
+    send({ type: 'words', op: 'get' }).then((s) => {
+      if (!s?.known) return;
+      knownPhrases = s.phrases ?? {};
+      refreshLists();
+    }, () => {});
+    return { el: box, rows };
+  }
+  globalThis.readglossExpressions = { CSS: EXPR_CSS, create: createExpressions }; // paragraph.js 의 번역 블록도 클릭·그리기 때 참조한다(그쪽이 먼저 로드되므로 호출 때 읽는다)
+
   function close() {
     seq++;
     current = null;
@@ -263,8 +359,9 @@
     const body = el('div', 'out', '');
     body.setAttribute('role', 'status');
     const note = el('div', 'note');
-    box.append(el('div', 'ctx-title', title), body, note);
-    return { box, body, note };
+    const exps = el('div'); // 기억할 표현(있을 때만)
+    box.append(el('div', 'ctx-title', title), body, note, exps);
+    return { box, body, note, exps };
   }
 
   // text: 선택 원문(정리한 것). 너무 길면(long) 안내만 보인다. 모든 글은 textContent 로만 넣는다(innerHTML 금지).
@@ -377,6 +474,7 @@
     const my = seq;
     const s = await send({ type: 'words', op: 'get' });
     if (my !== seq || !s?.known) return;
+    knownPhrases = s.phrases ?? {};
     current.phraseId = core.findPhrase(s.phrases, current.text);
     ui.saveBtn.removeAttribute('aria-disabled');
     paintSaveBtn();
@@ -394,7 +492,10 @@
     const r = await send(message);
     if (my !== seq) return;
     ui.saveBtn.removeAttribute('aria-disabled');
-    if (r && !r.error) current.phraseId = saved ? null : (r.id ?? core.findPhrase(r.phrases, current.text));
+    if (r && !r.error) {
+      current.phraseId = saved ? null : (r.id ?? core.findPhrase(r.phrases, current.text));
+      if (r.phrases) knownPhrases = r.phrases;
+    }
     else notify(errText(r));
     paintSaveBtn();
     place();
@@ -410,13 +511,16 @@
     sec.body.className = 'out';
     sec.body.textContent = wide ? '글 앞뒤와 목차를 넓게 보고 번역 중…' : '번역 중…';
     sec.note.textContent = '';
+    sec.exps.replaceChildren();
     place();
     const r = await send({ type: 'translate-context', text: current.text, context: contextFor(current.range, wide), wide, ...hint() });
     if (my !== seq) return;
     ui.ctxBtn.removeAttribute('aria-disabled');
     if (r?.translation) {
       sec.body.textContent = r.translation;
-      sec.note.textContent = r.note ?? '';
+      const list = createExpressions(r.expressions, { sentence: current.text, onChange: place });
+      if (list.el) sec.exps.append(list.el);
+      sec.note.textContent = core.noteText(r.note, list.rows); // note 는 표현이 없을 때만(겹침 방지)
       if (wide) [current.wide, current.wideNote] = [r.translation, r.note ?? ''];
       else [current.ctx, current.ctxNote] = [r.translation, r.note ?? ''];
     } else {

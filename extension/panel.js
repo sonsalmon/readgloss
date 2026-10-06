@@ -100,11 +100,14 @@
     return out;
   }
 
+  // 패널 위에 뜬 사전 카드(content.js 의 readgloss-card, 저장된 문장에서 더블클릭해 연 것)를 눌러도 패널은 닫지 않는다.
+  const isCardPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-card');
+
   const themeAttr = (theme) => (theme === 'light' || theme === 'dark' ? theme : null); // auto 는 속성 없음(prefers-color-scheme)
 
   globalThis.readglossPanelCore = {
     getPath, patchFor, sortTabs, mountPane, levelIndex, levelAt, RANGES, CHOICES, TOGGLES, sliderPatch, sliderValue,
-    cleanSite, addSite, removeSite, resetPatch, clampTop, dragTop, mergePatch, themeAttr, MAX_SITES,
+    cleanSite, addSite, removeSite, resetPatch, clampTop, dragTop, mergePatch, themeAttr, isCardPath, MAX_SITES,
   };
 
   if (typeof document === 'undefined' || globalThis.readglossPanelLoaded) return; // node 시험·중복 주입: 여기까지
@@ -450,8 +453,12 @@
   }
   fab.setAttribute('aria-label', 'readgloss 패널 열기');
 
-  document.addEventListener('mousedown', (e) => isOpen && !e.composedPath().includes(host) && closePanel({ restoreFocus: false }), true);
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && isOpen && closePanel(), true);
+  document.addEventListener('mousedown', (e) => {
+    const path = e.composedPath();
+    if (isOpen && !path.includes(host) && !C.isCardPath(path)) closePanel({ restoreFocus: false });
+  }, true);
+  // 사전 카드가 이 Escape 로 닫혔으면(content.js 가 표시를 남긴다) 패널은 그대로 둔다
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && isOpen && !e.readglossCardClosed && closePanel(), true);
   window.addEventListener('readgloss:open-panel', (e) => openPanel(e.detail?.tab));
   try {
     chrome.runtime.onMessage.addListener((msg, sender) => {

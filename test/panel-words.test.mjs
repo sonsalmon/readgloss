@@ -165,3 +165,65 @@ test('mydictEventDetail / unsavePhraseMessage: 계약 모양', () => {
   assert.deepEqual(W.mydictEventDetail('delete', 'pca'), { set: [], delete: ['pca'] });
   assert.deepEqual(W.unsavePhraseMessage('abc'), { type: 'words', op: 'unsave-phrase', id: 'abc' });
 });
+
+// ---- T17b: 구·문장 탭의 주 번역·표현·필터, 저장 문장에서 낱말 더블클릭 ----
+await import('../extension/text.js'); // readgloss.cleanSelection
+const mixed = {
+  s1: { text: 'Defense in depth layers multiple controls.', translation: '맥 번역 글', context: { translation: '보안에서 심층 방어는 여러 통제를 겹친다.', note: '비유' }, url: 'https://a.test/x', title: 'Layered', ts: 100 },
+  s2: { text: 'Wide sentence.', translation: '맥 번역 둘', context: { translation: '넓은 문맥으로 본 번역', wide: true }, ts: 200 },
+  s3: { text: 'Only machine translated.', translation: '맥 번역만 있음', ts: 300 },
+  e1: { text: 'delve into', translation: '~을 깊이 있게 탐구하다', kind: 'expression', sentence: 'This module will delve into the math.', url: 'https://c.test/p', title: 'Course', ts: 400 },
+};
+
+test('phrasePrimary: 문맥 번역이 있으면 그것(넓으면 넓은 문맥 번역), 맥 번역은 없을 때만', () => {
+  assert.deepEqual(W.phrasePrimary(mixed.s1), { title: '문맥 번역', text: '보안에서 심층 방어는 여러 통제를 겹친다.' });
+  assert.deepEqual(W.phrasePrimary(mixed.s2), { title: '넓은 문맥 번역', text: '넓은 문맥으로 본 번역' });
+  assert.deepEqual(W.phrasePrimary(mixed.s3), { title: '', text: '맥 번역만 있음' });
+  assert.deepEqual(W.phrasePrimary(mixed.e1), { title: '', text: '~을 깊이 있게 탐구하다' });
+  assert.deepEqual(W.phrasePrimary({ text: 'x y' }), { title: '', text: '' });
+});
+
+test('phraseRows: 줄마다 kind(기본 문장)·sentence·주 번역·저장 제목, 맥 번역 필드는 주 번역에 안 섞인다', () => {
+  const rows = W.phraseRows(mixed);
+  assert.deepEqual(rows.map((r) => [r.id, r.kind]), [['e1', 'expression'], ['s3', 'sentence'], ['s2', 'sentence'], ['s1', 'sentence']]);
+  const e = rows[0];
+  assert.deepEqual([e.sentence, e.primary.text, e.sourceTitle], ['This module will delve into the math.', '~을 깊이 있게 탐구하다', 'Course']);
+  assert.equal(rows[3].primary.title, '문맥 번역');
+  assert.equal(rows[3].sentence, '');
+  assert.equal(rows[1].sourceTitle, '');
+});
+
+test('phraseRows: 종류 필터(all·expression·sentence)와 검색(출처 문장도)', () => {
+  assert.deepEqual(W.phraseRows(mixed, '', 'expression').map((r) => r.id), ['e1']);
+  assert.deepEqual(W.phraseRows(mixed, '', 'sentence').map((r) => r.id), ['s3', 's2', 's1']);
+  assert.equal(W.phraseRows(mixed, '', 'all').length, 4);
+  assert.equal(W.phraseRows(mixed, '', 'nonsense').length, 4, '모르는 값은 전체');
+  assert.deepEqual(W.phraseRows(mixed, 'the math').map((r) => r.id), ['e1'], '출처 문장도 검색된다');
+  assert.deepEqual(W.phraseRows(mixed, 'delve', 'sentence'), []);
+});
+
+test('PHRASE_FILTERS·phraseCounts: 전체·표현·문장 칩과 개수', () => {
+  assert.deepEqual(W.PHRASE_FILTERS.map((f) => [f.id, f.title]), [['all', '전체'], ['expression', '표현'], ['sentence', '문장']]);
+  assert.deepEqual(W.phraseCounts(mixed), { all: 4, expression: 1, sentence: 3 });
+  assert.deepEqual(W.phraseCounts(undefined), { all: 0, expression: 0, sentence: 0 });
+});
+
+test('pickWord: 더블클릭으로 잡힌 글에서 영어 낱말만(부호·공백은 걷고, 한글·숫자·여러 낱말은 null)', () => {
+  assert.deepEqual(W.pickWord('delve '), { word: 'delve', start: 0 });
+  assert.equal(W.pickWord('"module,"').word, 'module');
+  for (const bad of ['', '한국어', '2fa', 'two words', null, undefined]) assert.equal(W.pickWord(bad), null, String(bad));
+});
+
+test('lookupDetail: 저장 문장을 문맥·문장으로, 저장 주소·제목을 출처로 readgloss:lookup 에 싣는다', () => {
+  const rect = { left: 10, top: 20, bottom: 40, width: 5 };
+  const d = W.lookupDetail({ word: 'delve', sentence: 'This module will delve into the math.', rect, url: 'https://c.test/p', title: 'Course' });
+  assert.deepEqual(d, {
+    word: 'delve', sentence: 'This module will delve into the math.', rect: { left: 10, top: 20, bottom: 40 },
+    context: { before: 'This module will delve into the math.', after: '', title: 'Course', headings: [] },
+    source: { url: 'https://c.test/p', title: 'Course' },
+  });
+  const none = W.lookupDetail({ word: 'delve', sentence: 'S.', rect, url: '', title: undefined });
+  assert.equal('source' in none, false, '저장된 주소가 없으면 출처를 싣지 않는다(카드가 지금 페이지를 쓴다)');
+  assert.equal(none.context.title, '');
+  assert.equal(W.lookupDetail({ word: 'a', sentence: 'x'.repeat(1500), rect }).sentence.length, 1000);
+});

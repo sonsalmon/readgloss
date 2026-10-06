@@ -182,3 +182,11 @@ test('목록 입력 정리: 용어집 사이트에도 같은 규칙(와일드카
 test('TOGGLES: 드래그 번역 스위치가 있다', () => {
   assert.ok(C.TOGGLES.some((t) => t.path === 'selectionTranslate'));
 });
+
+test('isCardPath: 클릭 경로에 사전 카드(readgloss-card) 호스트가 있으면 패널의 바깥 클릭이 아니다(T17)', () => {
+  const n = (localName) => ({ localName });
+  assert.equal(C.isCardPath([n('div'), n('readgloss-card'), n('html')]), true);
+  assert.equal(C.isCardPath([n('div'), n('readgloss-ui'), n('html')]), false);
+  assert.equal(C.isCardPath([]), false);
+  assert.equal(C.isCardPath(undefined), false);
+});

@@ -76,7 +76,7 @@
   let host = null;
   let ui = null; // { card, scroll, ai, aiBtn, saveBtn, knownBtn }
   let seq = 0; // 닫거나 새로 열 때마다 올려서 늦게 온 응답을 버린다
-  let current = null; // { word, sentence, anchor, ai, aiWide, lemma, gloss, state, mine, acr, termKo, senseKo, firstSense }  lemma·gloss 는 /dict 응답, state 는 /words 응답, ai·aiWide 는 AI 문맥 뜻(짧은·넓은)
+  let current = null; // { word, sentence, anchor, context?, source?, ai, aiWide, lemma, gloss, state, mine, acr, termKo, senseKo, firstSense }  lemma·gloss 는 /dict 응답, state 는 /words 응답, ai·aiWide 는 AI 문맥 뜻(짧은·넓은)
 
   // 사전·AI 가 준 글은 textContent 로만 넣는다(innerHTML 금지).
   function el(tag, cls, text) {
@@ -223,13 +223,16 @@
     }
   }
 
+  // 단어장·최근 기록에 남길 출처 주소: 패널의 저장 문장에서 연 카드는 그 문장을 저장한 페이지, 아니면 지금 페이지
+  const sourceUrl = () => current.source?.url ?? location.href.slice(0, 2000);
+
   async function toggleWord(key) {
     if (!current.state || ui[`${key}Btn`].getAttribute('aria-disabled') === 'true') return;
     const W = globalThis.readglossWords;
     const my = seq;
     const op = W.buttonModel({ saved: !!current.state.saved[current.lemma], known: !!current.state.known[current.lemma] })[key].op;
     ui[`${key}Btn`].setAttribute('aria-disabled', 'true');
-    const r = await send(W.messageFor(op, { lemma: current.lemma, word: current.word, gloss: current.gloss, sentence: current.sentence, url: location.href.slice(0, 2000) }));
+    const r = await send(W.messageFor(op, { lemma: current.lemma, word: current.word, gloss: current.gloss, sentence: current.sentence, url: sourceUrl() }));
     if (my !== seq) return;
     if (r?.known && r.saved) {
       current.state = r;
@@ -248,7 +251,7 @@
   async function loadWordState(r, my) {
     current.lemma = r.lemma;
     current.gloss = r.gloss ?? '';
-    if (r.found) send({ type: 'words', op: 'history', lemma: r.lemma, word: current.word, gloss: current.gloss, sentence: current.sentence, url: location.href.slice(0, 2000) }).catch(() => {});
+    if (r.found) send({ type: 'words', op: 'history', lemma: r.lemma, word: current.word, gloss: current.gloss, sentence: current.sentence, url: sourceUrl() }).catch(() => {});
     const s = await send({ type: 'words', op: 'get' });
     if (my !== seq || !s?.known) return; // 상태를 못 받으면 버튼은 꺼진 채로 둔다
     current.state = s;
@@ -337,8 +340,11 @@
     paintAcronym();
   }
 
+  // 저장 문장에서 연 카드(context 가 이미 주어짐)는 넓힐 글이 없어서 [더 넓게 보기] 단계가 없다.
+  const aiStage = () => ({ done: current.ai !== undefined, wide: current.aiWide !== undefined || (current.context !== undefined && current.ai !== undefined) });
+
   function paintAiBtn() {
-    const m = globalThis.readglossSelection.stageButton('ai', { done: current.ai !== undefined, wide: current.aiWide !== undefined });
+    const m = globalThis.readglossSelection.stageButton('ai', aiStage());
     ui.aiBtn.hidden = m.hidden;
     ui.aiBtn.textContent = m.text;
     ui.aiBtn.setAttribute('aria-label', m.label);
@@ -348,14 +354,14 @@
   async function askAi() {
     if (ui.aiBtn.getAttribute('aria-disabled') === 'true') return;
     const my = seq;
-    const wide = globalThis.readglossSelection.stageButton('ai', { done: current.ai !== undefined, wide: current.aiWide !== undefined }).wide;
+    const wide = globalThis.readglossSelection.stageButton('ai', aiStage()).wide;
     const box = wide ? ui.aiWide : ui.ai;
     ui.aiBtn.setAttribute('aria-disabled', 'true');
     box.hidden = false;
     box.className = 'ai';
     box.textContent = wide ? '글 앞뒤와 목차를 넓게 보고 찾는 중…' : '가져오는 중…';
     place();
-    const context = current.range && globalThis.readglossContextFor?.(current.range, wide); // selection.js 가 나중에 로드되므로 호출 때 참조한다
+    const context = current.context ?? (current.range && globalThis.readglossContextFor?.(current.range, wide)); // selection.js 가 나중에 로드되므로 호출 때 참조한다
     const r = await send({ type: 'lookup', word: current.word, sentence: current.sentence, wide, ...(context && { context }) });
     if (my !== seq) return;
     ui.aiBtn.removeAttribute('aria-disabled');
@@ -404,9 +410,10 @@
   }
 
   // rect: 뷰포트 좌표의 단어 사각형. range: 단어를 담은 선택(AI 문맥 뜻이 앞뒤 문맥을 뽑을 때 쓴다).
-  function openCard(word, sentence, r, range) {
+  // extras: 패널의 저장 문장에서 연 카드의 { context(그 문장), source(저장한 페이지) }. 페이지 글이 아니라 range 가 없다.
+  function openCard(word, sentence, r, range, extras = {}) {
     if (host) close();
-    current = { word, sentence, range: range?.cloneRange(), anchor: { left: r.left + scrollX, top: r.top + scrollY, bottom: r.bottom + scrollY } };
+    current = { word, sentence, range: range?.cloneRange(), ...extras, anchor: { left: r.left + scrollX, top: r.top + scrollY, bottom: r.bottom + scrollY } };
     buildCard();
     askDict().catch(close); // 동기적으로 "찾는 중…" 부터 그린다
   }
@@ -416,7 +423,7 @@
     const d = e.detail;
     if (!globalThis.readgloss.isEnglishWord(d?.word) || typeof d.sentence !== 'string' || ![d.rect?.left, d.rect?.top, d.rect?.bottom].every(Number.isFinite)) return;
     try {
-      openCard(d.word, d.sentence, d.rect, d.range);
+      openCard(d.word, d.sentence, d.rect, d.range, globalThis.readglossSelection.lookupExtras(d));
     } catch {
       // 페이지를 깨뜨리지 않는다
     }
@@ -434,5 +441,5 @@
     true,
   );
   document.addEventListener('mousedown', (e) => host && !e.composedPath().includes(host) && close(), true);
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && host && close(), true);
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && host && ((e.readglossCardClosed = true), close()), true); // 표시: 패널(panel.js)이 같은 Escape 로 같이 닫히지 않게
 })();

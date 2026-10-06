@@ -106,6 +106,45 @@
   }
   const findPhrase = (phrases, text) => Object.entries(phrases ?? {}).find(([, p]) => p?.text === text)?.[0] ?? null;
 
+  // ---- 기억할 표현(다리가 문맥·문단 번역에 붙여 주는 expressions) ----
+  const MAX_EXPRESSIONS = 6;
+  // 응답 값 -> 보여 줄 줄 [{ en, ko, id }]. 다리가 이미 걸렀어도 모양이 틀린 항목(en 2~60자 영어, ko 1~60자)은 버린다. id: 이미 담은 구·문장 id(없으면 null).
+  function expressionRows(list, phrases) {
+    const rows = [];
+    for (const x of Array.isArray(list) ? list : []) {
+      const en = norm(x?.en);
+      const ko = norm(x?.ko);
+      if (en.length < 2 || en.length > 60 || !/[A-Za-z]/.test(en) || !ko || ko.length > 60) continue;
+      rows.push({ en, ko, id: findPhrase(phrases, en) });
+      if (rows.length === MAX_EXPRESSIONS) break;
+    }
+    return rows;
+  }
+  // note 는 표현 목록이 비었을 때만 보인다(둘이 겹치지 않게). 보일 글을 돌려준다.
+  const noteText = (note, rows) => (rows.length === 0 ? norm(note) : '');
+  const expressionButton = (en, saved) =>
+    saved ? { text: '★', label: `★ ${en} 단어장에 있음, 누르면 빼기` } : { text: '☆', label: `☆ ${en} 단어장에 추가` };
+  // 줄 하나의 단추 -> 다리에 보낼 메시지. src: { sentence: 표현이 나온 원문, url, title }
+  function expressionToggle({ en, ko, id }, { sentence = '', url, title } = {}) {
+    if (id) return { type: 'words', op: 'unsave-phrase', id };
+    const msg = { type: 'words', op: 'save-phrase', text: en, translation: clip(ko, 2000), kind: 'expression' };
+    if (clip(sentence, MAX_TEXT)) msg.sentence = clip(sentence, MAX_TEXT);
+    if (clip(url, 2000)) msg.url = clip(url, 2000);
+    if (clip(title, 200)) msg.title = clip(title, 200);
+    return msg;
+  }
+
+  // ---- window 'readgloss:lookup' 의 덧붙임(패널의 저장 문장에서 낱말을 더블클릭할 때) ----
+  // context: 그 문장을 앞뒤 문맥으로 쓴다. source: 단어장에 담을 때 출처 주소. 페이지가 보낼 수도 있는 이벤트라 모양이 틀리면 버린다(주소는 http·https 만).
+  function lookupExtras(d) {
+    const c = d?.context;
+    const s = d?.source;
+    const before = typeof c?.before === 'string' ? clip(c.before, MAX_SIDE) : '';
+    const context = before ? { before, after: clip(c.after, MAX_SIDE), title: clip(c.title, MAX_TITLE), headings: [] } : undefined;
+    const source = typeof s?.url === 'string' && /^https?:\/\//.test(s.url) ? { url: s.url.slice(0, 2000), title: clip(s.title, MAX_TITLE) } : undefined;
+    return { context, source };
+  }
+
   // ---- 약어 ----
   const isAcronym = (s) => typeof s === 'string' && /^[A-Z]{2,6}$/.test(s);
   const STOP = new Set(['of', 'and', 'the', 'for', 'in', 'on', 'to', 'a', 'an', 'with', 'by', 'or']);
@@ -141,6 +180,6 @@
 
   globalThis.readglossSelection = {
     MAX_TEXT, MAX_SIDE, MAX_TITLE, MAX_HEADINGS, WIDE_SIDE, WIDE_HEADINGS,
-    classify, around, buildContext, pickHeadings, stageButton, mydictKey, firstMeaning, bestMeaning, mydictMessage, phraseMessage, findPhrase, isAcronym, expandAcronym, acronymLine,
+    classify, around, buildContext, pickHeadings, stageButton, mydictKey, firstMeaning, bestMeaning, mydictMessage, phraseMessage, findPhrase, MAX_EXPRESSIONS, expressionRows, noteText, expressionButton, expressionToggle, lookupExtras, isAcronym, expandAcronym, acronymLine,
   };
 })();

@@ -89,17 +89,46 @@
   };
   const norm = (s) => String(s ?? '').toLowerCase();
 
-  // 구·문장: 최근 저장순. 검색은 원문·맥 번역·문맥 번역 어디든 포함 일치(대소문자 무시).
-  function phraseRows(phrases, query = '') {
+  // 구·문장 종류 칩(T17). kind 가 없거나 모르는 값이면 문장(옛 기록).
+  const PHRASE_FILTERS = [{ id: 'all', title: '전체' }, { id: 'expression', title: '표현' }, { id: 'sentence', title: '문장' }];
+  const kindOf = (p) => (p?.kind === 'expression' ? 'expression' : 'sentence');
+  const phraseCounts = (phrases) => {
+    const kinds = Object.values(phrases ?? {}).map(kindOf);
+    return { all: kinds.length, expression: kinds.filter((k) => k === 'expression').length, sentence: kinds.filter((k) => k === 'sentence').length };
+  };
+
+  // 주 번역: 문맥 번역(넓으면 넓은 문맥 번역)이 있으면 그것, 맥 번역은 문맥 번역이 없을 때만 보인다. 표현의 translation 은 이 문맥의 뜻이다.
+  function phrasePrimary(p) {
+    const c = p?.context?.translation;
+    return c ? { title: p.context.wide ? '넓은 문맥 번역' : '문맥 번역', text: c } : { title: '', text: p?.translation ?? '' };
+  }
+
+  // 구·문장: 최근 저장순. 검색은 원문·맥 번역·문맥 번역·출처 문장 어디든 포함 일치(대소문자 무시). filter: all·expression·sentence.
+  function phraseRows(phrases, query = '', filter = 'all') {
     const q = norm(query).trim();
     return Object.entries(phrases ?? {})
       .map(([id, p]) => ({ id, ...p }))
       .sort((a, b) => b.ts - a.ts)
-      .filter((p) => !q || [p.text, p.translation, p.context?.translation, p.context?.note].some((f) => norm(f).includes(q)))
+      .filter((p) => (filter === 'expression' || filter === 'sentence' ? kindOf(p) === filter : true))
+      .filter((p) => !q || [p.text, p.translation, p.context?.translation, p.context?.note, p.sentence].some((f) => norm(f).includes(q)))
       .map((p) => ({
         id: p.id, text: p.text, preview: clip(p.text, 300), translation: p.translation ?? '', context: p.context ?? null,
+        kind: kindOf(p), sentence: p.sentence ?? '', primary: phrasePrimary(p), sourceTitle: p.title ?? '',
         title: p.title || hostOf(p.url ?? ''), href: safeHref(p.url ?? ''), ts: p.ts,
       }));
+  }
+
+  // ---- 저장된 문장에서 낱말 더블클릭 -> 원래 사이트에서처럼 사전 카드(window 'readgloss:lookup') ----
+  const pickWord = (raw) => globalThis.readgloss.cleanSelection(raw);
+  // 카드가 쓰는 모양: sentence·context 는 저장 문장(1000자까지), source 는 저장된 출처(주소가 없으면 빼서 카드가 지금 페이지를 쓴다). rect 는 뷰포트 좌표.
+  function lookupDetail({ word, sentence, rect, url, title }) {
+    const s = String(sentence ?? '').slice(0, 1000);
+    const t = String(title ?? '');
+    return {
+      word, sentence: s, rect: { left: rect.left, top: rect.top, bottom: rect.bottom },
+      context: { before: s, after: '', title: t, headings: [] },
+      ...(url && { source: { url, title: t } }),
+    };
   }
 
   // 내 사전: 최근에 고친 순. 검색은 key 앞부분 또는 뜻·풀이·메모 포함.
@@ -137,7 +166,7 @@
 
   globalThis.readglossWords = {
     LISTS, SUBS, formatDate, counts, countsAll, actionsFor, rowsFor, buttonModel, eventDetail, messageFor,
-    clip, phraseRows, mydictRows, checkMydict, mydictMessage, mydictEventDetail, unsavePhraseMessage,
+    clip, PHRASE_FILTERS, phraseCounts, phrasePrimary, phraseRows, pickWord, lookupDetail, mydictRows, checkMydict, mydictMessage, mydictEventDetail, unsavePhraseMessage,
   };
 
   // ---- 그리기 ----
@@ -180,9 +209,14 @@
     .act.primary { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-accent); font-weight: 600; }
     .ptext { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 600; overflow-wrap: anywhere; }
     .ptrans { margin-top: 2px; overflow-wrap: anywhere; }
-    details { margin-top: 4px; color: var(--w-muted); font-size: 12.5px; }
-    summary { cursor: pointer; }
-    details p { margin: 3px 0 0 0; color: var(--w-fg); overflow-wrap: anywhere; }
+    .plabel { margin-top: 4px; color: var(--w-accent); font-size: 12px; font-weight: 700; }
+    .pexp { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+    .badge { flex: none; padding: 0 7px; border-radius: 999px; background: var(--w-soft); color: var(--w-accent); font-size: 11.5px; font-weight: 700; }
+    .psent { margin-top: 2px; color: var(--w-muted); font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+    .kinds { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+    .chip { padding: 1px 9px; border-radius: 999px; border: 1px solid var(--w-border); background: none; font-size: 12.5px; }
+    .chip[aria-pressed="true"] { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-accent); font-weight: 600; }
+    .lk { cursor: text; }
     .form { display: grid; gap: 6px; padding: 8px 0; }
     .form label { display: grid; gap: 2px; font-size: 12px; color: var(--w-muted); }
     .form input { box-sizing: border-box; width: 100%; padding: 4px 8px; border-radius: 7px; border: 1px solid var(--w-border); background: none; color: var(--w-fg); font: inherit; font-size: 13.5px; }
@@ -220,6 +254,7 @@
     let state = null; // GET /words 응답(단어장·아는 단어·최근 찾은 단어·phrases)
     let mine = null; // GET /mydict 의 entries
     let list = 'saved';
+    let phraseKind = 'all'; // 구·문장 종류 칩(전체·표현·문장)
     let query = '';
     let busy = false;
     let message = '불러오는 중…';
@@ -237,6 +272,9 @@
     const subs = el('div', 'subs');
     subs.setAttribute('role', 'group');
     subs.setAttribute('aria-label', '내 단어 목록');
+    const kinds = el('div', 'kinds');
+    kinds.setAttribute('role', 'group');
+    kinds.setAttribute('aria-label', '구·문장 종류');
     const search = el('input', 'q');
     search.type = 'search';
     search.placeholder = '찾기: 단어는 앞부분, 구·문장·내 사전은 포함';
@@ -270,7 +308,7 @@
     addBar.append(addToggle, addForm);
 
     const ul = el('ul');
-    root.append(style, subs, search, status, addBar, ul);
+    root.append(style, subs, kinds, search, status, addBar, ul);
     container.replaceChildren(root);
 
     const subBtns = W.SUBS.map((l) => {
@@ -282,6 +320,16 @@
         draw();
       });
       subs.append(b);
+      return b;
+    });
+    const chipBtns = W.PHRASE_FILTERS.map((f) => {
+      const b = el('button', 'chip');
+      b.type = 'button';
+      b.addEventListener('click', () => {
+        phraseKind = f.id;
+        draw();
+      });
+      kinds.append(b);
       return b;
     });
     search.addEventListener('input', () => {
@@ -376,6 +424,24 @@
       draw();
     }
 
+    // 저장된 문장(단어장 예문·구·문장 원문·표현의 출처 문장)에서 낱말을 더블클릭하면 원래 사이트에서처럼 사전 카드가 뜬다(content.js 가 'readgloss:lookup' 을 받는다).
+    const sources = new WeakMap(); // 노드 -> { sentence, url, title }
+    const lookable = (node, src) => {
+      node.classList.add('lk');
+      sources.set(node, src);
+      return node;
+    };
+    root.addEventListener('dblclick', (e) => {
+      const src = sources.get(e.target?.closest?.('.lk'));
+      if (!src) return;
+      const sel = root.getRootNode().getSelection?.() ?? getSelection(); // 패널은 Shadow DOM 이라 document 선택에는 안 잡힌다
+      const picked = W.pickWord(sel?.toString());
+      if (!picked) return;
+      let rect = sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect() : null;
+      if (!rect || (rect.width === 0 && rect.height === 0)) rect = { left: e.clientX, top: e.clientY, bottom: e.clientY + 18 };
+      window.dispatchEvent(new CustomEvent('readgloss:lookup', { detail: W.lookupDetail({ word: picked.word, sentence: src.sentence, rect, url: src.url, title: src.title }) }));
+    });
+
     function wordRow(r) {
       const li = el('li');
       const top = el('div', 'top');
@@ -383,7 +449,7 @@
       if (r.gloss) top.append(el('span', 'gloss', r.gloss));
       li.append(top);
       if (r.sentence) {
-        const s = el('div', 'sent', r.sentence);
+        const s = lookable(el('div', 'sent', r.sentence), { sentence: r.sentence, url: r.url, title: '' });
         s.title = r.sentence;
         li.append(s);
       }
@@ -396,16 +462,23 @@
 
     function phraseRow(p) {
       const li = el('li');
-      const t = el('div', 'ptext', p.preview);
-      t.title = p.text;
-      li.append(t);
-      if (p.translation) li.append(el('div', 'ptrans', p.translation));
-      if (p.context?.translation || p.context?.note) {
-        const d = el('details');
-        d.append(el('summary', '', p.context.wide ? '문맥 번역 (넓은 문맥)' : '문맥 번역'));
-        if (p.context.translation) d.append(el('p', '', p.context.translation));
-        if (p.context.note) d.append(el('p', 'exp', p.context.note));
-        li.append(d);
+      const src = { url: p.href, title: p.sourceTitle };
+      if (p.kind === 'expression') {
+        const top = el('div', 'pexp');
+        top.append(el('span', 'badge', '표현'), el('span', 'ptext', p.preview), el('span', 'ptrans', `— ${p.primary.text}`));
+        li.append(top);
+        if (p.sentence) {
+          const sent = lookable(el('div', 'psent', p.sentence), { sentence: p.sentence, ...src });
+          sent.title = p.sentence;
+          li.append(sent);
+        }
+      } else {
+        const t = lookable(el('div', 'ptext', p.preview), { sentence: p.text, ...src });
+        t.title = p.text;
+        li.append(t);
+        if (p.primary.title) li.append(el('div', 'plabel', p.primary.title));
+        if (p.primary.text) li.append(el('div', 'ptrans', p.primary.text));
+        if (p.context?.note) li.append(el('div', 'exp', p.context.note));
       }
       const meta = el('div', 'meta');
       meta.append(el('span', 'date', W.formatDate(p.ts)));
@@ -476,12 +549,18 @@
       let rows = [];
       let build = wordRow;
       if (loaded) {
-        if (list === 'phrases') [rows, build] = [W.phraseRows(state.phrases, query), phraseRow];
+        if (list === 'phrases') [rows, build] = [W.phraseRows(state.phrases, query, phraseKind), phraseRow];
         else if (isMine) [rows, build] = [W.mydictRows(mine, query), mineRow];
         else rows = W.rowsFor(state, list, query);
       }
       const msg = isMine ? mineMessage : message;
       status.textContent = msg || (loaded && !rows.length ? (query.trim() ? '찾는 항목이 없어요' : sub.empty) : '');
+      kinds.hidden = list !== 'phrases' || !state;
+      const pc = W.phraseCounts(state?.phrases);
+      W.PHRASE_FILTERS.forEach((f, i) => {
+        chipBtns[i].replaceChildren(f.title, el('span', 'n', String(pc[f.id])));
+        chipBtns[i].setAttribute('aria-pressed', String(f.id === phraseKind));
+      });
       addBar.hidden = !isMine || !mine;
       addForm.hidden = !adding;
       addErr.textContent = formErr.where === 'add' ? formErr.text : '';

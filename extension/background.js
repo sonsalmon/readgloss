@@ -84,7 +84,7 @@ async function translate({ text, force, host, domains, page }, retried = false) 
   if (res.status === 401 && !retried) return translate({ text, force, host, domains, page }, true);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return { error: data.error || `http-${res.status}` };
-  return { translation: data.translation, cached: data.cached };
+  return { translation: data.translation, expressions: data.expressions, cached: data.cached }; // expressions: 기억할 표현(T17, 없을 수 있다)
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -139,8 +139,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function words(msg, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
-  const { op, lemma, word, gloss, sentence, url, text, translation, context, title, id, page } = msg; // 구·문장(save-phrase·unsave-phrase) 필드는 T14
-  const init = op === 'get' ? { headers: { 'X-Bridge-Token': token } } : { method: 'POST', headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ op, lemma, word, gloss, sentence, url, text, translation, context, title, id, page }) };
+  const { op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, page } = msg; // 구·문장(save-phrase·unsave-phrase) 필드는 T14, kind('expression'|'sentence')는 T17
+  const init = op === 'get' ? { headers: { 'X-Bridge-Token': token } } : { method: 'POST', headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, page }) };
   const res = await bridgeFetch('/words', init);
   if (res.status === 401 && !retried) return words(msg, true);
   const data = await res.json().catch(() => ({}));

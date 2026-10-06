@@ -6,6 +6,8 @@
   const enabledHere = globalThis.readglossAnnotate?.enabledHere ?? (() => true);
   const { MAX_TEXT, BUTTON_SIZE, TRANSLATION_TAG, TRANSLATION_STYLE, isTargetText, findBlock, insertPlacement, textOf, textExceeds, buttonPosition } = core;
 
+  const MAX_SENTENCE = 1000; // 표현을 담을 때 함께 저장하는 문단 원문의 상한(다리의 sentence 상한)
+
   const MESSAGES = {
     'bridge-off': '다리가 꺼져 있어요. 터미널에서 node ~/dev/readgloss/bridge/server.mjs 를 실행해 주세요',
     timeout: '번역이 오래 걸려요. 다시 눌러 주세요',
@@ -160,12 +162,29 @@
     place();
   }
 
-  function insert(block, translation) {
+  // 번역문 아래 "기억할 표현" 줄들(T17). 목록 그리기는 드래그 카드와 같은 selection.js 의 것(readglossExpressions, 나중에 로드되므로 호출 때 읽는다).
+  // 번역 노드 안에 Shadow DOM 호스트로 넣어 페이지 CSS 와 격리하고, data-readgloss="translation" 이라 주석·문단 글 뽑기에서 빠진다.
+  function appendExpressions(n, expressions, sentence) {
+    const E = globalThis.readglossExpressions;
+    const list = E?.create(expressions, { sentence, inline: true });
+    if (!list?.el) return;
+    const eh = document.createElement('readgloss-expressions');
+    eh.setAttribute('data-readgloss', 'translation');
+    eh.style.cssText = 'all: initial; display: block; margin-top: .4em; color: inherit; font: inherit; font-size: .92em; line-height: 1.5; white-space: normal;';
+    if (settings.theme === 'light' || settings.theme === 'dark') eh.setAttribute('data-theme', settings.theme);
+    const style = document.createElement('style');
+    style.textContent = E.CSS;
+    eh.attachShadow({ mode: 'closed' }).append(style, list.el);
+    n.append(eh);
+  }
+
+  function insert(block, translation, expressions, sentence) {
     const n = document.createElement(TRANSLATION_TAG);
     n.setAttribute('data-readgloss', 'translation');
     n.lang = 'ko';
     n.style.cssText = TRANSLATION_STYLE;
     n.textContent = translation; // innerHTML 은 쓰지 않는다
+    appendExpressions(n, expressions, sentence);
     block.insertAdjacentElement(insertPlacement(block.tagName), n);
     nodes.set(block, n);
   }
@@ -192,7 +211,7 @@
         }
         if (r?.translation && block.isConnected) {
           requests.delete(block);
-          insert(block, r.translation);
+          insert(block, r.translation, r.expressions, text.slice(0, MAX_SENTENCE));
         } else {
           requests.set(block, { status: 'error', error: r?.error ?? 'no-response' });
         }
@@ -206,6 +225,7 @@
 
   function onClick(e) {
     if (host && e.composedPath().includes(host)) return; // 번역 버튼 안
+    if (e.composedPath().some((n) => n.localName === 'readgloss-expressions')) return; // 번역문 아래 표현 [☆] 을 누른 것: 문단 클릭이 아니다
     if (getSelection()?.isCollapsed === false) return; // 드래그로 글을 골랐으면(드래그 번역이 맡는다) 번역 버튼은 새로 띄우지 않는다
     if (!allowed()) return hide(); // 끄기 범위: 이 사이트·이 페이지·전체 끄기면 번역 버튼을 안 띄운다(더블클릭 사전 카드는 따로 계속 된다)
     const t = e.target;
