@@ -62,6 +62,13 @@ test('shortGloss: 괄호 설명·문법 표지·말줄임 목적어·대괄호 �
   assert.equal(shortGloss('[불]《격식》 완화, (형벌의) 경감'), '완화');
   assert.equal(shortGloss('〔상업〕 〈…을〉 【어원】 값'), '값');
   assert.equal(shortGloss('공격자; （구기의） 공격 선수.'), '공격자');
+  // 품사 표지·뜻 번호가 본문에 남은 모양(사전 평문이 품사를 못 가른 경우)
+  assert.equal(shortGloss('타∙자동사1.〔군사〕 〈부대를[가]〉 배치하다[되다]; 알맞게 사용하다.'), '배치하다');
+  assert.equal(shortGloss('[불]《또는a input》1.투입 （량） ; （일에의） 생각의 제공.'), '투입');
+  assert.equal(shortGloss('《보통 credentials》1.신용 증명물[서]; 신임장'), '신용 증명물');
+  assert.equal(shortGloss('명사 ① 특권'), '특권');
+  assert.equal(shortGloss('{dynamo（발전기） ＋ic (…의) → 강력한} (more dynamic, most dynamic)1.동적인 (↔static); 동태(動態)의'), '동적인'); // 어원 {…}
+  assert.equal(shortGloss('악성코드[바이러스]: 시스템을 손상하거나 파괴시키려고 고안된 소프트 웨어.'), '악성코드'); // 콜론 앞까지
 });
 
 test('shortGloss: 12자 안팎으로 자른다(가능하면 띄어쓰기에서)', () => {

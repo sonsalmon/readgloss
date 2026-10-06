@@ -30,15 +30,17 @@ export function loadWordLevels() {
   return m;
 }
 
-// 《》〈〉〔〕【】()（）[] 로 묶인 설명·문법 표지([불][가])·대안 표기(이용[활용]하다)를 한 규칙으로 지운다.
-const GROUPS = /《[^》]*》|〈[^〉]*〉|〔[^〕]*〕|【[^】]*】|\([^)]*\)|（[^）]*）|\[[^\]]*\]/g;
+// 《》〈〉〔〕【】{}()（）[] 로 묶인 설명·문법 표지([불][가])·대안 표기(이용[활용]하다)를 한 규칙으로 지운다.
+const GROUPS = /《[^》]*》|〈[^〉]*〉|〔[^〕]*〕|【[^】]*】|\([^)]*\)|（[^）]*）|\[[^\]]*\]|\{[^}]*\}/g; // {…} 는 어원 풀이
+const LEAD_POS = /^(?:(?:타|자)[∙·])?(?:자동사|타동사|동사|명사|형용사|부사|전치사|접속사|대명사)[,\s]*/; // 사전 평문이 품사를 못 가르면 본문 앞에 남는 품사 표지
+const LEAD_NUM = /^(?:\d{1,2}\.|[①-⑳])\s*/; // 뜻 번호
 const OBJECT_MARK = /…(?:에게|으로|로|을|를|이|가|에|의|와|과|도)?/g; // "…을 " 같은 말줄임 목적어 표시
 
 // 사전 첫 뜻 문장 -> 12자 안팎의 짧은 뜻. 한글이 없으면 ''(주석 없음).
 export function shortGloss(sense) {
   if (typeof sense !== 'string') return '';
-  let s = sense.replace(GROUPS, '').split(/[,;，；]/)[0];
-  s = s.replace(OBJECT_MARK, '').replace(/[.。]+$/, '').replace(/\s+/g, ' ').trim();
+  let s = sense.replace(GROUPS, '').split(/[,;:，；：]/)[0];
+  s = s.replace(OBJECT_MARK, '').replace(/[.。]+$/, '').replace(/\s+/g, ' ').trim().replace(LEAD_POS, '').replace(LEAD_NUM, '');
   if (!/[가-힣]/.test(s)) return '';
   if (s.length > MAX_GLOSS) {
     const cut = s.lastIndexOf(' ', MAX_GLOSS);
