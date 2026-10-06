@@ -137,7 +137,8 @@
     const key = globalThis.readglossSelection.mydictKey(current.word); // 키 규칙에 안 맞으면 [내 사전에 추가] 를 숨긴다
     if (md && key) {
       ui.md = md.create({
-        key,
+        // 약어는 철자, 낱말은 다리가 준 원형(matrices → matrix): 주석의 data-lemma·다리 조회와 같은 키가 되게
+        key: () => (current?.acr || !current?.lemma ? key : globalThis.readglossSelection.mydictKey(current.lemma) ?? key),
         spec: () => ({
           ko: globalThis.readglossSelection.bestMeaning({ wide: current?.aiWide, ai: current?.ai, acr: current?.acr?.ko, term: current?.termKo, sense: current?.senseKo, first: globalThis.readglossSelection.firstMeaning(current?.firstSense) }),
           exp: current?.acr?.exp ?? current?.mine?.exp,

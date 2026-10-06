@@ -218,11 +218,12 @@
       if (!ko) return fail('뜻을 적어 주세요');
       ok.setAttribute('aria-disabled', 'true');
       const s = spec();
-      const r = await send(core.mydictMessage({ key, ko, exp: s.exp, note: s.note, url: location.href, title: document.title }));
+      const k = typeof key === 'function' ? key() : key; // 사전 카드는 다리가 준 원형(lemma)을 저장 때 읽는다
+      const r = await send(core.mydictMessage({ key: k, ko, exp: s.exp, note: s.note, url: location.href, title: document.title }));
       ok.removeAttribute('aria-disabled');
       if (!r?.entries) return fail(errText(r));
       has = ko;
-      window.dispatchEvent(new CustomEvent('readgloss:mydict', { detail: { set: [key], delete: [] } })); // 이 페이지의 주석을 바로 바꾼다(annotate.js)
+      window.dispatchEvent(new CustomEvent('readgloss:mydict', { detail: { set: [k], delete: [] } })); // 이 페이지의 주석을 바로 바꾼다(annotate.js)
       form.hidden = true;
       err.hidden = true;
       paint();
@@ -230,6 +231,8 @@
       resize();
     }
     input.addEventListener('keydown', (e) => e.key === 'Enter' && !e.isComposing && save());
+    // 닫힌 shadow 안 입력은 페이지에서 보면 호스트가 받은 키라, GitHub·YouTube 단축키가 같이 눌린다. 입력칸의 키는 밖으로 보내지 않는다(Escape 는 카드 닫기용으로 통과).
+    for (const t of ['keydown', 'keypress', 'keyup']) input.addEventListener(t, (e) => e.key !== 'Escape' && e.stopPropagation());
     return { btn, form, setHas: (ko) => ((has = ko), paint()) };
   }
   globalThis.readglossMydict = { CSS: MD_CSS, create: createMydict }; // content.js 의 사전 카드도 클릭·그리기 때 참조한다(그쪽이 먼저 로드되므로 호출 때 읽는다)
