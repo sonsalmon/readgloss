@@ -64,3 +64,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   dict(msg).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
   return true; // 비동기 응답
 });
+
+// --- 문단 번역(T2): 위 lookup 과 같은 흐름. content script 의 'translate' 요청을 다리 /translate 로 전달한다. ---
+async function translate({ text, force }, retried = false) {
+  const token = await getToken(retried);
+  if (!token) return { error: 'pair-failed' };
+  const res = await bridgeFetch('/translate', {
+    method: 'POST',
+    headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, force: force === true }),
+  });
+  if (res.status === 401 && !retried) return translate({ text, force }, true);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: data.error || `http-${res.status}` };
+  return { translation: data.translation, cached: data.cached };
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'translate') return;
+  translate(msg).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
+  return true; // 비동기 응답
+});

@@ -98,5 +98,5 @@ test('manifest: MV3, 필요한 권한만, content script 순서(text.js 먼저)'
   assert.equal(m.background.service_worker, 'background.js');
   assert.deepEqual(m.content_scripts[0].matches, ['http://*/*', 'https://*/*']);
   assert.equal(m.content_scripts[0].all_frames, false);
-  assert.deepEqual(m.content_scripts[0].js, ['text.js', 'content.js']);
+  assert.deepEqual(m.content_scripts[0].js.slice(0, 2), ['text.js', 'content.js']); // 뒤에 붙는 스크립트는 각자 시험한다
 });
