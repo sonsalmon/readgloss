@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 
 export const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 export const DEFAULT_LEVEL = 'B2';
+export const ANNOTATE_LEVELS = ['A2', 'B1', 'B2', 'C1']; // 요청에서 고를 수 있는 기준 등급
 const FILES = ['cefrj-vocabulary-profile-1.5.csv', 'octanove-vocabulary-profile-c1c2-1.0.csv'];
 const MAX_CACHE = 50_000;
 const MAX_GLOSS = 12;

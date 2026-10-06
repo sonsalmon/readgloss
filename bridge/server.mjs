@@ -9,12 +9,14 @@ import { extensionIdFromKey } from './ext-id.mjs';
 import { AiParseError } from './parse.mjs';
 import { SYSTEM_PROMPT, WORD_RE, buildPrompt, createLookup } from './lookup.mjs';
 import { DictUnavailableError, createDict } from './dict.mjs';
+import { ANNOTATE_LEVELS, DEFAULT_LEVEL, createAnnotate } from './annotate.mjs';
 import { MAX_TEXT, buildTranslatePrompt, createTranslate, normalizeText } from './translate.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
 const MAX_BODY = 16 * 1024;
 const MAX_SENTENCE = 1000;
+const MAX_ANNOTATE_WORDS = 300;
 
 function loadOrCreateToken(file) {
   try {
@@ -72,6 +74,7 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
   const tokenBuf = Buffer.from(token);
   const lookup = createLookup({ cache: createCache(cacheFile), ask });
   const translate = createTranslate({ cache: createCache(translationsFile), ask: askTranslate });
+  const annotate = createAnnotate({ dict });
   const mine = `chrome-extension://${extensionId}`;
 
   const tokenOk = (h) => {
@@ -121,6 +124,21 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
     }
   }
 
+  // 어려운 단어 주석: 단어 목록 -> { items: { 단어: { lemma, level, gloss } } }. 맥 사전만 쓰고 AI 는 안 부른다.
+  async function handleAnnotate(req, res, cors) {
+    const { value, status } = await readJson(req);
+    if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+    const { words, level = DEFAULT_LEVEL } = value ?? {};
+    if (!Array.isArray(words) || words.some((w) => typeof w !== 'string') || !ANNOTATE_LEVELS.includes(level)) return send(res, 400, { error: 'bad-request' }, cors);
+    if (words.length > MAX_ANNOTATE_WORDS) return send(res, 413, { error: 'too-large' }, cors);
+    try {
+      send(res, 200, { items: await annotate(words.map((w) => w.toLowerCase()).filter((w) => WORD_RE.test(w)), level) }, cors);
+    } catch (e) {
+      if (e instanceof DictUnavailableError) send(res, 503, { error: 'dict-unavailable' }, cors);
+      else send(res, 502, { error: 'dict-failed' }, cors);
+    }
+  }
+
   async function handle(req, res) {
     // 1. Host 가 고정값이 아니면 거절. 2. Origin 이 있는데 내 확장이 아니면 거절(토큰 유무와 무관).
     if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, { error: 'forbidden' });
@@ -155,6 +173,10 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
     if (path === '/dict') {
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleDict(req, res, cors);
+    }
+    if (path === '/annotate') {
+      if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleAnnotate(req, res, cors);
     }
     if (path === '/translate') {
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
