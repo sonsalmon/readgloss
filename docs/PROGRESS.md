@@ -18,6 +18,7 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 | T6b 떠 있는 버튼·퀵 메뉴·패널·설정 탭·미리보기·사이트·테마 | 완료(통합 확인 중) | main 15d0c3d | verifier 통과, 합칠 때 manifest·background·테스트 충돌 해소 |
 | T7 내 단어: 단어장 추가·아는 단어·최근 찾은 단어(35,36) | 완료(통합 확인 중) | main | verifier 통과, 테스트 합계 226 |
 | T8 어휘량 추정(6) | 대기 | — | T6·T7 합친 뒤 |
+| T9 분야 용어집(수학·ML·보안, HTB 최적화) | 진행 중(task wruhw4o7x) | feat/t9-glossary | spec "변경 기록 5" |
 
 ## 미리 정해 둔 것
 
