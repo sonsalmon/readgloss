@@ -29,8 +29,9 @@ export function createGlossary(data = loadGlossaries()) {
   const find = (word, active = []) => {
     for (const v of variants(word)) {
       for (const d of active) {
-        const ko = data[d]?.[v];
-        if (ko) return { ko, domain: d, key: v };
+        // 자기 속성만: 'constructor' 같은 상속 속성이 용어로 잡히지 않게
+        const ko = data[d] && Object.hasOwn(data[d], v) ? data[d][v] : null;
+        if (typeof ko === 'string' && ko) return { ko, domain: d, key: v };
       }
     }
     return null;

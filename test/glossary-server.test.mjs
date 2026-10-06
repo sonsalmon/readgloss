@@ -23,6 +23,7 @@ const DICT = {
   vector: entry('vector', '매개체'),
   root: entry('root', '뿌리'),
   mitigate: entry('mitigate', '완화시키다'),
+  constructor: entry('constructor', '건설자'),
 };
 function fakeDict() {
   const calls = [];
@@ -194,4 +195,17 @@ test('createTranslate: 캐시 키에 도메인 조합이 들어가고, 없으면
   await t({ text: 'a b', domainsKey: 'math', terms: ['a=가'] });
   await t({ text: 'a b', domainsKey: 'math', terms: ['a=가'] });
   assert.deepEqual(asked, [[], ['a=가']]);
+});
+
+test('constructor 같은 상속 속성 이름은 용어가 아니다: 사전 뜻이 그대로 나오고 번역 용어 지정에도 안 실린다', async () => {
+  const s = await start();
+  try {
+    const it = await items(s, { words: ['constructor'], host: HTB });
+    assert.deepEqual(it.constructor, { lemma: 'constructor', level: null, gloss: '건설자' });
+    assert.equal('term' in (await s.post('/dict', { word: 'constructor', host: HTB })).json, false);
+    await s.post('/translate', { text: 'call the constructor of the vector', host: HTB });
+    assert.deepEqual(s.prompts.at(-1).terms, ['vector=벡터']);
+  } finally {
+    await s.bridge.close();
+  }
 });

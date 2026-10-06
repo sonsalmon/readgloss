@@ -93,3 +93,10 @@ test('keyOf: 활성 도메인 조합(순서 포함) 문자열, 없으면 빈 문
   assert.equal(G.keyOf(['math', 'security']), 'math,security');
   assert.notEqual(G.keyOf(['math', 'security']), G.keyOf(['security', 'math']));
 });
+
+test('Object.prototype 이름(constructor·toString 등)은 용어가 아니다: find 는 null, 번역 용어 지정에도 안 실린다', () => {
+  for (const w of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__']) {
+    assert.equal(G.find(w, ['security', 'ml', 'math']), null, w);
+  }
+  assert.deepEqual(G.termsIn('call the constructor of the vector', ['security', 'ml', 'math']), ['vector=벡터']);
+});
