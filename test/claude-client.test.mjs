@@ -121,15 +121,15 @@ test('실행 파일이 없으면 AiError', async () => {
   c.close();
 });
 
-test('자식 env 에서 중첩 실행 표지와 API 키를 지운다', async () => {
+test('자식 env 에서 CLAUDE*·ANTHROPIC_* 를 지우고 나머지는 남긴다', async () => {
   const saved = { ...process.env };
-  Object.assign(process.env, { CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'x', CLAUDE_CODE_SSE_PORT: '1', ANTHROPIC_API_KEY: 'k' });
+  Object.assign(process.env, { CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'x', CLAUDE_CODE_SSE_PORT: '1', ANTHROPIC_API_KEY: 'k', ANTHROPIC_BASE_URL: 'http://x', CLAUDE_CODE_OAUTH_SCOPES: 's', KEEP_ME: '1' });
   const c = make();
   try {
-    assert.deepEqual(JSON.parse((await c.ask('ENV')).text), [false, false, false, false]);
+    assert.deepEqual(JSON.parse((await c.ask('ENV')).text), [false, false, false, false, false, false, true]);
   } finally {
     c.close();
-    for (const k of ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SSE_PORT', 'ANTHROPIC_API_KEY']) {
+    for (const k of ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SSE_PORT', 'ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_OAUTH_SCOPES', 'KEEP_ME']) {
       if (k in saved) process.env[k] = saved[k];
       else delete process.env[k];
     }

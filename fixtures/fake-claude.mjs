@@ -23,7 +23,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   const reply = () => {
     let text = `echo:${c}`;
     if (c.includes('PID')) text = String(process.pid);
-    if (c.includes('ENV')) text = JSON.stringify(['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SSE_PORT', 'ANTHROPIC_API_KEY'].map((k) => k in process.env));
+    if (c.includes('ENV')) text = JSON.stringify(['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SSE_PORT', 'ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_OAUTH_SCOPES', 'KEEP_ME'].map((k) => k in process.env));
     // 한 줄을 두 번에 나눠 보내 줄 버퍼링을 시험한다
     const s = JSON.stringify(result(text)) + '\n';
     const mid = Math.floor(s.length / 2);

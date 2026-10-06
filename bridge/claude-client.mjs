@@ -27,12 +27,11 @@ export function claudeArgs(systemPrompt) {
   ];
 }
 
-// 다리가 Claude Code 안의 셸에서 떠도 중첩 실행으로 막히지 않게, ANTHROPIC_API_KEY 는 구독 대신 API 과금으로 새지 않게 지운다.
-const DROP_ENV = ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SSE_PORT', 'ANTHROPIC_API_KEY'];
+// CLAUDE*·ANTHROPIC_* 를 모두 지운다. Claude 앱 안의 셸에서 떠도 앱 연결(ANTHROPIC_BASE_URL 등)·중첩 실행 표지를 물려받지 않고
+// 맥에 저장된 본인 구독 로그인으로 돈다. ANTHROPIC_API_KEY 도 빠지므로 API 과금으로 새지 않는다. 필요한 설정은 모두 인자로 준다.
+const DROP_ENV = /^(CLAUDE|ANTHROPIC_)/;
 function childEnv() {
-  const env = { ...process.env };
-  for (const k of DROP_ENV) delete env[k];
-  return env;
+  return Object.fromEntries(Object.entries(process.env).filter(([k]) => !DROP_ENV.test(k)));
 }
 
 // 상주 claude 프로세스 하나에 요청을 한 번에 하나씩 보낸다. 처음 ask 때 띄운다.
