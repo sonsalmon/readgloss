@@ -22,6 +22,16 @@
     return ok.sort((a, b) => (Number.isFinite(a.order) ? a.order : Infinity) - (Number.isFinite(b.order) ? b.order : Infinity) || 0);
   }
 
+  // 탭 pane 을 먼저 붙인 뒤 그린다: 미리보기 같은 그리기 코드가 isConnected 로 문서 안의 노드만 믿기 때문. 그리다 던지면 fallback() 노드로 바꾼다.
+  function mountPane(parent, pane, render, fallback) {
+    parent.append(pane);
+    try {
+      render(pane);
+    } catch {
+      pane.replaceChildren(fallback());
+    }
+  }
+
   const levelIndex = (level) => {
     const i = LEVELS().indexOf(level);
     return i < 0 ? 3 : i; // 모르는 값은 기본 C1
@@ -86,7 +96,7 @@
   const themeAttr = (theme) => (theme === 'light' || theme === 'dark' ? theme : null); // auto 는 속성 없음(prefers-color-scheme)
 
   globalThis.readglossPanelCore = {
-    getPath, patchFor, sortTabs, levelIndex, levelAt, RANGES, CHOICES, TOGGLES, sliderPatch, sliderValue,
+    getPath, patchFor, sortTabs, mountPane, levelIndex, levelAt, RANGES, CHOICES, TOGGLES, sliderPatch, sliderValue,
     cleanSite, addSite, removeSite, clampTop, dragTop, mergePatch, themeAttr, MAX_SITES,
   };
 
@@ -369,13 +379,8 @@
     for (const t of tabs) {
       const btn = h('button', { class: 'tab', type: 'button', role: 'tab', id: `tab-${t.id}`, 'aria-controls': `pane-${t.id}`, text: t.title, onclick: () => selectTab(t.id) });
       const pane = h('div', { role: 'tabpanel', id: `pane-${t.id}`, 'aria-labelledby': `tab-${t.id}`, hidden: true });
-      try {
-        t.render(pane, ctx);
-      } catch {
-        pane.replaceChildren(h('p', { class: 'msg', text: '이 탭을 그리지 못했어요.' }));
-      }
       tablist.append(btn);
-      body.append(pane);
+      C.mountPane(body, pane, (p) => t.render(p, ctx), () => h('p', { class: 'msg', text: '이 탭을 그리지 못했어요.' }));
     }
   }
   function selectTab(id) {

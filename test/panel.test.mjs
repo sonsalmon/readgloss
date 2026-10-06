@@ -140,3 +140,16 @@ test('manifest: panel.js 는 annotate.js 뒤, 탭 파일(panel-words.js)보다 �
   assert.deepEqual(m.permissions, ['storage']); // tabs 권한 없이 툴바 아이콘 -> sendMessage
   assert.doesNotMatch(readFileSync(new URL('../extension/panel.js', import.meta.url), 'utf8'), /^\s*(import|export)\s/m);
 });
+
+test('mountPane: 탭 render 가 불릴 때 pane 은 이미 문서에 붙어 있다(미리보기가 isConnected 로 후보를 거르므로). 실패하면 안내 문구', () => {
+  const body = { kids: [], append(n) { this.kids.push(n); n.isConnected = true; } };
+  const seen = [];
+  const pane = { isConnected: false, replaceChildren(...a) { this.fallback = a; } };
+  C.mountPane(body, pane, () => seen.push(pane.isConnected), () => 'x');
+  assert.deepEqual(seen, [true]);
+  assert.deepEqual(body.kids, [pane]);
+  const bad = { isConnected: false, replaceChildren(...a) { this.fallback = a; } };
+  C.mountPane(body, bad, () => { throw new Error('boom'); }, () => 'msg');
+  assert.deepEqual(bad.fallback, ['msg'], 'render 가 던지면 fallback() 이 만든 노드로 바꾼다');
+  assert.equal(body.kids.length, 2);
+});
