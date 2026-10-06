@@ -18,25 +18,32 @@ const TRANSLATE_TASK =
 export const buildTranslatePrompt = (text, terms = []) =>
   `${TRANSLATE_TASK}\n${terms.length ? `용어 지정: ${terms.join(', ')}. 이 단어는 지정한 번역어를 쓴다.\n` : ''}${JSON.stringify({ text: normalizeText(text) })}`;
 
-// AI 출력(펜스·앞뒤 잡담 가능)에서 translation 문자열 하나를 꺼낸다. 깨졌으면 AiParseError.
+// AI 출력(펜스·앞뒤 잡담 가능)에서 JSON 객체 하나를 꺼낸다. 깨졌으면 AiParseError.
 // ponytail: parse.mjs 의 parseGloss 와 펜스 벗기기가 겹친다. parse.mjs 는 다른 티켓과 공유라 건드리지 않았다. 합칠 때 공용 함수로 뽑는다.
-export function parseTranslation(text) {
+export function parseJsonObject(text) {
   let s = String(text ?? '').trim();
   const fence = s.match(/^```[a-z]*\s*([\s\S]*?)\s*```$/i);
   if (fence) s = fence[1];
   const a = s.indexOf('{');
   const b = s.lastIndexOf('}');
   if (a >= 0 && b > a) s = s.slice(a, b + 1);
-  let obj;
   try {
-    obj = JSON.parse(s);
+    const obj = JSON.parse(s);
+    if (obj !== null && typeof obj === 'object') return obj;
   } catch {
-    throw new AiParseError('parse: not JSON');
+    // 아래에서 같은 오류로
   }
-  const translation = typeof obj?.translation === 'string' ? obj.translation.trim() : '';
+  throw new AiParseError('parse: not JSON');
+}
+
+// translation 값 하나를 검사해 돌려준다. 비었거나 문자열이 아니거나 너무 길면 AiParseError.
+export function cleanTranslation(v) {
+  const translation = typeof v === 'string' ? v.trim() : '';
   if (!translation || translation.length > MAX_TRANSLATION) throw new AiParseError('parse: bad translation');
   return translation;
 }
+
+export const parseTranslation = (text) => cleanTranslation(parseJsonObject(text).translation);
 
 // ask(정규화한 문단, 용어 지정 목록) -> AI 원문. 캐시 -> AI 순서. 깨진 출력은 캐시에 넣지 않고 에러로 올린다.
 export function createTranslate({ cache, ask }) {

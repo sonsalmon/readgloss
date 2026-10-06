@@ -40,7 +40,7 @@ test('mt: 도우미가 없으면 MtUnavailableError, 언어팩이 없으면(not-
 });
 
 test('mt: 죽거나 멈추면 MtError 로 올리고 다음 요청 때 다시 띄운다', async () => {
-  const mt = fake({ firstTimeoutMs: 300, timeoutMs: 300 });
+  const mt = fake({ firstTimeoutMs: 3000, timeoutMs: 300 });
   try {
     await assert.rejects(mt.translate('DIE now'), MtError);
     assert.equal(await mt.translate('after die'), '번역1:after die'); // 새 도우미

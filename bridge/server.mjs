@@ -14,13 +14,14 @@ import { ANNOTATE_LEVELS, DEFAULT_LEVEL, createAnnotate, isCommon, lemmaOf, load
 import { createWords, parseWordsOp } from './words.mjs';
 import { createGlossary } from './glossary.mjs';
 import { MAX_TEXT, buildTranslatePrompt, createTranslate, normalizeText } from './translate.mjs';
+import { LIMITS, parseContext } from './context.mjs';
+import { createContextTranslate } from './translate-context.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
 const MAX_BODY = 16 * 1024;
 const MAX_SENTENCE = 1000;
 const MAX_ANNOTATE_WORDS = 300;
-const MAX_MT_TEXT = 1000; // 드래그 번역 선택 글 상한(확장의 selection-core.js 와 맞춘다)
 
 function loadOrCreateToken(file) {
   try {
@@ -72,12 +73,13 @@ function sendAiError(res, e, cors) {
   else send(res, 500, { error: 'internal' }, cors);
 }
 
-// ask({word, sentence}) / askTranslate(문단, 용어 지정 목록) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
-export function createBridge({ ask, askTranslate, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
+// ask({word, sentence, context?}) / askTranslate(문단, 용어 지정 목록) / askContext(프롬프트 문자열) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
+export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
   const token = loadOrCreateToken(tokenFile);
   const tokenBuf = Buffer.from(token);
   const lookup = createLookup({ cache: createCache(cacheFile), ask });
   const translate = createTranslate({ cache: createCache(translationsFile), ask: askTranslate });
+  const contextTranslate = createContextTranslate({ cache: createCache(contextFile), ask: askContext });
   const words = createWords({ file: wordsFile });
   const glossary = createGlossary();
   const levels = loadWordLevels();
@@ -119,13 +121,30 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
     }
   }
 
+  // 드래그 번역 2단계: 앞뒤 문맥·제목을 보고 AI 가 번역(문맥 번역 버튼). 상한은 context.mjs 의 LIMITS.
+  async function handleTranslateContext(req, res, cors) {
+    const { value, status } = await readJson(req);
+    if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+    const text = normalizeText(value?.text);
+    if (!text) return send(res, 400, { error: 'bad-request' }, cors);
+    if (text.length > LIMITS.text) return send(res, 413, { error: 'too-large' }, cors);
+    const ctx = parseContext(value.context);
+    if (ctx.status) return send(res, ctx.status, { error: ctx.status === 413 ? 'too-large' : 'bad-request' }, cors);
+    const active = glossary.domains(value);
+    try {
+      send(res, 200, await contextTranslate({ text, context: ctx.context, force: value.force === true, domainsKey: glossary.keyOf(active), terms: glossary.termsIn(text, active) }), cors);
+    } catch (e) {
+      sendAiError(res, e, cors);
+    }
+  }
+
   // 드래그 번역 1단계: 맥 번역(기기 안, AI 아님). 구가 분야 구 용어집과 같으면 term 도 붙인다.
   async function handleMt(req, res, cors) {
     const { value, status } = await readJson(req);
     if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
     const text = normalizeText(value?.text);
     if (!text) return send(res, 400, { error: 'bad-request' }, cors);
-    if (text.length > MAX_MT_TEXT) return send(res, 413, { error: 'too-large' }, cors);
+    if (text.length > LIMITS.text) return send(res, 413, { error: 'too-large' }, cors);
     try {
       const term = glossary.findPhrase(text, glossary.domains(value));
       send(res, 200, { translation: await mt.translate(text), engine: 'apple', ...(term ? { term } : {}) }, cors);
@@ -218,6 +237,10 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleMt(req, res, cors);
     }
+    if (path === '/translate-context') {
+      if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleTranslateContext(req, res, cors);
+    }
     if (path === '/dict') {
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleDict(req, res, cors);
@@ -270,6 +293,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
   const bridge = createBridge({
     ask: async (a) => (await client.ask(buildPrompt(a))).text,
     askTranslate: async (text, terms) => (await client.ask(buildTranslatePrompt(text, terms), { timeoutMs: 60_000 })).text,
+    askContext: async (prompt) => (await client.ask(prompt)).text,
     cacheFile: join(dataDir, 'cache.json'),
     tokenFile: join(dataDir, 'token'),
     extensionId,
