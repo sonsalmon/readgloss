@@ -24,15 +24,15 @@ async function getToken(fresh) {
   return token;
 }
 
-async function lookup({ word, sentence, force }, retried = false) {
+async function lookup({ word, sentence, force, context }, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
   const res = await bridgeFetch('/lookup', {
     method: 'POST',
     headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ word, sentence, force: force === true }),
+    body: JSON.stringify({ word, sentence, force: force === true, context }), // 문맥은 있으면 그대로(없으면 JSON 에서 빠진다)
   });
-  if (res.status === 401 && !retried) return lookup({ word, sentence, force }, true); // 토큰이 바뀌었으면 한 번만 다시 pair
+  if (res.status === 401 && !retried) return lookup({ word, sentence, force, context }, true); // 토큰이 바뀌었으면 한 번만 다시 pair
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return { error: data.error || `http-${res.status}` };
   return { gloss: data.gloss, cached: data.cached };
@@ -83,6 +83,27 @@ async function translate({ text, force, host, domains }, retried = false) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id || msg?.type !== 'translate') return;
   translate(msg).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
+  return true; // 비동기 응답
+});
+
+// --- 드래그 번역(T12): 'mt'(맥 번역, 기기 안·무료)와 'translate-context'(앞뒤 문맥을 보고 AI 가 번역)를 다리로 그대로 전달한다. ---
+async function relay(path, body, retried = false) {
+  const token = await getToken(retried);
+  if (!token) return { error: 'pair-failed' };
+  const res = await bridgeFetch(path, { method: 'POST', headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (res.status === 401 && !retried) return relay(path, body, true);
+  const data = await res.json().catch(() => ({}));
+  return res.ok ? data : { error: data.error || `http-${res.status}` };
+}
+
+const RELAYS = {
+  mt: ({ text, domains }) => relay('/mt', { text, domains }),
+  'translate-context': ({ text, context, force, domains }) => relay('/translate-context', { text, context, force: force === true, domains }),
+};
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || !Object.hasOwn(RELAYS, msg?.type)) return;
+  RELAYS[msg.type](msg).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
   return true; // 비동기 응답
 });
 
