@@ -143,3 +143,24 @@ test('close 뒤 자식 프로세스가 남지 않는다', async () => {
   await new Promise((r) => setTimeout(r, 200));
   assert.throws(() => process.kill(pid, 0));
 });
+
+test('ask 에 요청별 시간 제한을 줄 수 있다(기본값보다 우선)', async () => {
+  const c = make({ timeoutMs: 5000 });
+  try {
+    const t0 = Date.now();
+    await assert.rejects(c.ask('HANG', { timeoutMs: 200 }), AiTimeoutError);
+    assert.ok(Date.now() - t0 < 2000);
+    assert.equal((await c.ask('after')).text, 'echo:after'); // 죽인 뒤 새로 뜬다
+  } finally {
+    c.close();
+  }
+});
+
+test('요청별 시간 제한이 기본값보다 길면 기본값에 걸리지 않는다', async () => {
+  const c = make({ timeoutMs: 50 });
+  try {
+    assert.equal((await c.ask('SLOW', { timeoutMs: 3000 })).text, 'echo:SLOW');
+  } finally {
+    c.close();
+  }
+});

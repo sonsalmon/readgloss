@@ -90,22 +90,22 @@ export function createClaudeClient({ systemPrompt, command = 'claude', args = cl
     return p;
   }
 
-  function send(prompt) {
+  function send(prompt, ms) {
     return new Promise((resolve, reject) => {
       const p = proc ?? (proc = start());
       const timer = setTimeout(() => {
         settle(p, new AiTimeoutError());
         kill(p);
-      }, timeoutMs);
+      }, ms);
       p.pending = { resolve, reject, timer };
       p.child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: prompt } }) + '\n');
     });
   }
 
   return {
-    // prompt 문자열 -> { text, usage }
-    ask(prompt) {
-      const run = queue.then(() => send(prompt));
+    // prompt 문자열 -> { text, usage }. timeoutMs 로 요청마다 시간 제한을 바꿀 수 있다(긴 문단 번역용).
+    ask(prompt, { timeoutMs: ms = timeoutMs } = {}) {
+      const run = queue.then(() => send(prompt, ms));
       queue = run.catch(() => {});
       return run;
     },
