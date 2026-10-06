@@ -80,6 +80,12 @@
   }
   const removeSite = (sites, site) => sites.filter((s) => s !== site);
 
+  // 기본값 복원 patch: 끌 사이트(sites)만 남기고 전부 기본값(용어집을 켤 사이트도 기본 목록으로). 복사본을 돌려준다.
+  function resetPatch(defaults) {
+    const { sites, ...rest } = defaults;
+    return structuredClone(rest);
+  }
+
   // 버튼 세로 위치: 40px 이상, (창 높이-40px) 이하
   function clampTop(top, vh) {
     if (!Number.isFinite(top)) return DEFAULT_TOP;
@@ -98,7 +104,7 @@
 
   globalThis.readglossPanelCore = {
     getPath, patchFor, sortTabs, mountPane, levelIndex, levelAt, RANGES, CHOICES, TOGGLES, sliderPatch, sliderValue,
-    cleanSite, addSite, removeSite, clampTop, dragTop, mergePatch, themeAttr, MAX_SITES,
+    cleanSite, addSite, removeSite, resetPatch, clampTop, dragTop, mergePatch, themeAttr, MAX_SITES,
   };
 
   if (typeof document === 'undefined' || globalThis.readglossPanelLoaded) return; // node 시험·중복 주입: 여기까지
@@ -179,6 +185,8 @@
     .sites { list-style: none; margin: 0 0 8px; padding: 0; }
     .sites li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--rg-border); }
     .sites li.empty { color: var(--rg-muted); font-size: 12px; border: 0; }
+    .sites.scroll { max-height: 190px; overflow-y: auto; }
+    .glossites.dim > :not(.rowhead):not(.hint) { opacity: .5; }
     .sites .name { overflow-wrap: anywhere; font-size: 13px; }
     .btn { padding: 3px 10px; border-radius: 7px; border: 1px solid var(--rg-border); background: transparent; font-size: 12.5px; white-space: nowrap; }
     .btn:hover:not(:disabled) { background: var(--rg-accent-soft); border-color: var(--rg-accent); color: var(--rg-accent); }
@@ -538,34 +546,47 @@
       }
     };
 
-    // 끌 사이트 목록(49)
-    const list = h('ul', { class: 'sites', 'aria-label': '끌 사이트 목록' });
-    const siteMsg = h('p', { class: 'msg', role: 'status' });
+    // 사이트 목록 UI(끌 사이트 49 · 용어집을 켤 사이트 T11 가 같은 모양): 줄마다 삭제, 지금 사이트 추가, 직접 입력. key 는 설정 키.
     const here = location.hostname;
-    const hereBtn = h('button', { class: 'btn', type: 'button', onclick: () => addSite(here) });
-    const siteInput = h('input', { type: 'text', placeholder: 'example.com 또는 *.example.com', 'aria-label': '끌 사이트 직접 입력', spellcheck: 'false', autocomplete: 'off' });
-    function addSite(raw) {
-      const next = C.addSite(ctx.settings.sites, raw);
-      if (next.length === ctx.settings.sites.length) {
-        siteMsg.textContent = C.cleanSite(raw) ? (next.length >= C.MAX_SITES && !next.includes(C.cleanSite(raw)) ? '목록이 가득 찼어요(200개).' : '이미 목록에 있어요.') : '도메인 형태로 적어 주세요(예: example.com, *.example.com).';
-        return;
+    function siteList(key, { label, inputLabel, max }) {
+      const list = h('ul', { class: max ? 'sites scroll' : 'sites', 'aria-label': label });
+      const msg = h('p', { class: 'msg', role: 'status' });
+      const hereBtn = h('button', { class: 'btn', type: 'button', onclick: () => add(here) });
+      const input = h('input', { type: 'text', placeholder: 'example.com 또는 *.example.com', 'aria-label': inputLabel, spellcheck: 'false', autocomplete: 'off' });
+      const addBtn = h('button', { class: 'btn', type: 'button', text: '추가', onclick: () => add(input.value) });
+      function add(raw) {
+        const cur = ctx.settings[key];
+        const next = C.addSite(cur, raw);
+        if (next.length === cur.length) {
+          msg.textContent = C.cleanSite(raw) ? (next.length >= C.MAX_SITES && !next.includes(C.cleanSite(raw)) ? '목록이 가득 찼어요(200개).' : '이미 목록에 있어요.') : '도메인 형태로 적어 주세요(예: example.com, *.example.com).';
+          return;
+        }
+        msg.textContent = '';
+        input.value = '';
+        ctx.setSettings({ [key]: next });
       }
-      siteMsg.textContent = '';
-      siteInput.value = '';
-      ctx.setSettings({ sites: next });
+      input.addEventListener('keydown', (e) => e.key === 'Enter' && (e.preventDefault(), add(input.value)));
+      const nodes = [list, hereBtn, h('div', { class: 'addrow' }, input, addBtn), msg];
+      const off = (s) => key === 'glossarySites' && s.glossary === 'off'; // 용어집 자체가 꺼져 있으면 목록은 흐리게(고칠 수는 없다)
+      refreshers.push((s) => {
+        list.replaceChildren(...(s[key].length
+          ? s[key].map((site) => h('li', {}, h('span', { class: 'name', text: site }),
+            h('button', { class: 'btn', type: 'button', text: '삭제', 'aria-label': `${site} 삭제`, disabled: off(s), onclick: () => ctx.setSettings({ [key]: C.removeSite(ctx.settings[key], site) }) })))
+          : [h('li', { class: 'empty', text: '아직 없어요' })]));
+        hereBtn.textContent = s[key].includes(here) ? `${here}: 목록에 있어요` : `지금 사이트 추가(${here})`;
+        hereBtn.disabled = !here || s[key].includes(here) || off(s);
+        input.disabled = addBtn.disabled = off(s);
+      });
+      return nodes;
     }
-    siteInput.addEventListener('keydown', (e) => e.key === 'Enter' && (e.preventDefault(), addSite(siteInput.value)));
-    refreshers.push((s) => {
-      list.replaceChildren(...(s.sites.length
-        ? s.sites.map((site) => h('li', {}, h('span', { class: 'name', text: site }),
-          h('button', { class: 'btn', type: 'button', text: '삭제', 'aria-label': `${site} 삭제`, onclick: () => ctx.setSettings({ sites: C.removeSite(ctx.settings.sites, site) }) })))
-        : [h('li', { class: 'empty', text: '아직 없어요' })]));
-      hereBtn.textContent = `지금 사이트 추가(${here})`;
-      hereBtn.disabled = !here || s.sites.includes(here);
-      if (s.sites.includes(here)) hereBtn.textContent = `${here}: 목록에 있어요`;
-    });
+    const blockNodes = siteList('sites', { label: '끌 사이트 목록', inputLabel: '끌 사이트 직접 입력' });
+    const glossNodes = siteList('glossarySites', { label: '용어집을 켤 사이트 목록', inputLabel: '용어집을 켤 사이트 직접 입력', max: true });
+    const glossBox = h('div', { class: 'row glossites', role: 'group', 'aria-label': '용어집을 켤 사이트' },
+      h('div', { class: 'rowhead', text: '용어집을 켤 사이트' }),
+      h('p', { class: 'hint', text: '이 사이트에서는 보안·머신러닝·수학 용어가 분야 용어로 보여요. 목록 밖에서도 수식·머신러닝 글이면 그 분야만 켜져요.' }), ...glossNodes);
+    refreshers.push((s) => glossBox.classList.toggle('dim', s.glossary === 'off'));
 
-    // 기본값 복원: 한 번 더 눌러야 한다. 끌 사이트 목록은 남긴다.
+    // 기본값 복원: 한 번 더 눌러야 한다. 끌 사이트 목록은 남기고, 용어집을 켤 사이트는 기본 목록으로.
     let armed = 0;
     const resetBtn = h('button', { class: 'btn', type: 'button', text: '기본값 복원' });
     resetBtn.addEventListener('click', () => {
@@ -577,20 +598,19 @@
       clearTimeout(armed);
       armed = 0;
       resetBtn.textContent = '기본값 복원';
-      const { sites, ...rest } = S.DEFAULTS;
-      ctx.setSettings(structuredClone(rest));
+      ctx.setSettings(C.resetPatch(S.DEFAULTS));
     });
 
     box.append(
       previewBox,
       h('h3', { class: 'sec', text: '켜기' }), toggle('enabled'), offRow,
-      h('h3', { class: 'sec', text: '어떤 단어에' }), slider('level'), slider('maxPerParagraph'), choice('repeat'), choice('glossary', null, 'HTB 같은 보안·ML 사이트와 수식이 있는 페이지에서 전치행렬처럼 분야 용어로 보여 줘요.'),
+      h('h3', { class: 'sec', text: '어떤 단어에' }), slider('level'), slider('maxPerParagraph'), choice('repeat'), choice('glossary', null, '전치행렬처럼 분야 용어로 보여 줘요. 끄면 사전 뜻만 나와요.'), glossBox,
       h('h3', { class: 'sec', text: '주석 모양' }), choice('annotation.position'), slider('annotation.sizePct'), choice('annotation.color', color),
       slider('annotation.opacityPct'), choice('annotation.weight'), slider('annotation.gapEm'),
       h('h3', { class: 'sec', text: '단어 표시' }), choice('mark'),
       h('h3', { class: 'sec', text: '기타' }), toggle('allowCopy', '체크하지 않으면 복사할 때 주석 글자가 섞이지 않아요.'), choice('theme'), toggle('floatingButton.show', '숨겨도 브라우저 툴바의 readgloss 아이콘으로 패널을 열 수 있어요.'),
-      h('h3', { class: 'sec', text: '끌 사이트' }), list, hereBtn, h('div', { class: 'addrow' }, siteInput, h('button', { class: 'btn', type: 'button', text: '추가', onclick: () => addSite(siteInput.value) })), siteMsg,
-      h('div', { class: 'reset' }, resetBtn, h('p', { class: 'hint', text: '끌 사이트 목록은 그대로 둬요.' })),
+      h('h3', { class: 'sec', text: '끌 사이트' }), ...blockNodes,
+      h('div', { class: 'reset' }, resetBtn, h('p', { class: 'hint', text: '끌 사이트 목록은 그대로 두고, 용어집을 켤 사이트는 기본 목록으로 돌아가요.' })),
     );
     const refresh = (s) => { refreshers.forEach((f) => f(s)); updatePreview(s); };
     refresh(ctx.settings);

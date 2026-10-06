@@ -153,3 +153,28 @@ test('mountPane: 탭 render 가 불릴 때 pane 은 이미 문서에 붙어 있�
   assert.deepEqual(bad.fallback, ['msg'], 'render 가 던지면 fallback() 이 만든 노드로 바꾼다');
   assert.equal(body.kids.length, 2);
 });
+
+test('resetPatch: 기본값 복원은 끌 사이트(sites)만 빼고 모두 기본값 — 용어집을 켤 사이트(glossarySites)는 기본 목록으로', () => {
+  const patch = C.resetPatch(S.DEFAULTS);
+  assert.equal('sites' in patch, false);
+  assert.deepEqual(patch.glossarySites, S.DEFAULTS.glossarySites);
+  assert.equal(patch.level, 'C1');
+  const cur = S.merge({}, { sites: ['keep.com'], glossarySites: [], level: 'A2' });
+  const next = S.merge(cur, patch);
+  assert.deepEqual(next.sites, ['keep.com']);
+  assert.deepEqual(next.glossarySites, S.DEFAULTS.glossarySites, '지웠던 목록도 기본값으로 돌아온다');
+  assert.equal(next.level, 'C1');
+  patch.glossarySites.push('x.com');
+  assert.ok(!S.DEFAULTS.glossarySites.includes('x.com'), '복사본이라 DEFAULTS 는 그대로');
+});
+
+test('목록 입력 정리: 용어집 사이트에도 같은 규칙(와일드카드·중복·경로 걷기)', () => {
+  let list = [...S.DEFAULTS.glossarySites];
+  list = C.addSite(list, 'https://Docs.Python.org/3/');
+  list = C.addSite(list, '*.PortSwigger.net');
+  list = C.addSite(list, 'owasp.org');
+  assert.deepEqual(list.slice(-2), ['docs.python.org', '*.portswigger.net']);
+  assert.equal(list.length, 21);
+  assert.deepEqual(C.removeSite(list, 'arxiv.org').includes('arxiv.org'), false);
+  assert.equal(S.siteMatches(list, 'docs.python.org'), true);
+});
