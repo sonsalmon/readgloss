@@ -13,16 +13,16 @@
     'ext-reloaded': '확장이 새로 로드됐어요. 이 페이지를 새로고침해 주세요',
   };
 
+  const DARK = `--rg-bg: #1e2127; --rg-fg: #e6e8eb; --rg-muted: #9aa3ad; --rg-border: #343a44; --rg-accent: #6b9bff;
+    --rg-accent-soft: rgba(107,155,255,.14); --rg-shadow: 0 8px 28px rgba(0,0,0,.45);`;
   const CSS = `
     .card { --rg-bg: #ffffff; --rg-fg: #1f2328; --rg-muted: #656d76; --rg-border: #e3e6ea; --rg-accent: #2f6feb;
       --rg-accent-soft: rgba(47,111,235,.10); --rg-shadow: 0 8px 28px rgba(15,23,42,.14), 0 1px 3px rgba(15,23,42,.08); --rg-radius: 10px;
       box-sizing: border-box; width: 340px; max-width: calc(100vw - 16px); overflow: hidden; border-radius: var(--rg-radius);
       background: var(--rg-bg); color: var(--rg-fg); border: 1px solid var(--rg-border); box-shadow: var(--rg-shadow);
       font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif; }
-    @media (prefers-color-scheme: dark) {
-      .card { --rg-bg: #1e2127; --rg-fg: #e6e8eb; --rg-muted: #9aa3ad; --rg-border: #343a44; --rg-accent: #6b9bff;
-        --rg-accent-soft: rgba(107,155,255,.14); --rg-shadow: 0 8px 28px rgba(0,0,0,.45); }
-    }
+    @media (prefers-color-scheme: dark) { :host(:not([data-theme="light"])) .card { ${DARK} } }
+    :host([data-theme="dark"]) .card { ${DARK} }
     .scroll { max-height: 360px; overflow-y: auto; overscroll-behavior: contain; padding: 14px 16px 8px; }
     .scroll:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: -2px; }
     .msg { color: var(--rg-muted); padding-bottom: 6px; word-break: keep-all; overflow-wrap: anywhere; }
@@ -51,6 +51,17 @@
     .btn[aria-disabled="true"] { opacity: .55; cursor: default; }
   `;
 
+  // 테마(설정 'theme'): auto 면 속성 없이 prefers-color-scheme, light·dark 면 호스트에 data-theme 로 강제
+  let theme = 'auto';
+  try {
+    globalThis.readglossSettings.load().then((s) => { theme = s.theme; }, () => {});
+    globalThis.readglossSettings.onChange((s) => {
+      theme = s.theme;
+      if (host) applyTheme();
+    });
+  } catch { /* 설정을 못 읽으면 자동 */ }
+  const applyTheme = () => (theme === 'auto' ? host.removeAttribute('data-theme') : host.setAttribute('data-theme', theme));
+
   let host = null;
   let ui = null; // { card, scroll, ai, aiBtn, saveBtn, knownBtn }
   let seq = 0; // 닫거나 새로 열 때마다 올려서 늦게 온 응답을 버린다
@@ -67,6 +78,7 @@
   function buildCard() {
     host = document.createElement('readgloss-card');
     host.style.cssText = 'all: initial; position: absolute; z-index: 2147483647; left: 0; top: 0;';
+    applyTheme();
     const shadow = host.attachShadow({ mode: 'closed' }); // 페이지 CSS 와 격리
     const style = el('style');
     style.textContent = CSS;
@@ -265,6 +277,7 @@
 
   function onDblClick(e) {
     if (host && e.composedPath().includes(host)) return; // 카드 안
+    if (e.composedPath().some((n) => n.localName === 'readgloss-ui')) return; // 떠 있는 버튼·패널 안
     const sel = getSelection();
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
     const range = sel.getRangeAt(0);
