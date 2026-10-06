@@ -26,7 +26,7 @@
   `;
 
   let host = null;
-  let ui = null; // { bubble, gloss, row, word, button }
+  let ui = null; // { bubble, gloss, row, word }
   let seq = 0; // 닫거나 새로 열 때마다 올려서 늦게 온 응답을 버린다
   let current = null; // { word, sentence, anchor }
 
@@ -52,7 +52,7 @@
     bubble.append(gloss, row);
     shadow.append(style, bubble);
     document.documentElement.append(host);
-    ui = { bubble, gloss, row, word, button };
+    ui = { bubble, gloss, row, word };
   }
 
   function place() {
