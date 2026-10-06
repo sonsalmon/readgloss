@@ -18,7 +18,7 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 | T6b 떠 있는 버튼·퀵 메뉴·패널·설정 탭·미리보기·사이트·테마 | 완료 | main 15d0c3d | verifier 통과, 합칠 때 manifest·background·테스트 충돌 해소 |
 | T7 내 단어: 단어장 추가·아는 단어·최근 찾은 단어(35,36) | 완료 | main | verifier 통과, 테스트 합계 226 |
 | T8 어휘량 추정(6) | 대기 | — | T6·T7 합친 뒤 |
-| T9 분야 용어집(수학·ML·보안, HTB 최적화) | 진행 중(task wruhw4o7x) | feat/t9-glossary | spec "변경 기록 5" |
+| T9 분야 용어집(수학·ML·보안, HTB 최적화) | 완료(Aside 수동 확인 대기) | main 51c86f9 + 7d638ce | HTB 모듈 290(Fundamentals of AI) 15개 섹션 기준, 용어 검토 15건 반영, transposed 원형 고침. HTB 는 수식이 평문이라 수학 감지는 사이트 규칙이 대신함 |
 
 ## 미리 정해 둔 것
 
@@ -61,6 +61,12 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 - 통합 확인(wato0ui0i): 13개 중 12개 통과, 미리보기 빈 화면(P1)과 P2 3건은 T10(main 935ac2a)에서 고침·독립 검증 통과.
 - npm test 는 하나씩 차례로 돈다(--test-concurrency=1). 머신 부하가 높을 때 시간 재는 테스트가 흔들렸기 때문.
 
+## T9 뒤 메모
+
+- 일반 사이트는 여전히 사전 첫 뜻(matrix→모체 등). 보안 문서 사이트(portswigger.net, owasp.org 등)에도 보안 용어집을 켤지, 패널에서 사이트별로 고르게 할지 사용자에게 물을 것.
+- 두 단어 이상 용어(phrases-*.json)는 저장만 됨. 구 단위 주석은 다음 후보.
+- 위키 원자료: ~/dev/llm-wiki/raw/sources/2026-10-06-claude-p-persistent-subscription-bridge.md, 2026-10-06-macos-dictionary-services-en-ko.md
+
 ## 다음 한 걸음
 
-사용자가 Aside에서 확장을 새로고침해 사전 카드·문단 번역·자동 주석을 시험하고 거슬리는 점을 말한다. 그 뒤 고칠 것 묶음(P2 + 사용자 피드백) 또는 T5(상시 실행·켜기/끄기·수준 고르기)로 간다. 다리를 새로 받은 사람은 `npm run build:dict`를 한 번 해야 사전이 켜진다.
+사용자가 Aside 에서 확장을 새로고침해 패널·내 단어·용어집(HTB)을 시험한다. 다음 후보: T8 어휘량 추정, T5 상시 실행(launchd, 승인 필요), 보안 사이트 용어집 확대. 다리를 새로 받은 사람은 `npm run build:dict`를 한 번 해야 사전이 켜진다.
