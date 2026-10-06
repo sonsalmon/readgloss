@@ -1,5 +1,6 @@
 // 어려운 영어 단어 판정과 짧은 한국어 뜻(/annotate). AI 는 쓰지 않는다: 맥 영한사전 첫 표제어의 첫 뜻을 다듬는다.
 import { readFileSync } from 'node:fs';
+import { createGlossary } from './glossary.mjs';
 
 export const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 export const DEFAULT_LEVEL = 'B2';
@@ -64,8 +65,9 @@ export function lemmaOf(entry, word) {
 }
 
 // dict: createDict() 같은 { lookup(word) }. levels: 낱말 -> 등급 Map. isKnown: 원형 -> 아는 단어인가(아는 단어는 결과에서 뺀다).
-// 돌려주는 함수: (words, level) -> { word: { lemma, level, gloss } } — 어려운 단어만.
-export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () => false }) {
+// glossary: createGlossary() 같은 { find(word, 활성 분야) }. 돌려주는 함수: (words, level, domains) -> { word: { lemma, level, gloss } } — 어려운 단어만.
+// domains(활성 분야, 우선순위 순)에 용어집 뜻이 있으면 gloss 를 그 뜻으로 바꾸고 term:true, domain 을 붙인다. 용어집 덮어쓰기는 사전 캐시(known) 밖에서 해서 분야마다 뜻이 달라도 캐시가 섞이지 않는다.
+export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () => false, glossary = createGlossary() }) {
   const known = new Map(); // 낱말 -> { lemma, level, gloss } | null(사전에 없음·뜻 없음). 기준 등급과 무관해서 등급이 달라도 재사용한다.
   const rank = (l) => LEVELS.indexOf(l);
 
@@ -84,7 +86,7 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
     return v;
   }
 
-  return async function annotate(words, level = DEFAULT_LEVEL) {
+  return async function annotate(words, level = DEFAULT_LEVEL, domains = []) {
     const min = rank(level);
     const items = {};
     for (const w of new Set(words)) {
@@ -92,7 +94,15 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
       const own = levels.get(w);
       if (own !== undefined && rank(own) < min) continue;
       if (isKnown(w)) continue; // 표면형이 곧 아는 원형이면 사전도 안 부른다
-      const v = await resolve(w);
+      // 용어집에 철자(복수형 포함)가 있으면 사전은 안 부른다: 용어집 단어는 사전에 없거나 엉뚱한 뜻이 첫 줄인 일이 많다.
+      let v;
+      const direct = glossary.find(w, domains);
+      if (direct) v = { lemma: direct.key, level: levels.get(direct.key) ?? null, gloss: direct.ko, term: true, domain: direct.domain };
+      else {
+        v = await resolve(w);
+        const t = v && glossary.find(v.lemma, domains); // 활용형(normalized)은 사전이 준 원형으로 다시 찾는다
+        if (t) v = { lemma: t.key, level: levels.get(t.key) ?? v.level, gloss: t.ko, term: true, domain: t.domain };
+      }
       // 아는 단어 판정은 캐시(resolve) 밖에서 한다: 취소하면 사전을 다시 부르지 않고 바로 다시 나온다
       if (v && !isKnown(v.lemma) && (v.level === null || rank(v.level) >= min)) items[w] = v;
     }

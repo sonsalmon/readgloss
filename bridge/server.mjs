@@ -11,6 +11,7 @@ import { SYSTEM_PROMPT, WORD_RE, buildPrompt, createLookup } from './lookup.mjs'
 import { DictUnavailableError, createDict } from './dict.mjs';
 import { ANNOTATE_LEVELS, DEFAULT_LEVEL, createAnnotate, lemmaOf, shortGloss } from './annotate.mjs';
 import { createWords, parseWordsOp } from './words.mjs';
+import { createGlossary } from './glossary.mjs';
 import { MAX_TEXT, buildTranslatePrompt, createTranslate, normalizeText } from './translate.mjs';
 
 const PORT = 47831;
@@ -69,14 +70,15 @@ function sendAiError(res, e, cors) {
   else send(res, 500, { error: 'internal' }, cors);
 }
 
-// ask({word, sentence}) / askTranslate(문단) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
+// ask({word, sentence}) / askTranslate(문단, 용어 지정 목록) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
 export function createBridge({ ask, askTranslate, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), tokenFile, extensionId, dict = createDict() }) {
   const token = loadOrCreateToken(tokenFile);
   const tokenBuf = Buffer.from(token);
   const lookup = createLookup({ cache: createCache(cacheFile), ask });
   const translate = createTranslate({ cache: createCache(translationsFile), ask: askTranslate });
   const words = createWords({ file: wordsFile });
-  const annotate = createAnnotate({ dict, isKnown: words.isKnown });
+  const glossary = createGlossary();
+  const annotate = createAnnotate({ dict, isKnown: words.isKnown, glossary });
   const mine = `chrome-extension://${extensionId}`;
 
   const tokenOk = (h) => {
@@ -106,8 +108,9 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
     const norm = normalizeText(text);
     if (!norm) return send(res, 400, { error: 'bad-request' }, cors);
     if (norm.length > MAX_TEXT) return send(res, 413, { error: 'too-large' }, cors);
+    const active = glossary.domains(value);
     try {
-      send(res, 200, await translate({ text: norm, force: force === true }), cors);
+      send(res, 200, await translate({ text: norm, force: force === true, domainsKey: glossary.keyOf(active), terms: glossary.termsIn(norm, active) }), cors);
     } catch (e) {
       sendAiError(res, e, cors);
     }
@@ -123,7 +126,11 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
       const r = await dict.lookup(word);
       const lower = word.toLowerCase();
       const e = r.found ? r.entries[0] : null;
-      send(res, 200, e ? { ...r, lemma: lemmaOf(e, lower), gloss: shortGloss(e.senses?.[0]?.text) } : { ...r, lemma: lower }, cors);
+      const lemma = e ? lemmaOf(e, lower) : lower;
+      // 분야 용어집(요청의 host·domains 로 켜진 것)에 이 원형이 있으면 카드 맨 위 "용어:" 줄용으로 붙인다. 사전에 없는 단어도 용어집은 답한다.
+      const active = glossary.domains(value);
+      const t = glossary.find(lemma, active) ?? glossary.find(lower, active);
+      send(res, 200, { ...r, lemma, ...(e ? { gloss: shortGloss(e.senses?.[0]?.text) } : {}), ...(t ? { term: { ko: t.ko, domain: t.domain } } : {}) }, cors);
     } catch (e) {
       if (e instanceof DictUnavailableError) send(res, 503, { error: 'dict-unavailable' }, cors);
       else send(res, 502, { error: 'dict-failed' }, cors);
@@ -138,7 +145,7 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
     if (!Array.isArray(words) || words.some((w) => typeof w !== 'string') || !ANNOTATE_LEVELS.includes(level)) return send(res, 400, { error: 'bad-request' }, cors);
     if (words.length > MAX_ANNOTATE_WORDS) return send(res, 413, { error: 'too-large' }, cors);
     try {
-      send(res, 200, { items: await annotate(words.map((w) => w.toLowerCase()).filter((w) => WORD_RE.test(w)), level) }, cors);
+      send(res, 200, { items: await annotate(words.map((w) => w.toLowerCase()).filter((w) => WORD_RE.test(w)), level, glossary.domains(value)) }, cors);
     } catch (e) {
       if (e instanceof DictUnavailableError) send(res, 503, { error: 'dict-unavailable' }, cors);
       else send(res, 502, { error: 'dict-failed' }, cors);
@@ -236,7 +243,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
   const client = createClaudeClient({ systemPrompt: SYSTEM_PROMPT, cwd: join(dataDir, 'claude-cwd') });
   const bridge = createBridge({
     ask: async (a) => (await client.ask(buildPrompt(a))).text,
-    askTranslate: async (text) => (await client.ask(buildTranslatePrompt(text), { timeoutMs: 60_000 })).text,
+    askTranslate: async (text, terms) => (await client.ask(buildTranslatePrompt(text, terms), { timeoutMs: 60_000 })).text,
     cacheFile: join(dataDir, 'cache.json'),
     tokenFile: join(dataDir, 'token'),
     extensionId,
