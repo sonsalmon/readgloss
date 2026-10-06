@@ -70,5 +70,30 @@
     return { left: left + viewport.scrollX, top: top + viewport.scrollY };
   }
 
-  globalThis.readgloss = { isEnglishWord, cleanSelection, extractSentence, positionBubble, BLOCKED_SELECTOR };
+  // block 안 글자(자동 주석의 rt 와 우리가 넣은 번역 노드는 뺀다)와, (container, offset) 지점이 그 글자 안 몇 번째인지.
+  // textContent·Range.toString() 은 rt 글자까지 섞어서 쓰지 못한다. container 가 요소면 offset 은 자식 번호. 못 찾으면 글자 끝.
+  function plainTextAt(block, container, offset) {
+    const skip = (n) => {
+      const rg = n.getAttribute?.('data-readgloss');
+      return (rg != null && rg !== 'ann') || (n.tagName === 'RT' && n.parentElement?.getAttribute?.('data-readgloss') === 'ann');
+    };
+    let text = '';
+    let at = -1;
+    (function walk(n) {
+      if (n.nodeType === 3) {
+        if (n === container) at = text.length + offset;
+        text += n.nodeValue;
+        return;
+      }
+      if (n.nodeType !== 1 || skip(n)) return;
+      n.childNodes.forEach((c, i) => {
+        if (n === container && i === offset) at = text.length;
+        walk(c);
+      });
+      if (n === container && offset >= n.childNodes.length) at = text.length;
+    })(block);
+    return { text, offset: at < 0 ? text.length : at };
+  }
+
+  globalThis.readgloss = { isEnglishWord, cleanSelection, extractSentence, positionBubble, plainTextAt, BLOCKED_SELECTOR };
 })();

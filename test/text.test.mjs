@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 
 // extension/text.js 는 import/export 없는 classic script(content script 로 그대로 로드). 전역에 등록된 걸 쓴다.
 await import('../extension/text.js');
-const { isEnglishWord, cleanSelection, extractSentence, positionBubble, BLOCKED_SELECTOR } = globalThis.readgloss;
+const { isEnglishWord, cleanSelection, extractSentence, positionBubble, plainTextAt, BLOCKED_SELECTOR } = globalThis.readgloss;
 
 test('isEnglishWord: 영어 단어만 true', () => {
   for (const w of ['payload', 'Exploit', "don't", 'e-mail', 'it’s', 'TCP']) assert.ok(isEnglishWord(w), w);
@@ -99,4 +99,52 @@ test('manifest: MV3, 필요한 권한만, content script 순서(text.js 먼저)'
   assert.deepEqual(m.content_scripts[0].matches, ['http://*/*', 'https://*/*']);
   assert.equal(m.content_scripts[0].all_frames, false);
   assert.deepEqual(m.content_scripts[0].js.slice(0, 2), ['text.js', 'content.js']); // 뒤에 붙는 스크립트는 각자 시험한다
+});
+
+// --- 자동 주석(rt)과 문장 뽑기의 맞물림 ---
+// 브라우저 없이 쓰는 가짜 DOM. 문자열 자식은 텍스트 노드.
+function fel(tag, attrs = {}, ...kids) {
+  const n = {
+    nodeType: 1,
+    tagName: tag.toUpperCase(),
+    parentElement: null,
+    getAttribute: (k) => attrs[k] ?? null,
+    childNodes: kids.map((k) => (typeof k === 'string' ? { nodeType: 3, nodeValue: k } : k)),
+  };
+  for (const k of n.childNodes) k.parentElement = n;
+  return n;
+}
+const fann = (word, gloss) => fel('ruby', { 'data-readgloss': 'ann' }, word, fel('rt', {}, gloss));
+
+test('plainTextAt: 주석 rt 글자와 우리 번역 노드는 빼고, 컨테이너 위치를 글자 위치로 바꾼다', () => {
+  const r = fann('exploit', '이용하다');
+  const p = fel('p', {}, 'The attacker will ', r, ' the flaw. Then ', fann('payload', '수익 하중'), ' runs.', fel('readgloss-translation', { 'data-readgloss': 'translation' }, '번역문'));
+  const base = r.childNodes[0]; // ruby 안 단어 글자 노드
+  const { text, offset } = plainTextAt(p, base, 0);
+  assert.equal(text, 'The attacker will exploit the flaw. Then payload runs.');
+  assert.equal(offset, 'The attacker will '.length);
+  // 더블클릭한 단어와 문장이 깨끗하다(rt 글자 없음)
+  assert.equal(extractSentence(text, offset, 'exploit'.length), 'The attacker will exploit the flaw.');
+  const pay = p.childNodes[3].childNodes[0];
+  const second = plainTextAt(p, pay, 2);
+  assert.equal(extractSentence(second.text, second.offset - 2, 'payload'.length), 'Then payload runs.');
+  assert.equal(text.includes('이용하다') || text.includes('번역문') || text.includes('수익'), false);
+});
+
+test('plainTextAt: 요소 컨테이너(offset = 자식 번호)·찾지 못한 컨테이너·일반 글', () => {
+  const p = fel('p', {}, 'ab', fann('cd', '뜻'), 'ef');
+  assert.deepEqual(plainTextAt(p, p, 0), { text: 'abcdef', offset: 0 });
+  assert.deepEqual(plainTextAt(p, p, 1), { text: 'abcdef', offset: 2 }); // 'ab' 뒤
+  assert.deepEqual(plainTextAt(p, p, 2), { text: 'abcdef', offset: 4 });
+  assert.deepEqual(plainTextAt(p, p, 3), { text: 'abcdef', offset: 6 }); // 끝
+  assert.equal(plainTextAt(p, fel('x'), 0).offset, 6); // 못 찾으면 끝
+  const plain = fel('p', {}, 'Hello world');
+  assert.deepEqual(plainTextAt(plain, plain.childNodes[0], 6), { text: 'Hello world', offset: 6 });
+});
+
+test('content.js: 문장 뽑기가 plainTextAt 을 쓰고, ruby 를 글 블록으로 착각하지 않는다', () => {
+  const src = readFileSync(new URL('../extension/content.js', import.meta.url), 'utf8');
+  assert.match(src, /plainTextAt\(block, range\.startContainer, range\.startOffset\)/);
+  assert.doesNotMatch(src, /block\.textContent/);
+  assert.match(src, /startsWith\('ruby'\)/);
 });

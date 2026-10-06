@@ -1,6 +1,6 @@
 // 더블클릭 -> 사전 카드. DOM 접착만 한다. 판단 로직은 text.js(globalThis.readgloss)에 있다.
 (() => {
-  const { cleanSelection, extractSentence, positionBubble, BLOCKED_SELECTOR } = globalThis.readgloss;
+  const { cleanSelection, extractSentence, positionBubble, plainTextAt, BLOCKED_SELECTOR } = globalThis.readgloss;
 
   const MESSAGES = {
     'bridge-off': '다리가 꺼져 있어요. 터미널에서 node ~/dev/readgloss/bridge/server.mjs 를 실행해 주세요',
@@ -205,7 +205,7 @@
   function blockOf(node) {
     for (let el = elementOf(node); el && el !== document.body; el = el.parentElement) {
       const d = getComputedStyle(el).display;
-      if (!d.startsWith('inline') && d !== 'contents') return el;
+      if (!d.startsWith('inline') && !d.startsWith('ruby') && d !== 'contents') return el; // 자동 주석의 ruby(display: ruby)는 글 블록이 아니다
     }
     return document.body;
   }
@@ -222,10 +222,8 @@
     if (!picked) return;
 
     const block = blockOf(range.startContainer);
-    const before = document.createRange();
-    before.selectNodeContents(block);
-    before.setEnd(range.startContainer, range.startOffset);
-    const sentence = extractSentence(block.textContent, before.toString().length + picked.start, picked.word.length);
+    const { text, offset } = plainTextAt(block, range.startContainer, range.startOffset); // 자동 주석의 rt 글자는 문장에 섞지 않는다
+    const sentence = extractSentence(text, offset + picked.start, picked.word.length);
     const r = range.getBoundingClientRect();
 
     if (host) close();

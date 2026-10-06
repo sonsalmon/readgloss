@@ -109,6 +109,28 @@ test('findBlock: 우리가 넣은 번역 노드(와 그 안)는 대상이 아니
   void p;
 });
 
+const ann = (word, gloss) => el('ruby', { 'data-readgloss': 'ann' }, word, el('rt', {}, gloss));
+
+test('textOf: 자동 주석(ruby data-readgloss=ann)은 원래 단어는 남기고 rt 글자만 뺀다', () => {
+  const p = el('p', {}, 'Attackers ', ann('exploit', '이용하다'), ' the ', ann('payload', '수익 하중'), ' now.');
+  assert.equal(textOf(p), 'Attackers exploit the payload now.');
+  const li = el('li', {}, 'Item ', ann('delve', '손으로 더듬다'), tr('번역문이 여기 들어 있다'), ' end');
+  assert.equal(textOf(li), 'Item delve end'); // 번역 노드는 통째로, 주석은 rt 만 뺀다
+});
+
+test('textOf: 다른 data-readgloss 노드(button 등)는 통째로 제외, 페이지 자신의 ruby·rt 는 그대로', () => {
+  const p = el('p', {}, 'a ', el('span', { 'data-readgloss': 'button' }, 'UI'), 'b ', el('ruby', {}, '漢', el('rt', {}, 'kan')));
+  assert.equal(textOf(p), 'a b 漢kan');
+});
+
+test('findBlock: 주석 붙은 단어(ruby ann)와 그 rt 를 눌러도 문단 블록을 찾는다', () => {
+  const r = ann('exploit', '이용하다');
+  const p = el('p', {}, 'x ', r);
+  assert.equal(findBlock(r), p);
+  assert.equal(findBlock(r.childNodes[1]), p); // rt
+  assert.equal(findBlock(tr('번역')), null); // 번역 노드는 여전히 대상이 아니다
+});
+
 test('insertPlacement: li·td·th 는 안쪽 끝, 나머지는 바로 아래(형제)', () => {
   for (const tag of ['LI', 'TD', 'TH', 'li', 'td']) assert.equal(insertPlacement(tag), 'beforeend', tag);
   for (const tag of ['P', 'BLOCKQUOTE', 'H1', 'H3', 'H6', 'DD', 'DT', 'FIGCAPTION']) assert.equal(insertPlacement(tag), 'afterend', tag);
@@ -150,9 +172,9 @@ test('buttonPosition: 첫 줄 정보가 없으면 블록 맨 위를 쓴다', () 
   assert.deepEqual(buttonPosition({ blockRect: { left: 100, top: 50 } }), { left: 72, top: 50, inside: false });
 });
 
-test('manifest: content script 목록 끝에 paragraph-core.js, paragraph.js 가 있다(ES 모듈 import 없음)', () => {
+test('manifest: content script 목록에 paragraph-core.js, paragraph.js 가 이어서 있다(ES 모듈 import 없음)', () => {
   const m = JSON.parse(readFileSync(new URL('../extension/manifest.json', import.meta.url), 'utf8'));
   const js = m.content_scripts[0].js;
-  assert.deepEqual(js.slice(-2), ['paragraph-core.js', 'paragraph.js']);
+  assert.deepEqual(js.slice(2, 4), ['paragraph-core.js', 'paragraph.js']); // 뒤에 붙는 스크립트(annotate)는 각자 시험한다
   for (const f of ['paragraph-core.js', 'paragraph.js']) assert.doesNotMatch(readFileSync(new URL(`../extension/${f}`, import.meta.url), 'utf8'), /^\s*(import|export)\s/m, f);
 });

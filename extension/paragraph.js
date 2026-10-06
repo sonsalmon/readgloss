@@ -97,7 +97,7 @@
   // 블록의 첫 글자 줄 사각형(버튼을 첫 줄 높이에 맞추려고). 못 구하면 undefined -> 블록 맨 위.
   function firstLineRect(block) {
     const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
-      acceptNode: (t) => (t.nodeValue.trim() && !t.parentElement.closest('[data-readgloss]') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT),
+      acceptNode: (t) => (t.nodeValue.trim() && !t.parentElement.closest('[data-readgloss]:not([data-readgloss="ann"]), rt') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT), // 자동 주석 단어는 글자, rt 는 아님
     });
     const t = walker.nextNode();
     if (!t) return undefined;

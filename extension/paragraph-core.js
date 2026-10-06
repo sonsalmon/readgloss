@@ -24,6 +24,11 @@
   const BUTTON_GAP = 6;
   const MIN_LEFT_MARGIN = 32;
 
+  // 우리가 넣은 노드 중 문단 글에 속하지 않는 것: 번역 블록·버튼. 자동 주석(data-readgloss="ann")은 원래 단어가 본문이라 여기에 안 든다.
+  const isOurs = (n) => n.hasAttribute?.('data-readgloss') === true && n.getAttribute('data-readgloss') !== 'ann';
+  // 자동 주석의 뜻 글자(rt)만 뺀다. 페이지 자신의 ruby·rt 는 본문이다.
+  const isAnnNote = (n) => n.tagName === 'RT' && n.parentElement?.getAttribute?.('data-readgloss') === 'ann';
+
   const normalizeText = (s) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : '');
 
   function isTargetText(text) {
@@ -38,7 +43,7 @@
   function findBlock(el) {
     let block = null;
     for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
-      if (n.hasAttribute?.('data-readgloss') || n.isContentEditable === true || IGNORE.has(n.tagName)) return null;
+      if (isOurs(n) || n.isContentEditable === true || IGNORE.has(n.tagName)) return null;
       if (!block && BLOCK.has(n.tagName)) block = n;
     }
     return block;
@@ -46,13 +51,13 @@
 
   const insertPlacement = (tagName) => (INSIDE_END.has(String(tagName).toUpperCase()) ? 'beforeend' : 'afterend');
 
-  // node 아래 글자를 모은 정규화 문자열. 우리가 넣은 번역 노드는 건너뛴다(li·td 는 번역을 안에 넣으므로 다시 번역할 때 한국어가 섞이지 않게).
+  // node 아래 글자를 모은 정규화 문자열. 우리가 넣은 번역 노드는 건너뛰고, 자동 주석은 rt 글자만 뺀다(주석 붙은 단어 자체는 번역 원문에 남아야 한다). (li·td 는 번역을 안에 넣으므로 다시 번역할 때 한국어가 섞이지 않게).
   // opts.isHidden(el): 화면에 안 보이는 요소(display:none 등)를 건너뛰는 훅. innerText 대신 직접 걷는 이유: 번역 노드 제외를 DOM 없이 시험하려고.
   function textOf(node, { isHidden } = {}) {
     const parts = [];
     (function walk(n) {
       if (n.nodeType === 3) return void parts.push(n.nodeValue);
-      if (n.nodeType !== 1 || n.hasAttribute?.('data-readgloss') || SKIP_TEXT.has(n.tagName) || isHidden?.(n)) return;
+      if (n.nodeType !== 1 || isOurs(n) || isAnnNote(n) || SKIP_TEXT.has(n.tagName) || isHidden?.(n)) return;
       const brk = BREAK.has(n.tagName);
       if (brk) parts.push(' ');
       for (const c of n.childNodes) walk(c);

@@ -85,3 +85,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   translate(msg).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
   return true; // 비동기 응답
 });
+
+// --- 자동 주석(T3): content script 의 'annotate' 요청(단어 목록)을 다리 /annotate(맥 사전)로 전달한다. ---
+async function annotate({ words, level }, retried = false) {
+  const token = await getToken(retried);
+  if (!token) return { error: 'pair-failed' };
+  const res = await bridgeFetch('/annotate', {
+    method: 'POST',
+    headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ words, level }),
+  });
+  if (res.status === 401 && !retried) return annotate({ words, level }, true);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: data.error || `http-${res.status}` };
+  return { items: data.items };
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'annotate') return;
+  annotate(msg).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
+  return true; // 비동기 응답
+});
