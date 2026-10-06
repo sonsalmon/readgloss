@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "readgloss",
+  "version": "0.1.0",
+  "description": "영어 단어를 더블클릭하면 한국어 뜻을 보여 줍니다(로컬 다리를 통해 Claude 구독으로 번역).",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvSy+Nk/Nn3mIuDXdngejJpfJ5e672FH0uKY3FLXt9Ry0lEk9aCCK5SLVlTPpIQlLZ3d5/MXq2DfXoky8Nqg8ElPpufkw/QZXPkxOvzKAZxrlpWtWBqm9CY+3Rsm1oyp99Wv+i2I5k8WznvQ4hXDOja84yBDqZ39y2hmX7VF8a/5HUZiS3A8vru8PDDJRqy5ev56DasIKkAsxjSKvmmvbkkJH3v77coptXaw5DQV0oJ62V8fbz01BfnVF3WxlXe/X1w85Mj3EnwPQZnZWKfHQKvFLGB6umzqlpzTv8ur/934itRUlydRdVrn6fKJP9+yCNkWwizsBTonGnMplxNdgSQIDAQAB",
+  "permissions": ["storage"],
+  "host_permissions": ["http://127.0.0.1:47831/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["text.js", "content.js"],
+      "all_frames": false
+    }
+  ]
+}
