@@ -178,3 +178,7 @@ test('목록 입력 정리: 용어집 사이트에도 같은 규칙(와일드카
   assert.deepEqual(C.removeSite(list, 'arxiv.org').includes('arxiv.org'), false);
   assert.equal(S.siteMatches(list, 'docs.python.org'), true);
 });
+
+test('TOGGLES: 드래그 번역 스위치가 있다', () => {
+  assert.ok(C.TOGGLES.some((t) => t.path === 'selectionTranslate'));
+});

@@ -200,3 +200,12 @@ test('siteMatches: 목록·호스트만 받는 같은 규칙. siteBlocked 는 se
   assert.equal(S.siteMatches(d, 'evil-owasp.org'), false);
   assert.equal(S.siteMatches(d, 'arxiv.org.evil.com'), false);
 });
+
+test('selectionTranslate: 기본은 켜짐, 불리언만 받고 나머지는 기본값', () => {
+  assert.equal(S.DEFAULTS.selectionTranslate, true);
+  assert.equal(S.normalize({ selectionTranslate: false }).selectionTranslate, false);
+  assert.equal(S.normalize({ selectionTranslate: 'no' }).selectionTranslate, true);
+  assert.equal(S.merge({}, { selectionTranslate: false }).selectionTranslate, false);
+  // 이 페이지 끄기·사이트 끄기와는 별개: sites 에 걸려도 값은 그대로
+  assert.equal(S.normalize({ sites: ['a.com'], selectionTranslate: true }).selectionTranslate, true);
+});

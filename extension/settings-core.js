@@ -6,7 +6,7 @@
   const DEFAULTS = Object.freeze({
     enabled: true, level: 'C1', maxPerParagraph: 3, repeat: 'page',
     annotation: { position: 'top', sizePct: 55, color: 'text', customColor: '#2f6feb', opacityPct: 70, weight: 'normal', gapEm: 0 },
-    mark: 'none', allowCopy: false, theme: 'auto', glossary: 'auto', sites: [],
+    mark: 'none', allowCopy: false, selectionTranslate: true, theme: 'auto', glossary: 'auto', sites: [],
     // 분야 용어집(보안·ML·수학)을 켤 사이트. 규칙은 sites 와 같다.
     glossarySites: Object.freeze(['academy.hackthebox.com', 'app.hackthebox.com', 'portswigger.net', 'owasp.org', '*.owasp.org', 'book.hacktricks.xyz', 'book.hacktricks.wiki', 'cloud.hacktricks.xyz', 'hacktricks.wiki', '*.hacktricks.wiki', 'tryhackme.com', 'attack.mitre.org', 'atlas.mitre.org', 'cwe.mitre.org', 'nvd.nist.gov', 'www.exploit-db.com', 'gtfobins.github.io', 'lolbas-project.github.io', 'arxiv.org']),
     floatingButton: { show: true, top: 60 },
@@ -51,6 +51,7 @@
       },
       mark: pickEnum(r.mark, ENUMS.mark, D.mark),
       allowCopy: bool(r.allowCopy, D.allowCopy),
+      selectionTranslate: bool(r.selectionTranslate, D.selectionTranslate), // 드래그 번역. 사용자가 직접 하는 동작이라 사이트·페이지 끄기와 별개
       theme: pickEnum(r.theme, ENUMS.theme, D.theme),
       glossary: pickEnum(r.glossary, ENUMS.glossary, D.glossary),
       sites: Array.isArray(r.sites) ? cleanList(r.sites) : [],
