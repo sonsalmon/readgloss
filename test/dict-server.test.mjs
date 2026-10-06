@@ -133,3 +133,24 @@ test('/dict: 동시 요청도 한 줄씩 직렬로 맞는 답을 받는다', asy
     await s.bridge.close();
   }
 });
+
+test('/dict: 용어집에 없으면 활성 분야 표시 뜻을 sense:{ko, tag} 로 덧붙인다. 힌트가 없거나 용어가 있으면 안 붙인다', async () => {
+  const s = await start();
+  try {
+    const post = (word, domains) => s.req('POST', '/dict', { headers: s.auth, body: { word, ...(domains ? { domains } : {}) } }).then((r) => r.json());
+    const a = await post('algorithm', ['math']);
+    assert.deepEqual(a.sense, { ko: '알고리듬', tag: '수학' });
+    assert.equal(a.term, undefined);
+    assert.deepEqual((await post('average', ['math', 'security'])).sense, { ko: '산술 평균', tag: '통계' });
+    assert.deepEqual((await post('algorithm', ['security', 'math'])).sense, { ko: '알고리듬', tag: '컴퓨터' });
+    assert.equal((await post('algorithm')).sense, undefined, '힌트 없음');
+    assert.equal((await post('average', ['security'])).sense, undefined, '이 분야 표시 없음');
+    const t = await post('subtraction', ['math']); // 용어집에 있다
+    assert.deepEqual(t.term, { ko: '뺄셈', domain: 'math' });
+    assert.equal(t.sense, undefined);
+    assert.equal((await post('exploit', ['math'])).sense, undefined);
+    assert.equal(s.asked.length, 0);
+  } finally {
+    await s.bridge.close();
+  }
+});

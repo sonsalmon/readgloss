@@ -93,7 +93,7 @@
     card.setAttribute('aria-label', `${current.word} 사전`);
     const scroll = el('div', 'scroll');
     scroll.tabIndex = 0;
-    const term = el('div', 'term'); // 분야 용어집 뜻("용어: 전치(행렬) · 수학"). 사전 결과가 오면 채운다
+    const term = el('div', 'term'); // 분야 용어집 뜻("용어: 전치(행렬) · 수학") 또는 사전의 분야 표시 뜻("분야 뜻: 곱셈 · 수학"). 사전 결과가 오면 채운다
     const ai = el('div', 'ai');
     ai.hidden = true;
     ai.setAttribute('role', 'status');
@@ -242,7 +242,7 @@
     showMessage('찾는 중…');
     const r = await send({ type: 'dict', word: current.word, ...(globalThis.readglossGlossary?.hint({ glossary, glossarySites }, document, location.hostname) ?? {}) });
     if (my !== seq) return;
-    const line = globalThis.readglossGlossary?.termLine(r?.term) ?? '';
+    const line = (globalThis.readglossGlossary?.termLine(r?.term) ?? '') || (r?.sense?.ko ? `분야 뜻: ${r.sense.ko} · ${r.sense.tag}` : ''); // 용어가 없을 때만 다리가 준 분야 표시 뜻(sense)
     ui.term.textContent = line;
     ui.term.classList.toggle('on', line !== '');
     if (r?.found && r.entries?.length) renderEntries(r.entries);
