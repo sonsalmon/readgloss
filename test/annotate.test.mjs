@@ -88,6 +88,8 @@ test('lemmaOf: 본문 머리의 · 와 번호, 악센트를 걷어 원형으로 
   assert.equal(lemmaOf(e('páylòad', 'páy·lòad 명사1.〔상업〕 수익 하중.'), 'payload'), 'payload');
   assert.equal(lemmaOf(e('exploit', 'ex·ploit 2 | iksplɔ́it | 동사'), 'exploit'), 'exploit');
   assert.equal(lemmaOf(e('delve', 'delve | delv | 동사'), 'delves'), 'delve');
+  // 활용형을 찾으면 발음 칸(" | ")이 없고 headword 는 입력 그대로다. 본문 맨 앞 낱말에서 원형을 뽑는다.
+  assert.equal(lemmaOf(e('transposed', 'trans·póse 동사(-posed, -pos·ing)타동사1.《격식》 뒤바꾸다'), 'transposed'), 'transpose');
   assert.equal(lemmaOf(e('the-', '모음으로 시작되는 말에 붙여'), 'the'), 'the');
   assert.equal(lemmaOf(e('', ''), 'word'), 'word');
 });

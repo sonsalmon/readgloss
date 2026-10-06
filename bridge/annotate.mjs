@@ -57,7 +57,9 @@ const plain = (s) => s.normalize('NFD').replace(/[̀-ͯ·]/g, '').toLowerCase().
 export function lemmaOf(entry, word) {
   const raw = entry?.raw ?? '';
   const i = raw.indexOf(' | ');
-  for (const c of [i > 0 && i <= 60 ? raw.slice(0, i).replace(/\s+\d{1,2}$/, '') : '', entry?.headword ?? '']) {
+  // 활용형 조회는 발음 칸(" | ")이 없어 본문 맨 앞 낱말("trans·póse 동사…")이 원형이다.
+  const head = raw.match(/^[A-Za-zÀ-ɏ·'’-]+/)?.[0] ?? '';
+  for (const c of [i > 0 && i <= 60 ? raw.slice(0, i).replace(/\s+\d{1,2}$/, '') : '', head, entry?.headword ?? '']) {
     const n = plain(c);
     if (/^[a-z][a-z'’-]*$/.test(n)) return n;
   }
