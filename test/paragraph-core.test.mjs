@@ -190,6 +190,19 @@ test('buttonPosition: 왼쪽 여백이 모자라면(left < 32) 블록 안쪽 왼
   assert.equal(buttonPosition({ blockRect: { left: 32, top: 0 }, firstLine: { top: 0, height: 22 } }).left, 4);
 });
 
+test('buttonPosition: 목록(li) 문단은 글머리표 자리만큼 더 왼쪽으로 비켜 둔다(글머리표를 가리지 않게)', () => {
+  const plain = buttonPosition({ blockRect: { left: 100, top: 50 }, firstLine: { top: 50, height: 24 } });
+  const list = buttonPosition({ blockRect: { left: 100, top: 50 }, firstLine: { top: 50, height: 24 }, list: true });
+  assert.equal(list.left, plain.left - 20);
+  assert.equal(list.top, plain.top);
+  assert.equal(list.inside, false);
+  // 글머리표 자리까지 합친 바깥 여백(52px)이 모자라면 안쪽으로 겹치는 쪽이 이긴다
+  assert.deepEqual(buttonPosition({ blockRect: { left: 51, top: 0 }, firstLine: { top: 0, height: 22 }, list: true }), { left: 53, top: 0, inside: true });
+  assert.equal(buttonPosition({ blockRect: { left: 52, top: 0 }, firstLine: { top: 0, height: 22 }, list: true }).inside, false);
+  // list 를 안 주면 예전과 똑같다
+  assert.equal(buttonPosition({ blockRect: { left: 51, top: 0 }, firstLine: { top: 0, height: 22 } }).inside, false);
+});
+
 test('buttonPosition: 첫 줄 정보가 없으면 블록 맨 위를 쓴다', () => {
   assert.deepEqual(buttonPosition({ blockRect: { left: 100, top: 50 } }), { left: 72, top: 50, inside: false });
 });

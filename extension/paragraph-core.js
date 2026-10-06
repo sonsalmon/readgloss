@@ -23,6 +23,7 @@
   const BUTTON_SIZE = 22;
   const BUTTON_GAP = 6;
   const MIN_LEFT_MARGIN = 32;
+  const LIST_MARKER = 20; // 목록 글머리표가 li 상자 왼쪽 바깥에 차지하는 자리
 
   // 우리가 넣은 노드: 번역 블록·버튼·자동 주석(ann 감싸개와 뜻 글자 gloss). 클릭해도 문단을 찾지 못하게 하는 대상은 번역 블록·버튼뿐이다.
   const mark = (n) => (n.hasAttribute?.('data-readgloss') === true ? n.getAttribute('data-readgloss') : null);
@@ -80,11 +81,12 @@
   }
 
   // 번역 버튼 위치(뷰포트 좌표). blockRect: 블록 사각형, firstLine: 블록 첫 줄 사각형(없으면 블록 맨 위).
-  // 왼쪽 바깥 여백이 모자라면(left < 32) 블록 안쪽 왼쪽 위에 겹친다.
-  function buttonPosition({ blockRect, firstLine = { top: blockRect.top, height: BUTTON_SIZE }, size = BUTTON_SIZE }) {
-    const inside = blockRect.left < MIN_LEFT_MARGIN;
+  // 왼쪽 바깥 여백이 모자라면(left < 32) 블록 안쪽 왼쪽 위에 겹친다. list(글머리표 있는 li)면 글머리표 자리만큼 더 왼쪽에 둔다(여백 기준도 그만큼 늘어난다).
+  function buttonPosition({ blockRect, firstLine = { top: blockRect.top, height: BUTTON_SIZE }, size = BUTTON_SIZE, list = false }) {
+    const marker = list ? LIST_MARKER : 0;
+    const inside = blockRect.left < MIN_LEFT_MARGIN + marker;
     return {
-      left: inside ? blockRect.left + 2 : blockRect.left - size - BUTTON_GAP,
+      left: inside ? blockRect.left + 2 : blockRect.left - size - BUTTON_GAP - marker,
       top: firstLine.top + (firstLine.height - size) / 2,
       inside,
     };
