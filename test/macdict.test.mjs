@@ -56,3 +56,13 @@ test('실연동: 상주 도우미 한 번 조회는 300ms 안', { skip }, async 
     d.close();
   }
 });
+
+test('실연동: 문장 첫머리 대문자(Exploit, Teams)도 같은 결과', { skip }, async () => {
+  const d = createDict();
+  try {
+    assert.equal((await d.lookup('Exploit')).entries.length >= 2, true);
+    assert.equal((await d.lookup('Teams')).entries[0].headword, 'team');
+  } finally {
+    d.close();
+  }
+});
