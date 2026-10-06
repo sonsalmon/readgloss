@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { ANNOTATE_LEVELS, LEVELS, createAnnotate, lemmaOf, loadWordLevels, parseWordLevels, shortGloss } from '../bridge/annotate.mjs';
+import { ANNOTATE_LEVELS, LEVELS, createAnnotate, lemmaOf, pickEntry, loadWordLevels, parseWordLevels, shortGloss } from '../bridge/annotate.mjs';
 import { createDict, parseEntry } from '../bridge/dict.mjs';
 
 const fx = JSON.parse(readFileSync(new URL('../fixtures/dict-plain.json', import.meta.url), 'utf8'));
@@ -92,6 +92,34 @@ test('lemmaOf: 본문 머리의 · 와 번호, 악센트를 걷어 원형으로 
   assert.equal(lemmaOf(e('transposed', 'trans·póse 동사(-posed, -pos·ing)타동사1.《격식》 뒤바꾸다'), 'transposed'), 'transpose');
   assert.equal(lemmaOf(e('the-', '모음으로 시작되는 말에 붙여'), 'the'), 'the');
   assert.equal(lemmaOf(e('', ''), 'word'), 'word');
+});
+
+test('lemmaOf·pickEntry: "matrix 의 복수형" 같은 굴절 안내 항목은 안내가 가리키는 낱말이 원형, 뜻은 원형 항목에서', () => {
+  const entries = (w) => fx[w].map((e) => parseEntry(e));
+  const mx = entries('matrices'); // 맥 사전은 matrices 에 굴절 안내 항목을 먼저 준다
+  assert.equal(lemmaOf(mx[0], 'matrices'), 'matrix');
+  assert.deepEqual([pickEntry(mx, 'matrices').lemma, pickEntry(mx, 'matrices').e.headword], ['matrix', 'matrix']);
+  const vx = entries('vertices'); // 원형 항목이 먼저 오는 평소 모양은 그대로
+  assert.deepEqual([pickEntry(vx, 'vertices').lemma, pickEntry(vx, 'vertices').e.headword], ['vertex', 'vertex']);
+  const e = (headword, raw) => ({ headword, raw, senses: parseEntry({ headword, text: raw }).senses });
+  for (const [raw, lemma] of [
+    ['bases | ba·ses 1 | béisiːz | 명사basis 의 복수형. ', 'basis'],
+    ['ran | ran 2 | ræn | 동사run 의 과거형. ', 'run'],
+    ['saw | saw 2 | sɔː | 동사see ¹의 과거형. ', 'see'],
+    ['has | has | həz | 동사have 의 3인칭·단수·직설법·현재형. ', 'have'],
+    ['gone | gone | ɡɔ(ː)n | 동사go의 과거 분사. ', 'go'],
+  ]) assert.equal(lemmaOf(e('x', raw.split(' | ').slice(1).join(' | ')), 'x'), lemma, raw);
+  // 굴절 안내 말고 자기 뜻도 있는 표제어(gone 형용사)나 본문 속 안내는 원형 취급하지 않는다
+  assert.equal(lemmaOf(e('gone', 'gone | ɡɔ(ː)n | 동사go의 과거 분사. 형용사1.①지나간; 사라진'), 'gone'), 'gone');
+  assert.equal(lemmaOf(e('foo', 'foo | fuː | 명사1.보기 ▸ bar 의 복수형은 baz.'), 'foo'), 'foo');
+  assert.equal(pickEntry([e('matrices', 'mat·ri·ces | méitrisìːz | 명사matrix 의 복수형. ')], 'matrices').e, null); // 원형 항목이 없으면 뜻은 없다
+});
+
+test('annotate: matrices 는 원형 matrix 와 matrix 항목의 뜻(안내문이 아니라)을 준다', async () => {
+  const mx = fx.matrices.map((e) => parseEntry(e));
+  const a = createAnnotate({ dict: fakeDict({ matrices: mx }), levels });
+  assert.deepEqual(await a(['matrices']), { matrices: { lemma: 'matrix', level: null, gloss: '모체' } });
+  assert.deepEqual(await a(['matrices'], 'B2', ['math'], []), { matrices: { lemma: 'matrix', level: null, gloss: '행렬', term: true, domain: 'math' } });
 });
 
 // 가짜 사전: word -> entries(parseEntry 모양). 호출 기록을 남긴다.

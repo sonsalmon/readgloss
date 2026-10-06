@@ -120,6 +120,20 @@ test('/dict: 도우미가 죽거나 멈추면 502, 다음 요청에서 다시 �
   }
 });
 
+test('/dict: matrices 는 굴절 안내 항목이 먼저 와도 원형 matrix 와 matrix 항목의 뜻을 준다', async () => {
+  const s = await start();
+  try {
+    const r = (await s.req('POST', '/dict', { headers: s.auth, body: { word: 'matrices' } })).json();
+    assert.equal(r.lemma, 'matrix');
+    assert.equal(r.gloss, '모체');
+    assert.equal(r.entries[0].headword, 'matrices'); // 카드에는 사전이 준 항목을 그대로 보인다
+    const v = (await s.req('POST', '/dict', { headers: s.auth, body: { word: 'vertices' } })).json();
+    assert.equal(v.lemma, 'vertex');
+  } finally {
+    await s.bridge.close();
+  }
+});
+
 test('/dict: 동시 요청도 한 줄씩 직렬로 맞는 답을 받는다', async () => {
   const s = await start();
   try {

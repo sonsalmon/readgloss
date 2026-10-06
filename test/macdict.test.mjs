@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { createDict } from '../bridge/dict.mjs';
+import { pickEntry } from '../bridge/annotate.mjs';
 
 const bin = new URL('../native/macdict', import.meta.url).pathname;
 const skip = process.platform !== 'darwin' || !existsSync(bin) ? '맥이 아니거나 npm run build:dict 를 안 했어요' : false;
@@ -62,6 +63,20 @@ test('실연동: 문장 첫머리 대문자(Exploit, Teams)도 같은 결과', {
   try {
     assert.equal((await d.lookup('Exploit')).entries.length >= 2, true);
     assert.equal((await d.lookup('Teams')).entries[0].headword, 'team');
+  } finally {
+    d.close();
+  }
+});
+
+test('실연동: 복수형 matrices(굴절 안내 항목이 먼저 옴)·indices·vertices·beacons -> 원형, 뜻은 원형 항목', { skip }, async () => {
+  const d = createDict();
+  try {
+    for (const [w, lemma] of [['matrices', 'matrix'], ['indices', 'index'], ['vertices', 'vertex'], ['beacons', 'beacon']]) {
+      const r = await d.lookup(w);
+      const p = pickEntry(r.entries, w);
+      assert.equal(p.lemma, lemma, w);
+      assert.equal(p.e?.headword, lemma, `${w} 뜻 항목`);
+    }
   } finally {
     d.close();
   }

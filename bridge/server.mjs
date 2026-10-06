@@ -10,7 +10,7 @@ import { AiParseError } from './parse.mjs';
 import { SYSTEM_PROMPT, WORD_RE, buildPrompt, createLookup } from './lookup.mjs';
 import { DictUnavailableError, createDict } from './dict.mjs';
 import { MtUnavailableError, createMt } from './mt.mjs';
-import { ANNOTATE_LEVELS, DEFAULT_LEVEL, createAnnotate, isCommon, lemmaOf, loadWordLevels, pickSense, shortGloss, taggedGlosses } from './annotate.mjs';
+import { ANNOTATE_LEVELS, DEFAULT_LEVEL, createAnnotate, isCommon, loadWordLevels, pickEntry, pickSense, shortGloss, taggedGlosses } from './annotate.mjs';
 import { createWords, parseWordsOp } from './words.mjs';
 import { MAX_TERMS, createGlossary } from './glossary.mjs';
 import { MAX_TEXT, buildTranslatePrompt, createTranslate, normalizeText } from './translate.mjs';
@@ -213,8 +213,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       // 원형(lemma)은 /annotate 와 같은 함수로 다리가 정한다. 카드 버튼과 단어장은 이 값만 쓴다. gloss 는 단어장에 남길 짧은 뜻.
       const r = await dict.lookup(word);
       const lower = word.toLowerCase();
-      const e = r.found ? r.entries[0] : null;
-      const lemma = e ? lemmaOf(e, lower) : lower;
+      const { e, lemma } = r.found ? pickEntry(r.entries, lower) : { e: null, lemma: lower };
       // 분야 용어집(요청의 domains 힌트로 켜진 것)에 이 원형이 있으면 카드 맨 위 "용어:" 줄용으로 붙인다. 사전에 없는 단어도 용어집은 답한다.
       const active = glossary.domains(value);
       const t = glossary.find(lemma, active) ?? glossary.find(lower, active);

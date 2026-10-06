@@ -79,7 +79,7 @@ test('뜻을 잃지 않는다: 원문 한글 글자 수 == 구조에 담긴 한�
     for (const raw of entries) {
       const e = parseEntry(raw);
       assert.equal(e.raw, raw.text);
-      const body = raw.text.split(' | ').slice(-1)[0]; // 표제어·발음 뒤
+      const body = raw.text.replace(/^.{1,60}? \| .{0,80}? \| /, ''); // 표제어·발음 뒤(본문 속 " | ", 예: matrix 의 복수형 표기는 건드리지 않는다)
       assert.equal(hangul(everything(e)), hangul(body), `${word} ${raw.homograph}`);
     }
   }

@@ -80,5 +80,29 @@
    "headword": "iterative",
    "text": "it·er·a·tive | ítərèitiv,-rə- | 형용사1.반복의; 되풀이가 많은 ▸ an iterative refrain되풀이되는 후렴. 2.〔문법〕 〈동사·상(相) 등이〉 반복을 나타내는, 반복상(相)의. 3.〔수학·컴퓨터〕 〈공식·조작이〉 반복(적용)의. 명사〔문법〕 반복상. "
   }
+ ],
+ "matrices": [
+  {
+   "headword": "matrices",
+   "homograph": 0,
+   "text": "mat·ri·ces | méitrisìːz | 명사matrix 의 복수형. "
+  },
+  {
+   "homograph": 0,
+   "headword": "matrix",
+   "text": "ma·trix | méitriks | 명사(『복수』 -tri·ces | -trəsìːz | , matrix·es)1.（발생·성장·생성의） 모체, 기반; 〔해부〕 모체, 상(床); 《고어》 자궁 ▸ the matrix of a nail조상(爪床). 2.〔생물〕 세포 간질(間質). 3.（광석의） 기질, 석기(石基); （돌쌓기의） 고착료(固着料); 〔채광〕 맥석(gangue). 4.（합금의） 바탕. 5.〔인쇄〕 자모, 모형(母型), 지형; （인쇄기 등의） 발형(拔型); （사진을 찍기 위한） 원문, 원도. 6.①＝master1 『명사』 10.②（레코드의） 원반, 원형. 7.〔수학·컴퓨터〕 행렬, 매트릭스. "
+  }
+ ],
+ "vertices": [
+  {
+   "headword": "vertex",
+   "homograph": 0,
+   "text": "ver·tex | və́ːrteks | 명사(『복수』 vertex·es, -ti·ces | -təsìːz | )1.정점, 절정, 꼭대기 ▸ the vertex of a hill언덕 꼭대기, 산정. 2.〔해부·동물〕 두정(頭頂), （두골 측정에서） 두개(頭蓋) 정점; 〔수학〕 꼭지점, （입체의） 각꼭지, (2변의) 교점; 〔천문〕 천정(天頂). "
+  },
+  {
+   "headword": "vertices",
+   "homograph": 0,
+   "text": "ver·ti·ces | və́ːrtisìːz | 명사vertex 의 복수형. "
+  }
  ]
 }

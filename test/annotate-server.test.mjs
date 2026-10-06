@@ -99,6 +99,17 @@ test('/annotate: 어려운 단어만 {lemma, level, gloss} 로 돌려준다(AI �
   }
 });
 
+test('/annotate: matrices 는 굴절 안내 항목이 먼저 와도 lemma matrix, 뜻은 원형 항목의 것', async () => {
+  const s = await start();
+  try {
+    const r = await s.post({ words: ['matrices', 'vertices'] }, s.auth);
+    assert.deepEqual(r.json().items.matrices, { lemma: 'matrix', level: null, gloss: '모체' });
+    assert.equal(r.json().items.vertices.lemma, 'vertex');
+  } finally {
+    await s.bridge.close();
+  }
+});
+
 test('/annotate: level 기본은 B2, 올리면 B2 단어(privilege)가 빠진다', async () => {
   const s = await start();
   try {

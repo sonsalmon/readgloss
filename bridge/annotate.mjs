@@ -100,9 +100,20 @@ export const isCommon = (level) => LEVELS.includes(level) && LEVELS.indexOf(leve
 
 const plain = (s) => s.normalize('NFD').replace(/[̀-ͯ·]/g, '').toLowerCase().replace(/^[-\s]+|[-\s]+$/g, '');
 
+// 굴절 안내 항목: 맥 사전이 활용형 철자에 주는 "mat·ri·ces | méitrisìːz | 명사matrix 의 복수형." 같은 항목. 본문 전체가 "<낱말> 의 복수형·과거(분사)·현재분사·비교급·최상급·3인칭 단수" 한 줄일 때만 본다.
+// 자기 뜻이 더 있는 표제어(gone 형용사)나 본문 속 말은 걸리지 않는다. 돌려주는 값은 그 <낱말>(원형), 아니면 null.
+const INFLECTION = /^(?:(?:대명사|명사|타동사|자동사|동사|형용사|부사)[,\s∙·]*)*([A-Za-z][A-Za-z'’-]*)\s*[¹²³⁴⁵⁶⁷⁸⁹]*\s*의\s*(?:복수|과거|현재\s*분사|분사|비교급|최상급|3인칭)[가-힣·\s]*[.。]?\s*$/;
+export function inflectionOf(entry) {
+  const raw = entry?.raw ?? '';
+  const body = raw.replace(/^.{1,60}? \| .{0,80}? \| /, '').trim();
+  return body.length < 80 ? (INFLECTION.exec(body)?.[1].toLowerCase() ?? null) : null;
+}
+
 // 사전 표제어 -> 원형 낱말. 도우미의 headword 는 입력 철자(mitigations)나 악센트 철자(páylòad)일 수 있어서
-// 본문 머리("mit·i·ga·tion | …", "ex·ploit 2 | …")를 먼저 본다.
+// 본문 머리("mit·i·ga·tion | …", "ex·ploit 2 | …")를 먼저 본다. 굴절 안내 항목이면 안내가 가리키는 낱말이 원형이다.
 export function lemmaOf(entry, word) {
+  const infl = inflectionOf(entry);
+  if (infl) return infl;
   const raw = entry?.raw ?? '';
   const i = raw.indexOf(' | ');
   // 활용형 조회는 발음 칸(" | ")이 없어 본문 맨 앞 낱말("trans·póse 동사…")이 원형이다.
@@ -112,6 +123,17 @@ export function lemmaOf(entry, word) {
     if (/^[a-z][a-z'’-]*$/.test(n)) return n;
   }
   return word;
+}
+
+// 사전 표제어 배열 -> { lemma, e }. e 는 뜻을 고를 항목. 첫 항목이 굴절 안내(matrices -> "matrix 의 복수형")면 원형은 안내가 가리키는 낱말이고,
+// 뜻은 표제어가 그 낱말인 항목(없으면 안내가 아닌 다음 항목, 그것도 없으면 null)에서 고른다. 아니면 첫 항목이다.
+// ponytail: 첫 항목만 본다(ran 처럼 안내가 뒤에 오면 그대로 ran). 안내 항목이 둘(bases)이면 먼저 나온 것을 따른다.
+export function pickEntry(entries, word) {
+  const first = entries?.[0];
+  const base = inflectionOf(first);
+  if (!base) return { lemma: first ? lemmaOf(first, word) : word, e: first ?? null };
+  const rest = entries.slice(1).filter((x) => !inflectionOf(x));
+  return { lemma: base, e: rest.find((x) => plain(x.headword ?? '') === base) ?? rest[0] ?? null };
 }
 
 // dict: createDict() 같은 { lookup(word) }. levels: 낱말 -> 등급 Map. isKnown: 원형 -> 아는 단어인가(아는 단어는 결과에서 뺀다).
@@ -127,10 +149,9 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
     if (known.has(word)) return known.get(word);
     const r = await dict.lookup(word); // 오류는 캐시하지 않고 올린다
     let v = null;
-    const e = r.found ? r.entries?.[0] : null;
+    const { e, lemma } = r.found ? pickEntry(r.entries, word) : { e: null };
     const gloss = e ? shortGloss(e.senses?.[0]?.text) : '';
     if (gloss) {
-      const lemma = lemmaOf(e, word);
       v = { lemma, level: levels.get(lemma) ?? null, gloss, tagged: taggedGlosses(r.entries) };
     }
     if (known.size >= MAX_CACHE) known.clear();
