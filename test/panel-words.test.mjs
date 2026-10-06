@@ -76,9 +76,92 @@ test('formatDate: YYYY.MM.DD(현지 날짜), 이상한 값은 빈 문자열', ()
   assert.equal(W.formatDate(NaN), '');
 });
 
-test('panel-words.js: ES 모듈 import/export 없음, manifest 에서 panel.js 뒤(드래그 번역 두 파일만 그 뒤)에 있다', () => {
+test('panel-words.js: ES 모듈 import/export 없음, manifest 에서 panel.js 뒤(공부 기록·드래그 번역 파일만 그 뒤)에 있다', () => {
   assert.doesNotMatch(readFileSync(new URL('../extension/panel-words.js', import.meta.url), 'utf8'), /^\s*(import|export)\s/m);
   const js = JSON.parse(readFileSync(new URL('../extension/manifest.json', import.meta.url), 'utf8')).content_scripts[0].js;
   assert.ok(js.indexOf('panel-words.js') > js.indexOf('panel.js'));
-  assert.deepEqual(js.slice(js.indexOf('panel-words.js') + 1), ['selection-core.js', 'selection.js']);
+  assert.deepEqual(js.slice(js.indexOf('panel-words.js') + 1), ['panel-study.js', 'selection-core.js', 'selection.js']); // T14c: 공부 기록 탭이 바로 뒤
+});
+
+// ---- T14c: 구·문장 / 내 사전 ----
+const phrases = {
+  aaa111: { text: 'Defense in depth layers multiple controls.', translation: '심층 방어는 여러 통제를 겹겹이 둔다.', context: { translation: '보안에서 심층 방어는...', note: '비유적 표현', wide: true }, url: 'https://a.test/x', title: 'Layered security', ts: 100 },
+  bbb222: { text: 'x'.repeat(400), translation: '긴 글', url: 'javascript:alert(1)', ts: 300 },
+  ccc333: { text: 'least privilege', translation: '최소 권한', url: 'https://b.test/page', ts: 200 },
+};
+const mine = {
+  pca: { ko: '주성분 분석', exp: 'Principal Component Analysis', ts: 10 },
+  xss: { ko: '교차 사이트 스크립팅', note: '웹 취약점', ts: 30 },
+  'zero day': { ko: '제로데이', ts: 20 },
+};
+
+test('SUBS: 기존 세 목록 뒤에 구·문장과 내 사전이 더해지고, LISTS 는 그대로 세 개', () => {
+  assert.deepEqual(W.SUBS.map((l) => l.id), ['saved', 'known', 'history', 'phrases', 'mydict']);
+  assert.deepEqual(W.SUBS.slice(3).map((l) => l.title), ['구·문장', '내 사전']);
+  assert.equal(W.LISTS.length, 3);
+  assert.deepEqual(W.countsAll({ ...state, phrases }, mine), { saved: 2, known: 2, history: 3, phrases: 3, mydict: 3 });
+  assert.deepEqual(W.countsAll(state, null), { saved: 2, known: 2, history: 3, phrases: 0, mydict: 0 }); // 옛 다리: phrases 없음
+});
+
+test('phraseRows: 최근 저장순, 원문은 300자에서 말줄임(전체는 text), 안전하지 않은 주소는 링크가 아니다', () => {
+  const rows = W.phraseRows(phrases);
+  assert.deepEqual(rows.map((r) => r.id), ['bbb222', 'ccc333', 'aaa111']);
+  assert.equal(rows[0].preview.length, 301);
+  assert.ok(rows[0].preview.endsWith('…'));
+  assert.equal(rows[0].text.length, 400);
+  assert.equal(rows[0].href, ''); // javascript: 는 링크로 쓰지 않는다
+  assert.deepEqual([rows[2].href, rows[2].title, rows[2].context.wide], ['https://a.test/x', 'Layered security', true]);
+  assert.equal(rows[1].title, 'b.test'); // 제목이 없으면 호스트
+  assert.equal(W.clip('abc', 5), 'abc');
+});
+
+test('phraseRows: 검색은 원문·맥 번역·문맥 번역·메모 어디든 포함 일치(대소문자 무시)', () => {
+  assert.deepEqual(W.phraseRows(phrases, 'DEPTH').map((r) => r.id), ['aaa111']);
+  assert.deepEqual(W.phraseRows(phrases, '최소').map((r) => r.id), ['ccc333']);
+  assert.deepEqual(W.phraseRows(phrases, '보안에서').map((r) => r.id), ['aaa111']);
+  assert.deepEqual(W.phraseRows(phrases, '비유').map((r) => r.id), ['aaa111']);
+  assert.deepEqual(W.phraseRows(phrases, 'privil').map((r) => r.id), ['ccc333']); // 중간 일치도 된다
+  assert.deepEqual(W.phraseRows(undefined), []);
+});
+
+test('mydictRows: 최근 순, 검색은 key 앞부분 또는 뜻·풀이·메모 포함', () => {
+  assert.deepEqual(W.mydictRows(mine).map((r) => r.key), ['xss', 'zero day', 'pca']);
+  assert.deepEqual(W.mydictRows(mine, ' PC ').map((r) => r.key), ['pca']);
+  assert.deepEqual(W.mydictRows(mine, 'day').map((r) => r.key), []); // key 는 앞부분만
+  assert.deepEqual(W.mydictRows(mine, '주성분').map((r) => r.key), ['pca']);
+  assert.deepEqual(W.mydictRows(mine, 'component').map((r) => r.key), ['pca']);
+  assert.deepEqual(W.mydictRows(mine, '취약점').map((r) => r.key), ['xss']);
+});
+
+test('checkMydict: key 는 소문자·공백 정리, 규칙(영문 [a-z0-9 \'’.-], 1~80자) 밖은 거절', () => {
+  assert.deepEqual(W.checkMydict({ key: '  Zero   Day ', ko: ' 제로데이 ' }), { ok: true, value: { key: 'zero day', ko: '제로데이', exp: '', note: '' } });
+  assert.equal(W.checkMydict({ key: "O'Brien-v2.1", ko: '가' }).ok, true);
+  assert.equal(W.checkMydict({ key: 'don’t', ko: '가' }).ok, true);
+  for (const key of ['', '   ', '주성분', 'a_b', 'a/b', 'a@b', 'x'.repeat(81)]) {
+    const r = W.checkMydict({ key, ko: '가' });
+    assert.deepEqual([r.ok, r.field], [false, 'key'], key);
+  }
+  assert.equal(W.checkMydict({ key: 'x'.repeat(80), ko: '가' }).ok, true);
+});
+
+test('checkMydict: 뜻 1~80, 풀이 0~120, 메모 0~200자', () => {
+  const f = (o) => W.checkMydict({ key: 'pca', ko: '뜻', ...o });
+  assert.deepEqual([f({ ko: '' }).field, f({ ko: '  ' }).field, f({ ko: '가'.repeat(81) }).field], ['ko', 'ko', 'ko']);
+  assert.equal(f({ ko: '가'.repeat(80) }).ok, true);
+  assert.deepEqual([f({ exp: 'e'.repeat(121) }).field, f({ note: 'n'.repeat(201) }).field], ['exp', 'note']);
+  assert.equal(f({ exp: 'e'.repeat(120), note: 'n'.repeat(200) }).ok, true);
+  for (const r of [f({ ko: '' }), f({ exp: 'e'.repeat(121) })]) assert.match(r.error, /[가-힣]/);
+});
+
+test('mydictMessage: 빈 풀이·메모는 빼고, 고칠 때는 기존 출처(url·title)를 그대로 싣는다', () => {
+  const v = W.checkMydict({ key: 'PCA', ko: '주성분 분석', exp: 'Principal Component Analysis' }).value;
+  assert.deepEqual(W.mydictMessage(v), { type: 'mydict', op: 'set', key: 'pca', ko: '주성분 분석', exp: 'Principal Component Analysis' });
+  const edit = W.checkMydict({ key: 'pca', ko: '주성분', note: '메모' }).value;
+  assert.deepEqual(W.mydictMessage(edit, { url: 'https://a.test/', title: 'T' }), { type: 'mydict', op: 'set', key: 'pca', ko: '주성분', note: '메모', url: 'https://a.test/', title: 'T' });
+});
+
+test('mydictEventDetail / unsavePhraseMessage: 계약 모양', () => {
+  assert.deepEqual(W.mydictEventDetail('set', 'pca'), { set: ['pca'], delete: [] });
+  assert.deepEqual(W.mydictEventDetail('delete', 'pca'), { set: [], delete: ['pca'] });
+  assert.deepEqual(W.unsavePhraseMessage('abc'), { type: 'words', op: 'unsave-phrase', id: 'abc' });
 });
