@@ -7,6 +7,8 @@
     enabled: true, level: 'C1', maxPerParagraph: 3, repeat: 'page',
     annotation: { position: 'top', sizePct: 55, color: 'text', customColor: '#2f6feb', opacityPct: 70, weight: 'normal', gapEm: 0 },
     mark: 'none', allowCopy: false, theme: 'auto', glossary: 'auto', sites: [],
+    // 분야 용어집(보안·ML·수학)을 켤 사이트. 규칙은 sites 와 같다.
+    glossarySites: Object.freeze(['academy.hackthebox.com', 'app.hackthebox.com', 'portswigger.net', 'owasp.org', '*.owasp.org', 'book.hacktricks.xyz', 'book.hacktricks.wiki', 'cloud.hacktricks.xyz', 'hacktricks.wiki', '*.hacktricks.wiki', 'tryhackme.com', 'attack.mitre.org', 'atlas.mitre.org', 'cwe.mitre.org', 'nvd.nist.gov', 'www.exploit-db.com', 'gtfobins.github.io', 'lolbas-project.github.io', 'arxiv.org']),
     floatingButton: { show: true, top: 60 },
   });
   const ENUMS = {
@@ -25,14 +27,14 @@
     return int ? Math.round(c) : Math.round(c * 1000) / 1000;
   };
 
+  // 사이트 목록 정리: 문자열만, trim·소문자·중복 제거, 최대 200개
+  const cleanList = (list) => [...new Set(list.filter((s) => typeof s === 'string').map((s) => s.trim().toLowerCase()).filter(Boolean))].slice(0, MAX_SITES);
+
   function normalize(raw) {
     const r = isObj(raw) ? raw : {};
     const a = isObj(r.annotation) ? r.annotation : {};
     const f = isObj(r.floatingButton) ? r.floatingButton : {};
     const D = DEFAULTS, DA = D.annotation, DF = D.floatingButton;
-    const sites = Array.isArray(r.sites)
-      ? [...new Set(r.sites.filter((s) => typeof s === 'string').map((s) => s.trim().toLowerCase()).filter(Boolean))].slice(0, MAX_SITES)
-      : [];
     return {
       enabled: bool(r.enabled, D.enabled),
       level: pickEnum(r.level, LEVELS, D.level),
@@ -51,7 +53,9 @@
       allowCopy: bool(r.allowCopy, D.allowCopy),
       theme: pickEnum(r.theme, ENUMS.theme, D.theme),
       glossary: pickEnum(r.glossary, ENUMS.glossary, D.glossary),
-      sites,
+      sites: Array.isArray(r.sites) ? cleanList(r.sites) : [],
+      // 배열이면 빈 배열도 그대로("다 지웠다"), 배열이 아닐 때(옛 저장값)만 기본 목록
+      glossarySites: cleanList(Array.isArray(r.glossarySites) ? r.glossarySites : D.glossarySites),
       // 위쪽 한계(창 높이-40)는 창 크기를 아는 쪽(버튼)이 맞춘다. 여기서는 40 이상만 보장.
       floatingButton: { show: bool(f.show, DF.show), top: num(f.top, 40, Infinity, DF.top) },
     };
@@ -67,16 +71,16 @@
   const merge = (cur, patch) => normalize(mergeDeep(normalize(cur), patch));
 
   // 규칙: 'example.com' 은 그 도메인만, '*' 는 아무 글자열(하위 도메인 포함은 '*.example.com').
-  function siteBlocked(settings, hostname) {
+  function siteMatches(list, hostname) {
     const host = String(hostname || '').toLowerCase();
-    if (!host) return false;
-    const sites = isObj(settings) && Array.isArray(settings.sites) ? settings.sites : [];
-    return sites.some((p) => {
+    if (!host || !Array.isArray(list)) return false;
+    return list.some((p) => {
       if (typeof p !== 'string' || !p.trim()) return false;
       const re = new RegExp('^' + p.trim().toLowerCase().split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$');
       return re.test(host);
     });
   }
+  const siteBlocked = (settings, hostname) => siteMatches(isObj(settings) ? settings.sites : undefined, hostname);
 
   const storage = () => globalThis.chrome?.storage?.local;
   async function load() {
@@ -94,5 +98,5 @@
     });
   }
 
-  globalThis.readglossSettings = { KEY, DEFAULTS, LEVELS, normalize, merge, siteBlocked, load, save, onChange };
+  globalThis.readglossSettings = { KEY, DEFAULTS, LEVELS, normalize, merge, siteMatches, siteBlocked, load, save, onChange };
 })();

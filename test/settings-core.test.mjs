@@ -152,3 +152,51 @@ test('glossary: 자동(기본)·끄기만 받고 그 밖은 기본값, 병합해
   assert.equal(S.merge({ glossary: 'off' }, { level: 'B2' }).glossary, 'off');
   assert.equal(S.merge({}, { glossary: 'off' }).glossary, 'off');
 });
+
+const HTB_DEFAULTS = ['academy.hackthebox.com', 'app.hackthebox.com', 'portswigger.net', 'owasp.org', '*.owasp.org', 'book.hacktricks.xyz', 'book.hacktricks.wiki', 'cloud.hacktricks.xyz', 'hacktricks.wiki', '*.hacktricks.wiki', 'tryhackme.com', 'attack.mitre.org', 'atlas.mitre.org', 'cwe.mitre.org', 'nvd.nist.gov', 'www.exploit-db.com', 'gtfobins.github.io', 'lolbas-project.github.io', 'arxiv.org'];
+
+test('glossarySites: 기본값은 보안·ML 사이트 19개, 설정에 없으면(옛 저장값) 기본값', () => {
+  assert.deepEqual(S.DEFAULTS.glossarySites, HTB_DEFAULTS);
+  assert.deepEqual(S.normalize({}).glossarySites, HTB_DEFAULTS);
+  assert.deepEqual(S.normalize({ level: 'B2' }).glossarySites, HTB_DEFAULTS);
+  for (const bad of ['a.com', 5, null, {}]) assert.deepEqual(S.normalize({ glossarySites: bad }).glossarySites, HTB_DEFAULTS, String(bad));
+});
+
+test('glossarySites: sites 와 같은 정리(문자열만·trim·소문자·중복 제거·200개). 빈 배열은 "다 지웠다"로 유지', () => {
+  assert.deepEqual(S.normalize({ glossarySites: [' Example.COM ', 3, '', 'example.com', null, 'a.b'] }).glossarySites, ['example.com', 'a.b']);
+  assert.equal(S.normalize({ glossarySites: Array.from({ length: 300 }, (_, i) => `s${i}.com`) }).glossarySites.length, 200);
+  assert.deepEqual(S.normalize({ glossarySites: [] }).glossarySites, []);
+  assert.deepEqual(S.merge({}, { glossarySites: [] }).glossarySites, [], '병합해도 빈 배열이 기본값으로 돌아가지 않는다');
+  assert.deepEqual(S.merge({ glossarySites: ['a.com'] }, { level: 'B2' }).glossarySites, ['a.com']);
+  assert.deepEqual(S.normalize({ sites: ['x.com'] }).glossarySites, HTB_DEFAULTS, '끌 사이트와 서로 영향 없음');
+});
+
+test('glossarySites: 결과를 바꿔도 DEFAULTS 는 그대로', () => {
+  S.normalize({}).glossarySites.push('x.com');
+  assert.deepEqual(S.normalize({}).glossarySites, HTB_DEFAULTS);
+  assert.deepEqual(S.DEFAULTS.glossarySites, HTB_DEFAULTS);
+  assert.ok(Object.isFrozen(S.DEFAULTS.glossarySites));
+});
+
+test('siteMatches: 목록·호스트만 받는 같은 규칙. siteBlocked 는 settings.sites 로 그것을 쓴다', () => {
+  assert.equal(S.siteMatches(['example.com'], 'example.com'), true);
+  assert.equal(S.siteMatches(['example.com'], 'docs.example.com'), false);
+  assert.equal(S.siteMatches(['*.example.com'], 'docs.example.com'), true);
+  assert.equal(S.siteMatches(['*.example.com'], 'example.com'), false);
+  assert.equal(S.siteMatches(['EXAMPLE.com'], 'Example.COM'), true);
+  assert.equal(S.siteMatches([], 'example.com'), false);
+  assert.equal(S.siteMatches(undefined, 'example.com'), false);
+  assert.equal(S.siteMatches('example.com', 'example.com'), false, '배열이 아니면 아니다');
+  assert.equal(S.siteMatches([3, '', null, 'a.com'], 'a.com'), true);
+  assert.equal(S.siteMatches(['example.com'], ''), false);
+  assert.equal(S.siteBlocked({ sites: ['example.com'] }, 'example.com'), true);
+  assert.equal(S.siteBlocked({ glossarySites: ['example.com'] }, 'example.com'), false, 'siteBlocked 는 sites 만 본다');
+  // 기본 목록: 본 도메인·하위 도메인 규칙
+  const d = S.DEFAULTS.glossarySites;
+  assert.equal(S.siteMatches(d, 'academy.hackthebox.com'), true);
+  assert.equal(S.siteMatches(d, 'hackthebox.com'), false);
+  assert.equal(S.siteMatches(d, 'owasp.org'), true);
+  assert.equal(S.siteMatches(d, 'cheatsheetseries.owasp.org'), true);
+  assert.equal(S.siteMatches(d, 'evil-owasp.org'), false);
+  assert.equal(S.siteMatches(d, 'arxiv.org.evil.com'), false);
+});
