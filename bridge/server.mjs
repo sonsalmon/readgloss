@@ -9,6 +9,7 @@ import { extensionIdFromKey } from './ext-id.mjs';
 import { AiParseError } from './parse.mjs';
 import { SYSTEM_PROMPT, WORD_RE, buildPrompt, createLookup } from './lookup.mjs';
 import { DictUnavailableError, createDict } from './dict.mjs';
+import { MAX_TEXT, buildTranslatePrompt, createTranslate, normalizeText } from './translate.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
@@ -58,11 +59,19 @@ function readJson(req) {
   });
 }
 
-// ask({word, sentence}) -> AI 원문. 테스트는 가짜 ask 를, 실제 실행은 claude 클라이언트를 넘긴다.
-export function createBridge({ ask, cacheFile, tokenFile, extensionId, dict = createDict() }) {
+// AI 호출 실패를 응답 코드로: 시간 초과 504, AI·파싱 실패 502, 그 밖은 500(내부 내용은 응답에 싣지 않는다)
+function sendAiError(res, e, cors) {
+  if (e instanceof AiTimeoutError) send(res, 504, { error: 'timeout' }, cors);
+  else if (e instanceof AiError || e instanceof AiParseError) send(res, 502, { error: 'ai-failed' }, cors);
+  else send(res, 500, { error: 'internal' }, cors);
+}
+
+// ask({word, sentence}) / askTranslate(문단) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
+export function createBridge({ ask, askTranslate, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), tokenFile, extensionId, dict = createDict() }) {
   const token = loadOrCreateToken(tokenFile);
   const tokenBuf = Buffer.from(token);
   const lookup = createLookup({ cache: createCache(cacheFile), ask });
+  const translate = createTranslate({ cache: createCache(translationsFile), ask: askTranslate });
   const mine = `chrome-extension://${extensionId}`;
 
   const tokenOk = (h) => {
@@ -81,9 +90,21 @@ export function createBridge({ ask, cacheFile, tokenFile, extensionId, dict = cr
     try {
       send(res, 200, await lookup({ word, sentence, force: force === true }), cors);
     } catch (e) {
-      if (e instanceof AiTimeoutError) send(res, 504, { error: 'timeout' }, cors);
-      else if (e instanceof AiError || e instanceof AiParseError) send(res, 502, { error: 'ai-failed' }, cors);
-      else send(res, 500, { error: 'internal' }, cors); // 내부 내용은 응답에 싣지 않는다
+      sendAiError(res, e, cors);
+    }
+  }
+
+  async function handleTranslate(req, res, cors) {
+    const { value, status } = await readJson(req);
+    if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+    const { text, force } = value ?? {};
+    const norm = normalizeText(text);
+    if (!norm) return send(res, 400, { error: 'bad-request' }, cors);
+    if (norm.length > MAX_TEXT) return send(res, 413, { error: 'too-large' }, cors);
+    try {
+      send(res, 200, await translate({ text: norm, force: force === true }), cors);
+    } catch (e) {
+      sendAiError(res, e, cors);
     }
   }
 
@@ -135,6 +156,10 @@ export function createBridge({ ask, cacheFile, tokenFile, extensionId, dict = cr
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleDict(req, res, cors);
     }
+    if (path === '/translate') {
+      if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleTranslate(req, res, cors);
+    }
     return send(res, 404, { error: 'not-found' }, cors);
   }
 
@@ -169,6 +194,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
   const client = createClaudeClient({ systemPrompt: SYSTEM_PROMPT, cwd: join(dataDir, 'claude-cwd') });
   const bridge = createBridge({
     ask: async (a) => (await client.ask(buildPrompt(a))).text,
+    askTranslate: async (text) => (await client.ask(buildTranslatePrompt(text), { timeoutMs: 60_000 })).text,
     cacheFile: join(dataDir, 'cache.json'),
     tokenFile: join(dataDir, 'token'),
     extensionId,
