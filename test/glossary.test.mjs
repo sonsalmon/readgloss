@@ -116,3 +116,17 @@ test('용어 검토 반영: 일반어 뜻이 HTB 본문에 나오는 낱말과 �
   assert.equal(v('security', 'apt'), 'APT(지능형 지속 공격)');
   assert.equal(v('security', 'xss'), 'XSS(크로스 사이트 스크립팅)');
 });
+
+test('T13 보충: 사전 첫 뜻이 엉뚱한 사칙연산 용어(multiplication 은 증가가 아니라 곱셈)와 힌트별 intercept', () => {
+  const ko = (w, d) => G.find(w, d)?.ko;
+  assert.equal(ko('multiplication', ['math']), '곱셈');
+  assert.equal(ko('multiplications', ['math']), '곱셈');
+  assert.equal(ko('multiply', ['math']), '곱하다');
+  assert.equal(ko('addition', ['math']), '덧셈');
+  assert.equal(ko('subtraction', ['math']), '뺄셈');
+  assert.equal(ko('division', ['math']), '나눗셈');
+  assert.equal(ko('multiplication', ['security']), undefined, '힌트가 없는 분야에선 쓰지 않는다');
+  assert.equal(ko('intercept', ['ml', 'security']), '절편');
+  assert.equal(ko('intercept', ['security', 'ml']), '가로채기');
+  assert.equal(G.find('trade-off', ['ml']), null, '한 단어가 아닌 키는 두지 않는다');
+});
