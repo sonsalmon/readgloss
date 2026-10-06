@@ -60,14 +60,16 @@ test('/words: 토큰 없으면 401, 남의 Origin·잘못된 Host 는 403, 메�
   }
 });
 
-test('/words: 깨진 본문·모르는 op·잘못된 원형·http(s) 아닌 주소는 400, 너무 큰 본문은 413', async () => {
+test('/words: 깨진 본문·모르는 op·잘못된 원형·http(s) 아닌 주소는 400, 24KB 초과 본문은 413', async () => {
   const s = await start();
   try {
     assert.equal((await s.req('POST', '/words', { headers: s.auth, raw: 'not json' })).status, 400);
     for (const body of [null, {}, { op: 'known' }, { op: 'drop', lemma: 'ab' }, { op: 'known', lemma: '1ab' }, { op: 'known', lemma: ['ab'] }, { op: 'save', lemma: 'ab', url: 'javascript:alert(1)' }, { op: 'save', lemma: 'ab', word: 'a b' }]) {
       assert.equal((await s.words(body)).status, 400, JSON.stringify(body));
     }
-    assert.equal((await s.words({ op: 'save', lemma: 'ab', sentence: 'x'.repeat(20_000) })).status, 413);
+    // 본문 상한이 24KB 로 늘어 16~24KB 는 본문을 받는다(내용이 틀리면 413 이 아니라 400), 24KB 를 넘으면 413
+    assert.equal((await s.words({ op: 'nope', lemma: 'ab', sentence: 'x'.repeat(20_000) })).status, 400);
+    assert.equal((await s.req('POST', '/words', { headers: s.auth, raw: 'x'.repeat(24 * 1024 + 1) })).status, 413);
     assert.deepEqual((await s.req('GET', '/words', { headers: s.auth })).json(), { known: {}, saved: {}, history: [], phrases: {} });
   } finally {
     await s.bridge.close();

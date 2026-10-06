@@ -37,7 +37,11 @@ export function createContextTranslate({ cache, ask }) {
     if (!force) {
       try {
         const hit = JSON.parse(cache.get(key) ?? 'null');
-        if (typeof hit?.translation === 'string') return { ...hit, cached: true };
+        if (typeof hit?.translation === 'string') {
+          const { expressions: rawExpressions, ...rest } = hit;
+          const expressions = parseExpressions(rawExpressions);
+          return { ...rest, ...(expressions.length && { expressions }), cached: true };
+        }
       } catch {
         // 깨진 캐시 항목은 없는 것으로
       }

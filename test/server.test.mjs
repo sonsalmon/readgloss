@@ -245,3 +245,34 @@ test('/lookup: 입력 검증(영어 단어 아님, 본문 깨짐, 너무 큼, �
     await s.bridge.close();
   }
 });
+
+test('/words 본문 상한: 모든 칸을 상한까지 한글로 채운 save-phrase(약 17KB)는 200, 24KB 초과는 413', async () => {
+  const s = await start();
+  try {
+    const full = {
+      op: 'save-phrase',
+      text: '한'.repeat(1000),
+      translation: '글'.repeat(2000),
+      title: '제'.repeat(200),
+      sentence: '',
+      url: '',
+      context: {
+        translation: '문'.repeat(2000),
+        note: '풀'.repeat(400),
+        wide: true,
+      },
+    };
+    const bodyStr = JSON.stringify(full);
+    const bytes = Buffer.byteLength(bodyStr, 'utf8');
+    assert.ok(bytes > 16 * 1024 && bytes <= 24 * 1024, `실제 바이트 수: ${bytes}`);
+
+    const resOk = await s.req('POST', '/words', { headers: s.auth, body: full });
+    assert.equal(resOk.status, 200);
+
+    const resTooLarge = await s.req('POST', '/words', { headers: s.auth, raw: 'x'.repeat(24 * 1024 + 1) });
+    assert.equal(resTooLarge.status, 413);
+  } finally {
+    await s.bridge.close();
+  }
+});
+

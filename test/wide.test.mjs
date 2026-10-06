@@ -95,10 +95,13 @@ test('/translate-context: wide 가 아니면 예전 상한(413), wide 라도 600
   assert.equal(s.asked.context.length, 2); // 통과한 두 번만 AI 까지 갔다
 }));
 
-test('본문 64KB 상한은 /translate-context·/lookup 만, 나머지 라우트는 16KB', withBridge(async (s) => {
-  const filler = `{"text":"a b","word":"kernel","pad":"${'x'.repeat(20_000)}"}`; // 20KB: 16KB 는 넘고 64KB 는 안 넘는다
-  for (const path of ['/translate', '/mt', '/dict', '/annotate', '/words', '/mydict']) assert.equal((await s.req('POST', path, { raw: filler })).status, 413, path);
+test('본문 상한: /words 는 24KB, /translate-context·/lookup 은 64KB, 나머지 라우트는 16KB', withBridge(async (s) => {
+  const filler = `{"text":"a b","word":"kernel","pad":"${'x'.repeat(20_000)}"}`; // 20KB: 16KB 는 넘고 24KB·64KB 는 안 넘는다
+  for (const path of ['/translate', '/mt', '/dict', '/annotate', '/mydict']) assert.equal((await s.req('POST', path, { raw: filler })).status, 413, path);
   for (const path of ['/translate-context', '/lookup']) assert.equal((await s.req('POST', path, { raw: filler })).status, 200, path);
+  // /words 만 24KB: 16~24KB 는 본문을 받고(모르는 op -> 400), 24KB 를 넘으면 413
+  assert.equal((await s.req('POST', '/words', { raw: filler })).status, 400);
+  assert.equal((await s.req('POST', '/words', { raw: 'x'.repeat(24 * 1024 + 1) })).status, 413);
   assert.equal((await s.req('POST', '/lookup', { raw: 'x'.repeat(65 * 1024) })).status, 413);
 }));
 

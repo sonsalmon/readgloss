@@ -82,8 +82,9 @@ const EXT = 'abcdefghijklmnopabcdefghijklmnop';
 const MINE = `chrome-extension://${EXT}`;
 const HOST = '127.0.0.1:47831';
 
-async function start(askTranslate = async () => '{"translation":"번역"}') {
+async function start(askTranslate = async () => '{"translation":"번역"}', seed) {
   const dir = mkdtempSync(join(tmpdir(), 'rg-trs-'));
+  seed?.(dir); // 다리는 만들 때 캐시 파일을 읽어 메모리에 담는다: 캐시를 미리 채우려면 listen 전에 써 둬야 한다
   const calls = [];
   const lookups = [];
   const bridge = createBridge({
@@ -157,12 +158,45 @@ test('createTranslate: 옛 평문 캐시·새 JSON 캐시를 모두 읽고, 새�
   assert.deepEqual(JSON.parse(cache.get(textKey('No expr'))), { translation: '표현 없는 번역' });
 });
 
+test('createTranslate: 캐시의 expressions 가 문자열이거나 깨진 항목이면 걸러지고 비면 키를 두지 않는다', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rg-trc-bad-'));
+  const cache = createCache(join(dir, 't.json'));
+  cache.set(textKey('String expr'), '{"translation":"번역1","expressions":"x"}');
+  cache.set(textKey('Mixed expr'), '{"translation":"번역2","expressions":[{"en":"delve into","ko":"깊이 파고들다"},{"bad":1}]}');
+  cache.set(textKey('Bad expr'), '{"translation":"번역3","expressions":[{"bad":1}]}');
+  const tr = createTranslate({ cache, ask: async () => '' });
+  assert.deepEqual(await tr({ text: 'String expr' }), { translation: '번역1', cached: true });
+  assert.deepEqual(await tr({ text: 'Mixed expr' }), { translation: '번역2', expressions: [{ en: 'delve into', ko: '깊이 파고들다' }], cached: true });
+  assert.deepEqual(await tr({ text: 'Bad expr' }), { translation: '번역3', cached: true });
+});
+
 test('/translate: expressions 가 응답에 실린다(깨진 항목은 버림)', async () => {
   const s = await start(async () => '{"translation":"번역","expressions":[{"en":"server-side request forgery","ko":"서버 측 요청 위조"},{"bad":1}]}');
   try {
     const r = await s.req('POST', '/translate', { headers: s.auth, body: { text: TEXT } });
     assert.deepEqual(r.json(), { translation: '번역', expressions: [{ en: 'server-side request forgery', ko: '서버 측 요청 위조' }], cached: false });
     assert.deepEqual((await s.req('POST', '/translate', { headers: s.auth, body: { text: TEXT } })).json().expressions.length, 1);
+  } finally {
+    await s.bridge.close();
+  }
+});
+
+test('/translate: 캐시의 expressions 가 문자열이거나 깨진 항목이면 걸러서 응답한다', async () => {
+  const MIXED = `${TEXT} Mixed entry.`;
+  // 다리를 띄우기 전에 번역 캐시 파일(translations.json)을 써 둬야 그 값이 메모리 캐시에 실린다.
+  const s = await start(undefined, (dir) => {
+    const cache = createCache(join(dir, 'translations.json'));
+    cache.set(textKey(TEXT), '{"translation":"캐시 번역","expressions":"x"}');
+    cache.set(textKey(MIXED), '{"translation":"섞인 번역","expressions":[{"en":"delve into","ko":"깊이 파고들다"},{"bad":1},"nope",null]}');
+  });
+  try {
+    const r = await s.req('POST', '/translate', { headers: s.auth, body: { text: TEXT } });
+    assert.deepEqual(r.json(), { translation: '캐시 번역', cached: true });
+    assert.equal('expressions' in r.json(), false);
+    // 유효 항목 1개 + 깨진 항목들이 섞이면 유효 항목만 남는다.
+    const m = await s.req('POST', '/translate', { headers: s.auth, body: { text: MIXED } });
+    assert.deepEqual(m.json(), { translation: '섞인 번역', expressions: [{ en: 'delve into', ko: '깊이 파고들다' }], cached: true });
+    assert.equal(s.calls.length, 0); // 두 요청 모두 캐시에서 나와 AI 를 부르지 않았다
   } finally {
     await s.bridge.close();
   }

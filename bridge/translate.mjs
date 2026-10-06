@@ -77,7 +77,10 @@ export function parseTranslation(text) {
 function readHit(hit) {
   try {
     const v = JSON.parse(hit);
-    if (typeof v?.translation === 'string') return { translation: v.translation, ...(v.expressions && { expressions: v.expressions }) };
+    if (typeof v?.translation === 'string') {
+      const expressions = parseExpressions(v.expressions);
+      return { translation: v.translation, ...(expressions.length && { expressions }) };
+    }
   } catch {
     // 평문
   }

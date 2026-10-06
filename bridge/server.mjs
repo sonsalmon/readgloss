@@ -22,6 +22,7 @@ import { createStudy, parseDays } from './study.mjs';
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
 const MAX_BODY = 16 * 1024;
+const MAX_WORDS_BODY = 24 * 1024;
 const MAX_WIDE_BODY = 64 * 1024; // /translate-context·/lookup 은 "더 넓은 문맥"을 실을 수 있어 본문 상한이 크다
 const MAX_ACRONYMS = 100;
 const ACRONYM_RE = /^[A-Z]{2,6}$/;
@@ -251,7 +252,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
   // 내 단어: GET -> { known, saved, history }, POST { op, lemma, ... } -> 바뀐 같은 모양의 상태
   async function handleWords(req, res, cors) {
     if (req.method === 'GET') return send(res, 200, words.all(), cors);
-    const { value, status } = await readJson(req);
+    const { value, status } = await readJson(req, MAX_WORDS_BODY);
     if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
     const op = parseWordsOp(value);
     if (!op) return send(res, 400, { error: 'bad-request' }, cors);

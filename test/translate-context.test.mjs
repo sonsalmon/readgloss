@@ -87,6 +87,21 @@ test('createContextTranslate: 옛 캐시({translation, note?})도 읽히고(expr
   assert.deepEqual(await tr(a), { ...fresh, cached: true });
 });
 
+test('createContextTranslate: 캐시의 expressions 가 문자열이거나 깨진 항목이면 걸러지고 비면 키를 두지 않는다', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rg-ctxc-bad-'));
+  const cache = createCache(join(dir, 'c.json'));
+  const k1 = contextKey('phrase 1', CTX, '');
+  const k2 = contextKey('phrase 2', CTX, '');
+  const k3 = contextKey('phrase 3', CTX, '');
+  cache.set(k1, '{"translation":"번역1","note":"풀이1","expressions":"x"}');
+  cache.set(k2, '{"translation":"번역2","expressions":[{"en":"delve into","ko":"깊이 파고들다"},{"bad":1}]}');
+  cache.set(k3, '{"translation":"번역3","expressions":[{"bad":1}]}');
+  const tr = createContextTranslate({ cache, ask: async () => '' });
+  assert.deepEqual(await tr({ text: 'phrase 1', context: CTX }), { translation: '번역1', note: '풀이1', cached: true });
+  assert.deepEqual(await tr({ text: 'phrase 2', context: CTX }), { translation: '번역2', expressions: [{ en: 'delve into', ko: '깊이 파고들다' }], cached: true });
+  assert.deepEqual(await tr({ text: 'phrase 3', context: CTX }), { translation: '번역3', cached: true });
+});
+
 test('createContextTranslate: 캐시 키는 글+문맥+분야, force 는 덮어쓰기, 깨진 출력은 캐시 안 함', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'rg-ctx-'));
   let n = 0;
@@ -114,8 +129,9 @@ const EXT = 'abcdefghijklmnopabcdefghijklmnop';
 const MINE = `chrome-extension://${EXT}`;
 const HOST = '127.0.0.1:47831';
 
-async function start(askContext = async () => '{"translation":"전치","note":"행렬을 뒤집기"}') {
+async function start(askContext = async () => '{"translation":"전치","note":"행렬을 뒤집기"}', seed) {
   const dir = mkdtempSync(join(tmpdir(), 'rg-ctxs-'));
+  seed?.(dir); // 다리는 만들 때 캐시 파일을 읽어 메모리에 담는다: 캐시를 미리 채우려면 listen 전에 써 둬야 한다
   const prompts = [];
   const bridge = createBridge({
     ask: async () => '{"gloss":"뜻"}',
@@ -183,6 +199,27 @@ test('/translate-context: expressions 가 응답에 실리고 캐시에서도 �
     assert.deepEqual((await s.post({ text: 'this module delves into', context: CTX })).json(), { translation: '탐구한다', expressions: [{ en: 'delve into', ko: '깊이 파고들다' }], cached: true });
     const wide = await s.post({ text: 'this module delves into', context: CTX, wide: true });
     assert.equal(wide.json().expressions.length, 1, 'wide 도 같은 응답 모양');
+  } finally {
+    await s.bridge.close();
+  }
+});
+
+test('/translate-context: 캐시의 expressions 가 문자열이거나 깨진 항목이면 걸러서 응답한다', async () => {
+  const MIXED = 'this module delves into caching';
+  // 다리를 띄우기 전에 문맥 번역 캐시 파일(context-translations.json)을 써 둬야 그 값이 메모리 캐시에 실린다.
+  const s = await start(undefined, (dir) => {
+    const cache = createCache(join(dir, 'context-translations.json'));
+    cache.set(contextKey('the transpose of a matrix', CTX, '', { wide: false, mine: '' }), '{"translation":"전치","expressions":"x"}');
+    cache.set(contextKey(MIXED, CTX, '', { wide: false, mine: '' }), '{"translation":"탐구한다","note":"풀이","expressions":[{"en":"delve into","ko":"깊이 파고들다"},{"bad":1},null]}');
+  });
+  try {
+    const r = await s.post({ text: 'the transpose of a matrix', context: CTX });
+    assert.deepEqual(r.json(), { translation: '전치', cached: true });
+    assert.equal('expressions' in r.json(), false);
+    // 유효 항목 1개 + 깨진 항목들이 섞이면 유효 항목만 남고 note 도 유지된다.
+    const m = await s.post({ text: MIXED, context: CTX });
+    assert.deepEqual(m.json(), { translation: '탐구한다', note: '풀이', expressions: [{ en: 'delve into', ko: '깊이 파고들다' }], cached: true });
+    assert.equal(s.prompts.length, 0); // 두 요청 모두 캐시에서 나와 AI 를 부르지 않았다
   } finally {
     await s.bridge.close();
   }
