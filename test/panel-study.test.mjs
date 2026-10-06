@@ -78,3 +78,78 @@ test('panel-study.js: import/export 없음, manifest 에서 panel-words.js 바�
   const js = JSON.parse(readFileSync(new URL('../extension/manifest.json', import.meta.url), 'utf8')).content_scripts[0].js;
   assert.equal(js.indexOf('panel-study.js'), js.indexOf('panel-words.js') + 1);
 });
+
+// ---- 패널을 연 채 한 동작 뒤 숫자 새로고침(가짜 DOM 으로 render 를 직접 돌린다) ----
+class FakeNode {
+  constructor(tag) {
+    Object.assign(this, { tag, children: [], attrs: {}, handlers: {}, style: {}, hidden: false, isConnected: true, className: '', textContent: '', open: false });
+  }
+  append(...c) { this.children.push(...c); }
+  replaceChildren(...c) { this.children = c; }
+  setAttribute(k, v) { this.attrs[k] = v; }
+  addEventListener(t, f) { (this.handlers[t] ??= []).push(f); }
+  all() { return [this, ...this.children.flatMap((c) => (c instanceof FakeNode ? c.all() : []))]; }
+}
+
+async function mountStudy() {
+  const saved = { document: globalThis.document, window: globalThis.window };
+  globalThis.document = { createElement: (tag) => new FakeNode(tag) };
+  globalThis.window = new EventTarget();
+  const sent = [];
+  const ctx = { send: async (m) => (sent.push(m), { days: [] }) };
+  const container = new FakeNode('div');
+  globalThis.readglossPanelTabs.find((t) => t.id === 'study').render(container, ctx);
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  await settle();
+  const root = container.children[0];
+  const fire = (name) => globalThis.window.dispatchEvent(new CustomEvent(name, { detail: {} }));
+  const click = (label) => root.all().find((n) => n.className === 'rng' && n.textContent === label).handlers.click[0]();
+  const restore = () => Object.assign(globalThis, saved);
+  return { sent, root, fire, click, settle, restore };
+}
+
+test('패널 안에서 내 사전·단어가 바뀌면(readgloss:mydict·readgloss:words) 공부 기록을 다시 불러온다', async () => {
+  const m = await mountStudy();
+  try {
+    assert.deepEqual(m.sent, [{ type: 'study', days: 14 }]);
+    m.fire('readgloss:mydict');
+    m.fire('readgloss:words');
+    await m.settle();
+    assert.equal(m.sent.length, 3);
+    assert.ok(m.sent.every((s) => s.type === 'study' && s.days === 14));
+  } finally {
+    m.restore();
+  }
+});
+
+test('같은 기간 버튼을 다시 눌러도 다시 불러온다(다른 기간이면 그 기간으로)', async () => {
+  const m = await mountStudy();
+  try {
+    m.click('14일');
+    m.click('7일');
+    await m.settle();
+    assert.deepEqual(m.sent.map((s) => s.days), [14, 14, 7]);
+    m.fire('readgloss:words'); // 고른 기간을 유지한다
+    await m.settle();
+    assert.equal(m.sent.at(-1).days, 7);
+  } finally {
+    m.restore();
+  }
+});
+
+test('패널이 새로 그려져 이 탭 노드가 떨어지면 이벤트를 더 안 듣는다', async () => {
+  const m = await mountStudy();
+  try {
+    m.root.isConnected = false;
+    m.fire('readgloss:mydict');
+    m.fire('readgloss:words');
+    await m.settle();
+    assert.equal(m.sent.length, 1);
+    m.root.isConnected = true; // 한 번 거둔 뒤에는 되살아나지 않는다
+    m.fire('readgloss:words');
+    await m.settle();
+    assert.equal(m.sent.length, 1);
+  } finally {
+    m.restore();
+  }
+});

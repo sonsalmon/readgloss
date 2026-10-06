@@ -160,9 +160,7 @@
       const b = el('button', 'rng', `${n}일`);
       b.type = 'button';
       b.setAttribute('aria-label', `최근 ${n}일 보기`);
-      b.addEventListener('click', () => {
-        if (n !== range) load(n);
-      });
+      b.addEventListener('click', () => load(n)); // 같은 기간을 눌러도 다시 불러온다
       ranges.append(b);
       return b;
     });
@@ -262,6 +260,15 @@
       }
       draw();
     }
+
+    // 패널을 연 채 한 동작(내 사전 고치기·알아요·구 빼기·카드 저장 등)은 이 탭이 안 보이는 사이에 일어난다. 다시 불러 두면 탭으로 올 때 숫자가 맞다.
+    // 패널이 새로 그려져 이 노드가 떨어지면 스스로 거둔다(panel-words.js 의 onMine 과 같은 방식).
+    const EVENTS = ['readgloss:mydict', 'readgloss:words'];
+    const onChange = () => {
+      if (!root.isConnected) return EVENTS.forEach((e) => window.removeEventListener(e, onChange));
+      load(range);
+    };
+    EVENTS.forEach((e) => window.addEventListener(e, onChange));
 
     draw();
     load(range);
