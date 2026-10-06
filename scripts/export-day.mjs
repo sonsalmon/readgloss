@@ -31,13 +31,15 @@ const readJson = (file) => {
     return {};
   }
 };
-const entries = (o) => Object.values(o && typeof o === 'object' ? o : {}).filter((v) => v && typeof v === 'object');
+// { 키: 값 } 의 [키, 값] 쌍. 값이 객체가 아닌 것은 뺀다. 단어는 키가 원형이라 키를 버리지 않는다.
+const pairs = (o) => Object.entries(o && typeof o === 'object' ? o : {}).filter(([, v]) => v && typeof v === 'object');
+const entries = (o) => pairs(o).map(([, v]) => v);
 
 export function exportDay(date, dataDir) {
   const on = (v) => Number.isFinite(v?.ts) && dateOf(v.ts) === date;
   const byTs = (a, b) => a.ts - b.ts;
   const words = readJson(join(dataDir, 'words.json'));
-  const saved = entries(words.saved).filter(on).sort(byTs);
+  const saved = pairs(words.saved).filter(([, v]) => on(v)).sort((a, b) => byTs(a[1], b[1]));
   const phrases = entries(words.phrases).filter(on).sort(byTs);
   const mine = Object.entries(readJson(join(dataDir, 'mydict.json')).entries ?? {})
     .filter(([, v]) => v && on(v))
@@ -56,7 +58,11 @@ export function exportDay(date, dataDir) {
   if (!saved.length && !phrases.length && !mine.length) out.push('(이날 저장한 표현 없음)');
   if (saved.length) {
     out.push('### 단어', '');
-    for (const w of saved) out.push(`- **${w.word || ''}** — ${clip(w.gloss)}${w.sentence ? ` / "${clip(w.sentence)}"` : ''}`);
+    // 원형(키)을 굵게, 저장 때 본 굴절형(word)이 원형과 다르면 괄호로 덧붙인다
+    for (const [lemma, w] of saved) {
+      const form = clip(w.word);
+      out.push(`- **${lemma}**${form && form.toLowerCase() !== lemma ? ` (${form})` : ''} — ${clip(w.gloss)}${w.sentence ? ` / "${clip(w.sentence)}"` : ''}`);
+    }
     out.push('');
   }
   if (phrases.length) {

@@ -33,11 +33,29 @@ function fake() {
 test('그날 것만 거르고 마크다운 모양을 만든다', () => {
   const md = exportDay('2026-10-06', fake());
   assert.match(md, /^## 영어 표현 \(readgloss\)\n/);
-  assert.match(md, /- \*\*mitigated\*\* — 완화하다 \/ "We mitigated the risk\."/);
+  assert.match(md, /- \*\*mitigate\*\* \(mitigated\) — 완화하다 \/ "We mitigated the risk\."/); // 원형(키)을 굵게, 굴절형은 괄호
   assert.match(md, /- "in the wild" — 실제 환경에서\n {2}- 문맥 번역: 실전에서\n {2}- note: 관용/);
   assert.match(md, /- \*\*pca\*\* — 주성분 분석 \(principal component analysis\)/);
   assert.match(md, /공부 기록: dict 2, mt 1/);
   assert.doesNotMatch(md, /old|yesterday|rce/);
+});
+
+test('단어: word 가 원형과 같거나 비어 있어도 줄이 깨지지 않는다(원형만 굵게)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'export-day-'));
+  writeFileSync(join(dir, 'words.json'), JSON.stringify({
+    saved: {
+      long: { word: 'long', gloss: '긴', ts: T(6, 13) },
+      same: { word: 'Same', gloss: '같은', ts: T(6, 14) },
+      blank: { gloss: '빈칸', ts: T(6, 15) },
+      empty: { word: '', gloss: '빈문자열', ts: T(6, 16) },
+    },
+  }));
+  const md = exportDay('2026-10-06', dir);
+  assert.match(md, /^- \*\*long\*\* — 긴$/m);
+  assert.match(md, /^- \*\*same\*\* — 같은$/m);
+  assert.match(md, /^- \*\*blank\*\* — 빈칸$/m);
+  assert.match(md, /^- \*\*empty\*\* — 빈문자열$/m);
+  assert.doesNotMatch(md, /\*\*\*\*|\(\)/);
 });
 
 test('빈 날은 안내 문구', () => {
