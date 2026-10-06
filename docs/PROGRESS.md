@@ -22,7 +22,8 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 | T14b 다리: wide·내 사전·약어집·구 단어장·공부 기록 | 완료 | main 8658373 | |
 | T14c 패널: 구·문장·내 사전 탭, 공부 기록 탭 | 완료 | main 5934a22 | 테스트 412 |
 | T15 하루치 내보내기 스크립트(learning-records 옮기기용) | 완료 | main e10b6da | `npm run export:day -- YYYY-MM-DD` → "## 영어 표현 (readgloss)" 마크다운. 메모리 readgloss-to-learning-records |
-| T17 기억할 표현·문맥 번역 우선·저장 문장 더블클릭 | 완료(통합 검증 중) | main 2aa0905 | 테스트 463. 10-06 저녁부터 작업은 외부 워커: DeepSeek V4.1(opencode-worker, 테스트 실행 가능)·Gemini 3.8(gemini-worker, 헤드리스에서 셸 명령 불가 → 편집만). 지시문은 heredoc 대신 파일로(안전 훅이 긴 한국어 heredoc 차단) |
+| T18 고침: 링크 카드 안 ★ 이동 막기, 카드 저장 뒤 패널 갱신, 내 사전 출처 | 완료 | main | DeepSeek 구현, 독립 검증 통과, 테스트 468. 남은 P2: 패널 다시 읽기 응답 순서(seq 없음), 편집 중 커서 풀림 |
+| T17 기억할 표현·문맥 번역 우선·저장 문장 더블클릭 | 완료(통합 검증 통과, 실제 Aside 확인 대기) | main 2aa0905 | 테스트 463. 10-06 저녁부터 작업은 외부 워커: DeepSeek V4.1(opencode-worker, 테스트 실행 가능)·Gemini 3.8(gemini-worker, 헤드리스에서 셸 명령 불가 → 편집만). 지시문은 heredoc 대신 파일로(안전 훅이 긴 한국어 heredoc 차단) |
 | T16 고침: 굴절 안내 항목 원형(matrices→matrix), 공부 기록 새로고침, 내보내기 원형 | 완료 | main e10b6da | 독립 검증 통과, 테스트 426 |
 | T12 드래그 번역(맥 번역 + [문맥 번역] AI) | 완료(Aside 수동 확인 대기) | main 32a4632 | 테스트 320. 다리 시작 때 사전·맥 번역 미리 깨우기. 새로 받은 사람은 npm run build:native |
 | T13 뜻 고르기 개선(용어집 보충 + 사전 분야 표시 뜻 우선) | 완료(Aside 수동 확인 대기) | main 464ffc9 | 용어집 +122, HTB 기준 186개 뜻 바뀜. 흔한 낱말(A1~B1)과 쓰임 제한 붙은 뜻은 분야 표시 뜻에서 제외(average·iterative 는 첫 뜻) |
