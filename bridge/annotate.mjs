@@ -62,6 +62,8 @@ const TAG_GROUP = /〔([^〕]*)〕/g;
 
 // 사전 표제어 배열(parseEntry 결과) -> 분야 표시가 붙은 뜻 목록 [{ tags, ko }](사전에 나온 순서). 분야와 무관하게 만들어서 단어 하나에 한 번만 만들고 캐시한다.
 // 표시가 뜻 맨 앞이 아니어도("빼기, 감하기; 〔수학〕 뺄셈") 표시부터의 첫 조각을 다듬는다. 같은 철자 표제어가 여럿이면 모두 본다.
+// 표시 바로 뒤에 〈…이〉·（…의） 같은 쓰임 제한이 붙은 뜻("〔수학〕 〈근을〉 구하다")은 건너뛴다: 짧게 다듬으면 제한이 빠져 뜻이 틀려 보인다(extract 가 "구하다").
+const RESTRICTED = /^\s*[〈（]/;
 export function taggedGlosses(entries) {
   const out = [];
   for (const e of entries ?? []) {
@@ -69,7 +71,8 @@ export function taggedGlosses(entries) {
       if (typeof text !== 'string') continue;
       for (const m of text.matchAll(TAG_GROUP)) {
         const tags = m[1].split(/[·,，、\s]+/).filter((w) => FIELD_WORDS.has(w));
-        const ko = tags.length ? shortGloss(text.slice(m.index)) : '';
+        const rest = text.slice(m.index + m[0].length);
+        const ko = tags.length && !RESTRICTED.test(rest) ? shortGloss(rest) : '';
         if (ko) out.push({ tags, ko });
       }
     }
@@ -89,6 +92,11 @@ export function pickSense(tagged, domains = []) {
   }
   return null;
 }
+
+// 흔한 낱말(A1~B1)은 분야 표시 뜻을 안 쓴다. 글 전체 힌트로는 문장 속 뜻을 못 가려서, 일상 뜻이 맞는 낱말(base 밑변, simple 단일의, produce 연장하다…)이 틀려진다. 목록 밖(null)·B2 이상은 쓴다.
+// 흔한 낱말의 분야 뜻은 용어집에 넣어 정한다. 기준을 바꾸려면 아래 등급만 고친다.
+const COMMON_MAX = 'B1';
+export const isCommon = (level) => LEVELS.includes(level) && LEVELS.indexOf(level) <= LEVELS.indexOf(COMMON_MAX);
 
 const plain = (s) => s.normalize('NFD').replace(/[̀-ͯ·]/g, '').toLowerCase().replace(/^[-\s]+|[-\s]+$/g, '');
 
@@ -144,7 +152,7 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
         v = await resolve(w);
         const t = v && glossary.find(v.lemma, domains); // 활용형(normalized)은 사전이 준 원형으로 다시 찾는다
         if (t) v = { lemma: t.key, level: levels.get(t.key) ?? v.level, gloss: t.ko, term: true, domain: t.domain };
-        else if (v) v = { lemma: v.lemma, level: v.level, gloss: pickSense(v.tagged, domains)?.ko ?? v.gloss }; // 용어집에 없으면 활성 분야의 사전 표시 뜻, 없으면 첫 뜻
+        else if (v) v = { lemma: v.lemma, level: v.level, gloss: (isCommon(v.level) ? null : pickSense(v.tagged, domains))?.ko ?? v.gloss }; // 용어집에 없으면 활성 분야의 사전 표시 뜻(흔한 낱말 제외), 없으면 첫 뜻
       }
       // 아는 단어 판정은 캐시(resolve) 밖에서 한다: 취소하면 사전을 다시 부르지 않고 바로 다시 나온다
       if (v && !isKnown(v.lemma) && (v.level === null || rank(v.level) >= min)) items[w] = v;

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createAnnotate, pickSense, taggedGlosses } from '../bridge/annotate.mjs';
+import { createAnnotate, isCommon, pickSense, taggedGlosses } from '../bridge/annotate.mjs';
 import { createGlossary } from '../bridge/glossary.mjs';
 import { parseEntry } from '../bridge/dict.mjs';
 
@@ -14,12 +14,19 @@ test('pickSense: 분야 표시〔수학〕〔통계〕가 붙은 뜻을 첫 뜻 
   assert.deepEqual(sense('algorithm', ['math']), { ko: '알고리듬', tag: '수학' });
   assert.deepEqual(sense('average', ['math']), { ko: '산술 평균', tag: '통계' });
   assert.deepEqual(sense('subtraction', ['math']), { ko: '뺄셈', tag: '수학' }); // "빼기, …; 〔수학〕 뺄셈" 세미콜론 뒤에 표시
-  assert.deepEqual(sense('iterative', ['math']), { ko: '반복의', tag: '수학' }); // 〔수학·컴퓨터〕 묶음
+  // 〔수학·컴퓨터〕 묶음 표시는 둘 다 분야 표시다
+  const group = [{ senses: [{ text: '반복의; 〔수학·컴퓨터〕 되풀이하는' }] }];
+  assert.deepEqual(pickSense(taggedGlosses(group), ['math']), { ko: '되풀이하는', tag: '수학' });
+  assert.deepEqual(pickSense(taggedGlosses(group), ['security']), { ko: '되풀이하는', tag: '컴퓨터' });
+});
+
+test('taggedGlosses: 표시 바로 뒤에 〈…이〉·（…의） 같은 쓰임 제한이 붙은 뜻은 건너뛴다(제한이 빠진 짧은 뜻은 오해를 부른다)', () => {
+  assert.equal(sense('iterative', ['math']), null); // 〔수학·컴퓨터〕 〈공식·조작이〉 반복(적용)의 -> 첫 뜻 "반복의" 를 그대로 쓴다
+  assert.deepEqual(taggedGlosses([{ senses: [{ text: '〔수학〕 （함수에서） 짝의' }, { text: '〔수학〕 〈근을〉 구하다' }, { text: '〔컴퓨터〕 시스템' }] }]), [{ tags: ['컴퓨터'], ko: '시스템' }]);
 });
 
 test('pickSense: 분야마다 맞는 표시만 본다(security 는 컴퓨터·통신, ml 은 컴퓨터·통계·수학)', () => {
   assert.deepEqual(sense('algorithm', ['security']), { ko: '알고리듬', tag: '컴퓨터' });
-  assert.deepEqual(sense('iterative', ['security']), { ko: '반복의', tag: '컴퓨터' });
   assert.deepEqual(sense('average', ['ml']), { ko: '산술 평균', tag: '통계' });
   assert.equal(sense('average', ['security']), null);
   assert.equal(sense('subtraction', ['security']), null);
@@ -80,4 +87,15 @@ test('annotate: 용어집이 있으면 용어집이 이긴다(multiplication 은
   // 용어집이 있는 낱말은 분야 표시 뜻보다 용어집
   const g = createGlossary({ math: { algorithm: '알고리즘(용어집)' }, ml: {}, security: {} });
   assert.equal((await createAnnotate({ dict: fakeDict(), levels, glossary: g })(['algorithm'], 'A2', ['math'])).algorithm.gloss, '알고리즘(용어집)');
+});
+
+test('흔한 낱말(A1~B1)은 분야 표시 뜻을 안 쓴다: 글 전체 힌트로는 문장 속 뜻을 못 가려서 base 가 밑변이 되는 걸 막는다', async () => {
+  assert.deepEqual(['A1', 'A2', 'B1', 'B2', 'C1', null, undefined].map(isCommon), [true, true, true, false, false, false, false]);
+  const common = createAnnotate({ dict: fakeDict(), levels: new Map([['average', 'A2']]), glossary: noGlossary });
+  assert.equal((await common(['average'], 'A2', ['math'])).average.gloss, '평균', 'A2 낱말은 첫 뜻 그대로');
+  const rare = createAnnotate({ dict: fakeDict(), levels: new Map([['average', 'B2']]), glossary: noGlossary });
+  assert.equal((await rare(['average'], 'A2', ['math'])).average.gloss, '산술 평균', 'B2 이상은 분야 뜻');
+  // 용어집은 낱말 수준과 상관없이 쓴다
+  const g = createGlossary({ math: { average: '평균값' }, ml: {}, security: {} });
+  assert.equal((await createAnnotate({ dict: fakeDict(), levels: new Map([['average', 'A2']]), glossary: g })(['average'], 'A2', ['math'])).average.gloss, '평균값');
 });

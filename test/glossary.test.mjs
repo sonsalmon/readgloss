@@ -129,4 +129,9 @@ test('T13 보충: 사전 첫 뜻이 엉뚱한 사칙연산 용어(multiplication
   assert.equal(ko('intercept', ['ml', 'security']), '절편');
   assert.equal(ko('intercept', ['security', 'ml']), '가로채기');
   assert.equal(G.find('trade-off', ['ml']), null, '한 단어가 아닌 키는 두지 않는다');
+  // 분야 표시 뜻 규칙이 틀리게 고르던 낱말(사전: 정점의·양의·자폐선·컴퓨터의 모든 기능)
+  assert.equal(ko('vertical', ['math']), '수직의');
+  assert.equal(ko('explicit', ['ml']), '명시적인');
+  assert.equal(ko('loops', ['ml']), '루프');
+  assert.equal(ko('functionality', ['ml']), '기능');
 });

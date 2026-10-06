@@ -9,7 +9,7 @@ import { extensionIdFromKey } from './ext-id.mjs';
 import { AiParseError } from './parse.mjs';
 import { SYSTEM_PROMPT, WORD_RE, buildPrompt, createLookup } from './lookup.mjs';
 import { DictUnavailableError, createDict } from './dict.mjs';
-import { ANNOTATE_LEVELS, DEFAULT_LEVEL, createAnnotate, lemmaOf, pickSense, shortGloss, taggedGlosses } from './annotate.mjs';
+import { ANNOTATE_LEVELS, DEFAULT_LEVEL, createAnnotate, isCommon, lemmaOf, loadWordLevels, pickSense, shortGloss, taggedGlosses } from './annotate.mjs';
 import { createWords, parseWordsOp } from './words.mjs';
 import { createGlossary } from './glossary.mjs';
 import { MAX_TEXT, buildTranslatePrompt, createTranslate, normalizeText } from './translate.mjs';
@@ -78,7 +78,8 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
   const translate = createTranslate({ cache: createCache(translationsFile), ask: askTranslate });
   const words = createWords({ file: wordsFile });
   const glossary = createGlossary();
-  const annotate = createAnnotate({ dict, isKnown: words.isKnown, glossary });
+  const levels = loadWordLevels();
+  const annotate = createAnnotate({ dict, levels, isKnown: words.isKnown, glossary });
   const mine = `chrome-extension://${extensionId}`;
 
   const tokenOk = (h) => {
@@ -130,8 +131,8 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
       // 분야 용어집(요청의 domains 힌트로 켜진 것)에 이 원형이 있으면 카드 맨 위 "용어:" 줄용으로 붙인다. 사전에 없는 단어도 용어집은 답한다.
       const active = glossary.domains(value);
       const t = glossary.find(lemma, active) ?? glossary.find(lower, active);
-      // 용어집에 없으면 사전 뜻 중 활성 분야 표시(〔수학〕 등)가 붙은 것을 "분야 뜻"으로 덧붙인다(/annotate 와 같은 규칙)
-      const sense = !t && e ? pickSense(taggedGlosses(r.entries), active) : null;
+      // 용어집에 없으면 사전 뜻 중 활성 분야 표시(〔수학〕 등)가 붙은 것을 "분야 뜻"으로 덧붙인다(/annotate 와 같은 규칙: 흔한 낱말은 뺀다)
+      const sense = !t && e && !isCommon(levels.get(lemma)) ? pickSense(taggedGlosses(r.entries), active) : null;
       send(res, 200, { ...r, lemma, ...(e ? { gloss: shortGloss(e.senses?.[0]?.text) } : {}), ...(t ? { term: { ko: t.ko, domain: t.domain } } : {}), ...(sense ? { sense } : {}) }, cors);
     } catch (e) {
       if (e instanceof DictUnavailableError) send(res, 503, { error: 'dict-unavailable' }, cors);

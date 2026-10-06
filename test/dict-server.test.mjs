@@ -141,10 +141,10 @@ test('/dict: 용어집에 없으면 활성 분야 표시 뜻을 sense:{ko, tag} 
     const a = await post('algorithm', ['math']);
     assert.deepEqual(a.sense, { ko: '알고리듬', tag: '수학' });
     assert.equal(a.term, undefined);
-    assert.deepEqual((await post('average', ['math', 'security'])).sense, { ko: '산술 평균', tag: '통계' });
+    assert.equal((await post('average', ['math', 'security'])).sense, undefined, 'average 는 A2 낱말이라 첫 뜻(평균)을 쓴다');
+    assert.equal((await post('iterative', ['math'])).sense, undefined, '〈…이〉 쓰임 제한이 붙은 표시 뜻은 안 쓴다');
     assert.deepEqual((await post('algorithm', ['security', 'math'])).sense, { ko: '알고리듬', tag: '컴퓨터' });
     assert.equal((await post('algorithm')).sense, undefined, '힌트 없음');
-    assert.equal((await post('average', ['security'])).sense, undefined, '이 분야 표시 없음');
     const t = await post('subtraction', ['math']); // 용어집에 있다
     assert.deepEqual(t.term, { ko: '뺄셈', domain: 'math' });
     assert.equal(t.sense, undefined);
