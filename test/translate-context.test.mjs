@@ -42,7 +42,10 @@ test('contextKey: 글·문맥·분야가 하나라도 다르면 다른 키(sha25
 
 test('buildContextPrompt: 과제(문맥 참고·note·용어 지정) + 입력 JSON 한 줄(글·문맥이 JSON 안에 갇힘)', () => {
   const p = buildContextPrompt({ text: 'the transpose of a matrix', ...CTX }, ['transpose=전치(행렬)']);
-  assert.match(p, /\{"translation": "\.\.\.", "note": "\.\.\."\}/);
+  assert.match(p, /\{"translation": "\.\.\.", "note": "\.\.\.", "expressions": \[\{"en": "\.\.\.", "ko": "\.\.\."\}\]\}/);
+  assert.match(p, /기억할/);
+  assert.match(p, /0~6개/);
+  assert.match(p, /신뢰|text 만 번역/);
   assert.match(p, /앞뒤 문맥/);
   assert.match(p, /note/);
   assert.match(p, /용어 지정: transpose=전치\(행렬\)\. 이 단어는 지정한 번역어를 쓴다/);
@@ -60,6 +63,28 @@ test('parseContextTranslation: translation 필수, note 는 있으면 한 줄로
   assert.deepEqual(parseContextTranslation('{"translation":"전치","note":""}'), { translation: '전치' });
   assert.deepEqual(parseContextTranslation('{"translation":"전치","note":5}'), { translation: '전치' });
   for (const bad of ['', '죄송', '{"gloss":"뜻"}', '{"translation":""}', '{"translation":5}']) assert.throws(() => parseContextTranslation(bad), AiParseError);
+});
+
+test('parseContextTranslation: expressions 는 정상 항목만, 비면 키 없음, 깨져도 translation·note 는 산다', () => {
+  assert.deepEqual(
+    parseContextTranslation('{"translation":"탐구한다","note":"n","expressions":[{"en":"delve into","ko":"깊이 파고들다"},{"en":"","ko":"x"},7]}'),
+    { translation: '탐구한다', note: 'n', expressions: [{ en: 'delve into', ko: '깊이 파고들다' }] },
+  );
+  assert.deepEqual(parseContextTranslation('{"translation":"전치","expressions":[]}'), { translation: '전치' });
+  assert.deepEqual(parseContextTranslation('{"translation":"전치","expressions":"x"}'), { translation: '전치' });
+  assert.equal(parseContextTranslation(`{"translation":"t","expressions":${JSON.stringify(Array.from({ length: 10 }, (_, i) => ({ en: `phrase ${i}`, ko: '뜻' })))}}`).expressions.length, 6);
+});
+
+test('createContextTranslate: 옛 캐시({translation, note?})도 읽히고(expressions 없음) 새 값은 expressions 를 포함한다', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rg-ctxc-'));
+  const cache = createCache(join(dir, 'c.json'));
+  const a = { text: 'delves into', context: CTX, domainsKey: 'ml' };
+  cache.set(contextKey('delves into', CTX, 'ml', { wide: false, mine: '' }), '{"translation":"옛 번역","note":"옛 풀이"}');
+  const tr = createContextTranslate({ cache, ask: async () => '{"translation":"새 번역","expressions":[{"en":"delve into","ko":"깊이 파고들다"}]}' });
+  assert.deepEqual(await tr(a), { translation: '옛 번역', note: '옛 풀이', cached: true });
+  const fresh = await tr({ ...a, force: true });
+  assert.deepEqual(fresh, { translation: '새 번역', expressions: [{ en: 'delve into', ko: '깊이 파고들다' }], cached: false });
+  assert.deepEqual(await tr(a), { ...fresh, cached: true });
 });
 
 test('createContextTranslate: 캐시 키는 글+문맥+분야, force 는 덮어쓰기, 깨진 출력은 캐시 안 함', async () => {
@@ -145,6 +170,19 @@ test('/translate-context: 프롬프트에 글·앞뒤 문맥·제목이 들어�
     const saved = JSON.parse(readFileSync(join(s.dir, 'context-translations.json'), 'utf8'));
     assert.equal(Object.keys(saved).length, 1);
     assert.match(Object.keys(saved)[0], /^[0-9a-f]{64}$/);
+  } finally {
+    await s.bridge.close();
+  }
+});
+
+test('/translate-context: expressions 가 응답에 실리고 캐시에서도 그대로 나온다', async () => {
+  const s = await start(async () => '{"translation":"탐구한다","expressions":[{"en":"delve into","ko":"깊이 파고들다"},{"en":"x"}]}');
+  try {
+    const r = await s.post({ text: 'this module delves into', context: CTX });
+    assert.deepEqual(r.json(), { translation: '탐구한다', expressions: [{ en: 'delve into', ko: '깊이 파고들다' }], cached: false });
+    assert.deepEqual((await s.post({ text: 'this module delves into', context: CTX })).json(), { translation: '탐구한다', expressions: [{ en: 'delve into', ko: '깊이 파고들다' }], cached: true });
+    const wide = await s.post({ text: 'this module delves into', context: CTX, wide: true });
+    assert.equal(wide.json().expressions.length, 1, 'wide 도 같은 응답 모양');
   } finally {
     await s.bridge.close();
   }

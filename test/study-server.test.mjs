@@ -55,6 +55,13 @@ test('이벤트 8종이 각각 기록되고 /study 가 집계한다(text·ko·ur
   assert.deepEqual(JSON.parse(readFileSync(join(s.dir, 'study-log.jsonl'), 'utf8').trim().split('\n')[0]).kind, 'dict');
 }));
 
+test('표현(kind expression) 저장도 save 로 기록한다(text=en, ko=뜻, url=page.url)', withBridge(async (s) => {
+  await s.post('/words', { op: 'save-phrase', text: 'delve into', translation: '깊이 파고들다', kind: 'expression', sentence: 'This module delves into math.', page: PAGE });
+  const d = await today(s);
+  assert.equal(d.counts.save, 1);
+  assert.deepEqual(d.items.map((i) => [i.kind, i.text, i.ko, i.url]), [['save', 'delve into', '깊이 파고들다', PAGE.url]]);
+}));
+
 test('캐시 적중도 기록하고, 응답 못 한 요청·사전에 없는 단어·알아요 취소·최근 기록은 안 남긴다', withBridge(async (s) => {
   await s.post('/lookup', { word: 'payload', sentence: 'A payload.' });
   await s.post('/lookup', { word: 'payload', sentence: 'A payload.' }); // 캐시

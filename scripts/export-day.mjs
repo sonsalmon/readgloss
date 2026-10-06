@@ -35,12 +35,17 @@ const readJson = (file) => {
 const pairs = (o) => Object.entries(o && typeof o === 'object' ? o : {}).filter(([, v]) => v && typeof v === 'object');
 const entries = (o) => pairs(o).map(([, v]) => v);
 
+// 번역은 문맥 번역(AI)이 있으면 그것, 없을 때만 맥 번역
+const tr = (p) => p.context?.translation || p.translation;
+
 export function exportDay(date, dataDir) {
   const on = (v) => Number.isFinite(v?.ts) && dateOf(v.ts) === date;
   const byTs = (a, b) => a.ts - b.ts;
   const words = readJson(join(dataDir, 'words.json'));
   const saved = pairs(words.saved).filter(([, v]) => on(v)).sort((a, b) => byTs(a[1], b[1]));
-  const phrases = entries(words.phrases).filter(on).sort(byTs);
+  const all = entries(words.phrases).filter(on).sort(byTs);
+  const expressions = all.filter((p) => p.kind === 'expression');
+  const phrases = all.filter((p) => p.kind !== 'expression');
   const mine = Object.entries(readJson(join(dataDir, 'mydict.json')).entries ?? {})
     .filter(([, v]) => v && on(v))
     .sort((a, b) => a[1].ts - b[1].ts);
@@ -55,7 +60,7 @@ export function exportDay(date, dataDir) {
   }
 
   const out = ['## 영어 표현 (readgloss)', ''];
-  if (!saved.length && !phrases.length && !mine.length) out.push('(이날 저장한 표현 없음)');
+  if (!saved.length && !expressions.length && !phrases.length && !mine.length) out.push('(이날 저장한 표현 없음)');
   if (saved.length) {
     out.push('### 단어', '');
     // 원형(키)을 굵게, 저장 때 본 굴절형(word)이 원형과 다르면 괄호로 덧붙인다
@@ -65,11 +70,15 @@ export function exportDay(date, dataDir) {
     }
     out.push('');
   }
+  if (expressions.length) {
+    out.push('### 표현', '');
+    for (const p of expressions) out.push(`- **${clip(p.text)}** — ${clip(tr(p))}${p.sentence ? ` / "${clip(p.sentence)}"` : ''}`);
+    out.push('');
+  }
   if (phrases.length) {
     out.push('### 구·문장', '');
     for (const p of phrases) {
-      out.push(`- "${clip(p.text)}" — ${clip(p.translation)}`);
-      if (p.context?.translation) out.push(`  - 문맥 번역: ${clip(p.context.translation)}`);
+      out.push(`- "${clip(p.text)}" — ${clip(tr(p))}`);
       if (p.context?.note) out.push(`  - note: ${clip(p.context.note)}`);
     }
     out.push('');
