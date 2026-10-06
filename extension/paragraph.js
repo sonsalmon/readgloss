@@ -64,6 +64,7 @@
     wrap.className = 'wrap';
     const btn = document.createElement('button');
     btn.type = 'button';
+    btn.className = 'btn';
     btn.setAttribute('aria-label', '이 문단 번역');
     btn.title = '이 문단 번역';
     btn.setAttribute('aria-pressed', 'false');
@@ -168,11 +169,10 @@
       nodes.delete(block);
     } else if (requests.get(block)?.status !== 'loading') {
       const text = textOf(block, { isHidden });
-      const req = { status: 'loading' };
-      requests.set(block, req);
       if (text.length > MAX_TEXT) {
         requests.set(block, { status: 'error', error: 'too-large' });
       } else {
+        requests.set(block, { status: 'loading' });
         refresh();
         let r;
         try {
