@@ -9,8 +9,8 @@ T1 → (T1b ∥ T2) → T3 → T4 → T5. 각 티켓은 `~/dev/readgloss-worktre
 | 티켓 | 상태 | 브랜치 | 메모 |
 |---|---|---|---|
 | T1 더블클릭 → AI 한국어 뜻 | 완료, 사용자가 Aside에서 사용(delves·module 조회됨) | main 036f7ca | 테스트 51개. 더블클릭 경로는 T1b가 사전으로 바꾸고, AI 뜻은 카드의 버튼으로 남는다 |
-| T1b 더블클릭 → 맥 영한사전 카드 | 대기 | — | Swift 도우미 + `/dict` + Relingo식 카드 |
-| T2 문단 클릭 → 왼쪽 버튼 → 페이지에 번역 삽입 | 대기 | — | T1b와 병렬 |
+| T1b 더블클릭 → 맥 영한사전 카드 | 진행 중(task wljsq2mkq) | feat/t1b-dict | Swift 도우미 + `/dict` + Relingo식 카드 |
+| T2 문단 클릭 → 왼쪽 버튼 → 페이지에 번역 삽입 | 진행 중(task wljsq2mkq) | feat/t2-paragraph | T1b와 병렬 |
 | T3 어려운 단어 판정·주석 뜻 | 보류 | — | 주석 뜻 출처(사전 첫 뜻 vs AI 문맥) 재결정 뒤 |
 | T4 ruby 주석 그리기 | 대기 | — | T3 뒤 |
 | T5 상시 실행·켜기/끄기 | 대기 | — | T4 뒤 |
