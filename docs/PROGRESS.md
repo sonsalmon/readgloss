@@ -22,6 +22,7 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 | T14b 다리: wide·내 사전·약어집·구 단어장·공부 기록 | 완료 | main 8658373 | |
 | T14c 패널: 구·문장·내 사전 탭, 공부 기록 탭 | 완료 | main 5934a22 | 테스트 412 |
 | T15 하루치 내보내기 스크립트(learning-records 옮기기용) | 완료 | main e10b6da | `npm run export:day -- YYYY-MM-DD` → "## 영어 표현 (readgloss)" 마크다운. 메모리 readgloss-to-learning-records |
+| T17 기억할 표현·문맥 번역 우선·저장 문장 더블클릭 | 진행 중(task wybiwk4ud) | feat/t17a ∥ feat/t17b | spec "변경 기록 8" |
 | T16 고침: 굴절 안내 항목 원형(matrices→matrix), 공부 기록 새로고침, 내보내기 원형 | 완료 | main e10b6da | 독립 검증 통과, 테스트 426 |
 | T12 드래그 번역(맥 번역 + [문맥 번역] AI) | 완료(Aside 수동 확인 대기) | main 32a4632 | 테스트 320. 다리 시작 때 사전·맥 번역 미리 깨우기. 새로 받은 사람은 npm run build:native |
 | T13 뜻 고르기 개선(용어집 보충 + 사전 분야 표시 뜻 우선) | 완료(Aside 수동 확인 대기) | main 464ffc9 | 용어집 +122, HTB 기준 186개 뜻 바뀜. 흔한 낱말(A1~B1)과 쓰임 제한 붙은 뜻은 분야 표시 뜻에서 제외(average·iterative 는 첫 뜻) |
