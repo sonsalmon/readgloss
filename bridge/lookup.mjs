@@ -19,7 +19,7 @@ const LOOKUP_TASK =
 const CONTEXT_NOTE = '입력에 context 가 있으면 그 앞뒤 문맥(before·after)과 글 제목·소제목(title·headings)도 참고해 이 글 안에서의 뜻을 고른다. ';
 
 // wide: 앞뒤 글을 더 넓게 실은 요청("더 넓은 문맥"). terms: 내 사전 용어 지정 ["pca=주성분 분석", ...]. 입력 JSON 은 항상 마지막 줄.
-const WIDE_NOTE = '이번 context 는 넓은 문맥(글 앞뒤와 목차)이니 그것을 보고 이 글 안에서의 뜻을 고른다. ';
+const WIDE_NOTE = '이번 context 는 넓게 실었다. 넓은 문맥(글 앞뒤와 목차)을 보고 이 글 안에서의 뜻을 고른다. ';
 
 export const buildPrompt = ({ word, sentence, context, terms = [], wide = false }) => {
   const mine = terms.length ? `용어 지정: ${terms.join(', ')}. 이 단어는 지정한 번역어를 쓴다.\n` : '';

@@ -6,7 +6,7 @@
   const S = globalThis.readglossSettings;
   const G = globalThis.readglossGlossary; // 분야 용어집 힌트(host·domains). 없어도 주석은 그대로 동작한다
   if (!core || !S || !globalThis.chrome?.runtime?.id) return;
-  const { MAX_WORDS, blockCandidates, chunk, annotating, structuralKey, annotateBlock, unwrapAnnotations, applyWords } = core;
+  const { MAX_WORDS, MAX_ACRONYMS, blockCandidates, chunk, annotating, structuralKey, annotateBlock, unwrapAnnotations, applyWords, mydictKeys } = core;
 
   const BLOCK = 'p, li, blockquote, dd, dt, td, th, h1, h2, h3, h4, h5, h6, figcaption';
   // 건드리지 않는 곳: 코드·입력창·편집 영역·이미 있는 ruby·우리가 넣은 노드(번역 블록 등)
@@ -33,7 +33,7 @@
   let done = new WeakSet(); // 처리한 블록(블록 안 글이 바뀌면 다시 뺀다. WeakSet 은 비울 수 없어 다시 그릴 때 새로 만든다)
   const pending = new Set(); // 화면 근처에 들어와 처리를 기다리는 블록
   const dirty = new Set(); // 글이 바뀐 블록
-  const cache = Object.create(null); // 낱말 -> { lemma, gloss } | null(어렵지 않음). 기준 등급이 바뀌면 비운다.
+  const cache = Object.create(null); // 낱말(약어는 원래 대문자 철자) -> { lemma, gloss } | null(어렵지 않음). 기준 등급·용어집 분야가 바뀌거나 내 사전이 바뀌면 비운다.
   let cacheLevel = settings.level;
   let cacheHint = ''; // 캐시를 채울 때의 용어집 힌트 키(같은 단어도 분야가 다르면 뜻이 다르다)
   const state = { pageSeen: new Set(), skip: new Set() }; // pageSeen: 이 페이지에서 이미 주석 붙인 원형, skip: 아는 단어 원형(readgloss:words)
@@ -51,11 +51,12 @@
     return out;
   }
 
-  async function request(words, hint) {
+  // acronyms(2~6자 전부 대문자 철자)는 낱말과 따로 보낸다(없으면 필드도 없다: 예전 요청과 같다).
+  async function request(words, hint, acronyms = []) {
     if (dead || Date.now() < offUntil) return null;
     let r;
     try {
-      r = await chrome.runtime.sendMessage({ type: 'annotate', words, level: settings.level, ...hint });
+      r = await chrome.runtime.sendMessage({ type: 'annotate', words, ...(acronyms.length && { acronyms }), level: settings.level, ...hint });
     } catch {
       dead = true;
       stop();
@@ -69,11 +70,12 @@
   }
 
   // 아직 모르는 낱말을 300개씩 물어 cache 에 채운다. 하나라도 실패하거나 기다리는 사이 다시 그리기 시작했으면(mine !== epoch, 답이 낡았다) false.
-  async function learn(words, mine, hint) {
-    for (const part of chunk(words, MAX_WORDS)) {
-      const items = await request(part, hint);
+  async function learn(words, acronyms, mine, hint) {
+    const parts = [...chunk(words, MAX_WORDS).map((w) => [w, []]), ...chunk(acronyms, MAX_ACRONYMS).map((a) => [[], a])];
+    for (const [w, a] of parts) {
+      const items = await request(w, hint, a);
       if (!items || mine !== epoch) return false;
-      for (const w of part) cache[w] = Object.hasOwn(items, w) ? items[w] : null; // items.constructor 같은 상속 속성을 낱말로 착각하지 않는다
+      for (const k of [...w, ...a]) cache[k] = Object.hasOwn(items, k) ? items[k] : null; // items.constructor 같은 상속 속성을 낱말로 착각하지 않는다
     }
     return true;
   }
@@ -96,15 +98,16 @@
     }
     const jobs = [];
     const wanted = new Set();
+    const wantedAcronyms = new Set();
     for (const block of blocks) {
       const nodes = textNodesOf(block);
       const texts = nodes.map((n) => n.nodeValue);
-      const occs = blockCandidates(texts);
+      const occs = blockCandidates(texts, { acronyms: true });
       done.add(block);
       jobs.push({ block, nodes, texts, occs });
-      for (const o of occs) if (!(o.word in cache)) wanted.add(o.word);
+      for (const o of occs) if (!(o.word in cache)) (o.acronym ? wantedAcronyms : wanted).add(o.word);
     }
-    const ok = await learn([...wanted], mine, hint);
+    const ok = await learn([...wanted], [...wantedAcronyms], mine, hint);
     if (mine !== epoch) return; // 기다리는 사이 설정이 바뀌어 다시 그리는 중: 이 결과는 버린다
     if (!ok) {
       for (const j of jobs) done.delete(j.block);
@@ -238,6 +241,20 @@
       unwrapAnnotations(document, gone); // 아는 단어의 주석을 지금 걷는다
       mo?.takeRecords();
     }
+  });
+  // 내 사전이 바뀌었다({set:[키...], delete:[키...]}, 보낸 쪽은 카드나 패널): 그 키의 주석(원형·약어)을 걷고, 다리 응답 캐시를 비우고, 보이는 블록을 다시 처리한다.
+  addEventListener('readgloss:mydict', (e) => {
+    const keys = mydictKeys(e.detail);
+    if (!keys.size) return;
+    for (const k of Object.keys(cache)) delete cache[k]; // 내 사전이 바뀌면 지난 답은 못 쓴다(약어 뜻도 여기 있다)
+    if (!running) return;
+    epoch++; // 기다리는 사이 도착할 낡은 답은 버린다
+    offUntil = 0;
+    unwrapAnnotations(document, keys);
+    for (const k of keys) state.pageSeen.delete(k);
+    done = new WeakSet();
+    document.querySelectorAll(BLOCK).forEach(track); // 화면 근처 블록은 관찰자가 다시 알려 준다
+    mo?.takeRecords();
   });
   addEventListener('readgloss:pageoff', (e) => {
     pageOff = typeof e.detail?.off === 'boolean' ? e.detail.off : globalThis.readglossPageOff === true;

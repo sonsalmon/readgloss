@@ -14,7 +14,7 @@ const HOST = '127.0.0.1:47831';
 const FAKE_DICT = new URL('./fake-dict.mjs', import.meta.url).pathname;
 const FAKE_MT = new URL('./fake-mt.mjs', import.meta.url).pathname;
 
-export async function start({ dir = mkdtempSync(join(tmpdir(), 'rg-t14b-')), start: t0 = Date.now() } = {}) {
+export async function start({ dir = mkdtempSync(join(tmpdir(), 'rg-t14b-')), start: t0 = Date.now(), studyFile } = {}) {
   const asked = { lookup: [], translate: [], context: [] };
   const clock = { t: t0, now: () => clock.t };
   const dict = createDict({ bin: process.execPath, args: [FAKE_DICT], timeoutMs: 10_000 });
@@ -29,6 +29,7 @@ export async function start({ dir = mkdtempSync(join(tmpdir(), 'rg-t14b-')), sta
     dict,
     mt,
     now: clock.now,
+    ...(studyFile && { studyFile }),
   });
   const port = await bridge.listen(0);
   const token = readFileSync(join(dir, 'token'), 'utf8');

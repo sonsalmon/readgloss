@@ -13,7 +13,7 @@ const CONTEXT_TASK =
 
 // terms: ["transpose=전치(행렬)", ...] 분야 용어집에서 text 에 나온 단어. 입력 JSON 은 항상 마지막 줄. 빈 문맥 필드는 JSON 에서 뺀다.
 // wide: 더 넓은 문맥(글 앞뒤와 목차)을 실은 요청이면 과제 설명에 한 줄 더한다.
-const WIDE_NOTE = '이번 입력은 넓은 문맥(글 앞뒤와 목차)을 실었다. 그 넓은 문맥을 보고 text 의 뜻을 정한다.\n';
+const WIDE_NOTE = '이번 입력은 문맥을 넓게 실었다. 넓은 문맥(글 앞뒤와 목차)을 보고 text 의 뜻을 정한다.\n';
 
 export function buildContextPrompt({ text, before, after, title, headings }, terms = [], wide = false) {
   const input = { text: normalizeText(text), ...(before && { before }), ...(after && { after }), ...(title && { title }), ...(headings?.length && { headings }) };

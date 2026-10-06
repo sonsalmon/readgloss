@@ -3,6 +3,7 @@
 // text.js 와 같이 import/export 없는 classic script 로 두고 전역 readglossAnnotate 와 readglossAnnotStyle(계약 F)로 등록한다. node --test 도 같은 파일을 쓴다.
 (() => {
   const MAX_WORDS = 300; // 다리의 /annotate 상한과 맞춘다(넘으면 413)
+  const MAX_ACRONYMS = 100; // 다리의 /annotate acronyms 상한(넘으면 413)
   const MIN_LENGTH = 4;
   const TOKEN = /[A-Za-z]+(?:-[A-Za-z]+)*/g;
   const NEIGHBOR = /[\p{L}\p{N}_]/u; // 낱말에 바로 붙으면 영어 낱말이 아니다(x86, 2fa, 한글word, snake_case)
@@ -26,12 +27,18 @@
 
   // text 안의 후보 단어 [{ word(소문자), start, end }]. before = 같은 블록에서 text 앞에 있는 글자(문장 첫머리 판단용).
   // 제외: 3글자 이하, 전부 대문자(약어), 안쪽에 대문자(JavaScript, iPhone), 문장 중간의 대문자 시작(고유명사). 문장 첫 단어는 소문자로 바꿔 후보.
-  function candidates(text, before = '') {
+  // acronyms:true 면 낱말 후보와 따로 2~6자 전부 대문자 낱말(PCA, XSS)도 { word(원래 철자 그대로), start, end, acronym:true } 로 문서 순서대로 섞어 준다(기본은 예전처럼 버린다).
+  // 낱말에 붙은 것(x86, snake_case)·URL 조각은 낱말과 같은 규칙으로 거르고, CVE-2024 처럼 뒤에 -숫자가 붙은 것은 식별자라 뺀다.
+  function candidates(text, before = '', { acronyms = false } = {}) {
     const out = [];
     for (const m of String(text).matchAll(TOKEN)) {
       const raw = m[0];
       const start = m.index;
       const end = start + raw.length;
+      if (/^[A-Z]{2,6}$/.test(raw)) {
+        if (acronyms && standsAlone(text, start, end) && !/^-\d/.test(text.slice(end, end + 2))) out.push({ word: raw, start, end, acronym: true });
+        continue;
+      }
       if (raw.length < MIN_LENGTH || raw === raw.toUpperCase() || /[A-Z]/.test(raw.slice(1))) continue;
       if (!standsAlone(text, start, end)) continue;
       if (/^[A-Z]/.test(raw) && !isSentenceStart(before + text.slice(0, start))) continue;
@@ -42,7 +49,7 @@
 
   // 한 블록의 텍스트 노드들(texts)을 이어서 문맥을 보고 후보를 뽑는다. 노드 경계를 걸치는 낱말(pay<b>load</b>)은 버린다.
   // 돌려주는 start/end 는 그 노드 안의 위치, node 는 texts 의 번호.
-  function blockCandidates(texts) {
+  function blockCandidates(texts, opts) {
     const starts = [];
     let all = '';
     for (const t of texts) {
@@ -51,10 +58,10 @@
     }
     const out = [];
     let i = 0;
-    for (const c of candidates(all)) {
+    for (const c of candidates(all, '', opts)) {
       while (i + 1 < texts.length && starts[i + 1] <= c.start) i++;
       if (c.end > starts[i] + texts[i].length) continue;
-      out.push({ node: i, word: c.word, start: c.start - starts[i], end: c.end - starts[i] });
+      out.push({ node: i, word: c.word, start: c.start - starts[i], end: c.end - starts[i], ...(c.acronym && { acronym: true }) });
     }
     return out;
   }
@@ -121,6 +128,19 @@
     for (const l of list(detail?.unknown)) (skip.delete(l), pageSeen?.delete(l));
     for (const l of known) skip.add(l);
     return known;
+  }
+
+  // readgloss:mydict 이벤트 detail({set:[key...], delete:[key...]}) -> 걷고 다시 그릴 내 사전 키(소문자·공백 정리, 원형·약어 모두 같은 키) 집합. 이상한 값은 버린다.
+  function mydictKeys(detail) {
+    const out = new Set();
+    for (const list of [detail?.set, detail?.delete]) {
+      if (!Array.isArray(list)) continue;
+      for (const k of list) {
+        const v = typeof k === 'string' ? k.replace(/\s+/g, ' ').trim().toLowerCase() : '';
+        if (v && v.length <= 80) out.add(v);
+      }
+    }
+    return out;
   }
 
   // ---- 주석 노드 그리기·걷기 (계약 B) ----
@@ -266,8 +286,8 @@ span[data-readgloss="gloss"] { margin-inline-start: var(--rg-ann-gap, 0em); }
   }
 
   globalThis.readglossAnnotate = {
-    MAX_WORDS, candidates, blockCandidates, chooseSpans, splitText, chunk, isDarkColor,
-    enabledHere, annotating, structuralKey, applyWords, makeAnnotation, unwrapAnnotations, annotateBlock, cssVars,
+    MAX_WORDS, MAX_ACRONYMS, candidates, blockCandidates, chooseSpans, splitText, chunk, isDarkColor,
+    enabledHere, annotating, structuralKey, applyWords, mydictKeys, makeAnnotation, unwrapAnnotations, annotateBlock, cssVars,
   };
   globalThis.readglossAnnotStyle = { sheet, css: ANNOT_CSS, apply, renderPreview };
 })();
