@@ -261,7 +261,7 @@
     ui.ai.className = 'ai';
     ui.ai.textContent = '가져오는 중…';
     place();
-    const context = current.range && globalThis.readglossSelection?.contextFor?.(current.range); // selection.js 가 나중에 로드되므로 호출 때 참조한다
+    const context = current.range && globalThis.readglossContextFor?.(current.range); // selection.js 가 나중에 로드되므로 호출 때 참조한다
     const r = await send({ type: 'lookup', word: current.word, sentence: current.sentence, force, ...(context && { context }) });
     if (my !== seq) return;
     ui.aiBtn.removeAttribute('aria-disabled');

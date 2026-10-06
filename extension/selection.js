@@ -70,7 +70,8 @@
 
   const hint = () => globalThis.readglossGlossary?.hint(settings, document, location.hostname) ?? {};
   const elementOf = (node) => (node?.nodeType === 1 ? node : node?.parentElement);
-  const isHidden = (el) => getComputedStyle(el).display === 'none';
+  // 문맥에 안 싣는 요소: 화면에 안 보이는 것, 그리고 사용자가 입력한 글(입력창·textarea·select)
+  const isHidden = (el) => /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || getComputedStyle(el).display === 'none';
 
   async function send(message) {
     try {
@@ -132,7 +133,7 @@
       return undefined;
     }
   }
-  core.contextFor = contextFor; // content.js 의 [AI 문맥 뜻] 도 같은 함수를 쓴다
+  globalThis.readglossContextFor = contextFor; // content.js 의 [AI 문맥 뜻] 도 같은 함수를 쓴다(DOM 을 만지므로 순수 모듈 readglossSelection 에는 붙이지 않는다)
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
