@@ -52,9 +52,9 @@
   `;
 
   let host = null;
-  let ui = null; // { card, scroll, ai, aiBtn }
+  let ui = null; // { card, scroll, ai, aiBtn, saveBtn, knownBtn }
   let seq = 0; // 닫거나 새로 열 때마다 올려서 늦게 온 응답을 버린다
-  let current = null; // { word, sentence, anchor, aiAsked }
+  let current = null; // { word, sentence, anchor, aiAsked, lemma, gloss, state }  lemma·gloss 는 /dict 응답, state 는 /words 응답
 
   // 사전·AI 가 준 글은 textContent 로만 넣는다(innerHTML 금지).
   function el(tag, cls, text) {
@@ -82,19 +82,29 @@
     const foot = el('div', 'foot');
     const aiBtn = el('button', 'btn', 'AI 문맥 뜻');
     aiBtn.type = 'button';
-    aiBtn.setAttribute('aria-label', 'AI로 이 문장 속 뜻 보기');
+    aiBtn.setAttribute('aria-label', 'AI 문맥 뜻: 이 문장 속 뜻 보기'); // 보이는 글자(AI 문맥 뜻)를 포함
     aiBtn.addEventListener('click', () => current && askAi());
     const naver = el('a', 'btn', '네이버에서 열기');
     naver.href = `https://en.dict.naver.com/#/search?query=${encodeURIComponent(current.word)}`;
     naver.target = '_blank';
     naver.rel = 'noopener noreferrer';
     naver.setAttribute('aria-label', '네이버 사전에서 열기(새 탭)');
-    foot.append(aiBtn, naver);
+    const mkWordBtn = (key) => {
+      const b = el('button', 'btn');
+      b.type = 'button';
+      b.setAttribute('aria-disabled', 'true'); // 사전 결과(원형)가 오면 켠다
+      b.addEventListener('click', () => current && toggleWord(key));
+      return b;
+    };
+    const saveBtn = mkWordBtn('save');
+    const knownBtn = mkWordBtn('known');
+    foot.append(saveBtn, knownBtn, aiBtn, naver);
 
     card.append(scroll, ai, foot);
     shadow.append(style, card);
     document.documentElement.append(host);
-    ui = { card, scroll, ai, aiBtn };
+    ui = { card, scroll, ai, aiBtn, saveBtn, knownBtn };
+    paintWordButtons();
   }
 
   function place() {
@@ -151,6 +161,48 @@
     place();
   }
 
+  // 카드의 단어장·알아요 버튼. 문구·동작 판단은 panel-words.js 의 순수 함수(readglossWords.buttonModel)가 한다.
+  function paintWordButtons() {
+    const m = globalThis.readglossWords.buttonModel({ saved: !!current.state?.saved[current.lemma], known: !!current.state?.known[current.lemma] });
+    for (const [btn, b] of [[ui.saveBtn, m.save], [ui.knownBtn, m.known]]) {
+      btn.textContent = b.text;
+      btn.setAttribute('aria-label', b.label);
+      if (current.state) btn.removeAttribute('aria-disabled');
+    }
+  }
+
+  async function toggleWord(key) {
+    if (!current.state || ui[`${key}Btn`].getAttribute('aria-disabled') === 'true') return;
+    const W = globalThis.readglossWords;
+    const my = seq;
+    const op = W.buttonModel({ saved: !!current.state.saved[current.lemma], known: !!current.state.known[current.lemma] })[key].op;
+    ui[`${key}Btn`].setAttribute('aria-disabled', 'true');
+    const r = await send(W.messageFor(op, { lemma: current.lemma, word: current.word, gloss: current.gloss, sentence: current.sentence, url: location.href.slice(0, 2000) }));
+    if (my !== seq) return;
+    if (r?.known && r.saved) {
+      current.state = r;
+      const detail = W.eventDetail(op, current.lemma);
+      if (detail) window.dispatchEvent(new CustomEvent('readgloss:words', { detail })); // 이 페이지의 주석을 바로 걷거나 되살린다
+    } else {
+      ui.ai.hidden = false;
+      ui.ai.className = 'ai err';
+      ui.ai.textContent = MESSAGES[r?.error] ?? `문제가 생겼어요(${r?.error ?? '응답 없음'})`;
+    }
+    paintWordButtons();
+    place();
+  }
+
+  // 사전 결과가 오면: 원형을 받아 두고, 최근 찾은 단어에 조용히 남기고(실패해도 카드는 그대로), 단어장·알아요 상태를 받아 버튼을 켠다.
+  async function loadWordState(r, my) {
+    current.lemma = r.lemma;
+    current.gloss = r.gloss ?? '';
+    if (r.found) send({ type: 'words', op: 'history', lemma: r.lemma, word: current.word, gloss: current.gloss, sentence: current.sentence, url: location.href.slice(0, 2000) }).catch(() => {});
+    const s = await send({ type: 'words', op: 'get' });
+    if (my !== seq || !s?.known) return; // 상태를 못 받으면 버튼은 꺼진 채로 둔다
+    current.state = s;
+    paintWordButtons();
+  }
+
   function close() {
     seq++;
     current = null;
@@ -174,6 +226,7 @@
     if (r?.found && r.entries?.length) renderEntries(r.entries);
     else if (r?.found === false) showMessage('사전에 없어요');
     else showMessage(MESSAGES[r?.error] ?? `문제가 생겼어요(${r?.error ?? '응답 없음'})`);
+    if (typeof r?.lemma === 'string') loadWordState(r, my).catch(() => {});
   }
 
   async function askAi() {
