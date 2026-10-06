@@ -18,6 +18,7 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 | T6b 떠 있는 버튼·퀵 메뉴·패널·설정 탭·미리보기·사이트·테마 | 완료 | main 15d0c3d | verifier 통과, 합칠 때 manifest·background·테스트 충돌 해소 |
 | T7 내 단어: 단어장 추가·아는 단어·최근 찾은 단어(35,36) | 완료 | main | verifier 통과, 테스트 합계 226 |
 | T8 어휘량 추정(6) | 대기 | — | T6·T7 합친 뒤 |
+| T11 용어집 사이트 목록(보안 사이트 기본 19개 + 패널 추가/삭제, 사이트 규칙은 확장 설정 한 곳) | 완료(Aside 수동 확인 대기) | main cec62ac | 사용자 결정: 보안 사이트 목록 + 패널 추가. 다리는 요청 힌트만 씀 |
 | T9 분야 용어집(수학·ML·보안, HTB 최적화) | 완료(Aside 수동 확인 대기) | main 51c86f9 + 7d638ce | HTB 모듈 290(Fundamentals of AI) 15개 섹션 기준, 용어 검토 15건 반영, transposed 원형 고침. HTB 는 수식이 평문이라 수학 감지는 사이트 규칙이 대신함 |
 
 ## 미리 정해 둔 것
@@ -63,7 +64,7 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 
 ## T9 뒤 메모
 
-- 일반 사이트는 여전히 사전 첫 뜻(matrix→모체 등). 보안 문서 사이트(portswigger.net, owasp.org 등)에도 보안 용어집을 켤지, 패널에서 사이트별로 고르게 할지 사용자에게 물을 것.
+- (T11로 해결) 보안 문서 사이트 기본 목록 + 패널 "용어집을 켤 사이트". 다리는 더 이상 사이트로 판단하지 않으니, 확장을 새로고침하지 않은 옛 확장은 HTB 에서도 용어집이 안 나온다.
 - 두 단어 이상 용어(phrases-*.json)는 저장만 됨. 구 단위 주석은 다음 후보.
 - 위키 원자료: ~/dev/llm-wiki/raw/sources/2026-10-06-claude-p-persistent-subscription-bridge.md, 2026-10-06-macos-dictionary-services-en-ko.md
 
