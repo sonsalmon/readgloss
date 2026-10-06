@@ -12,7 +12,7 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 | T1b 더블클릭 → 맥 영한사전 카드 | 완료(Aside 수동 확인 대기) | main 21da4b2 | Swift 도우미 + `/dict` + Relingo식 카드 |
 | T2 문단 클릭 → 왼쪽 버튼 → 페이지에 번역 삽입 | 완료(Aside 수동 확인 대기) | main 2ea1ebf | 합칠 때 server.mjs·background.js 충돌 해소(둘 다 살림). 테스트 105개 |
 | T3 어려운 단어 위 자동 주석(판정+ruby, 옛 T3·T4 합침) | 완료(Aside 수동 확인 대기) | main d46332a | 10-06 결정: 뜻 = 사전 첫 뜻. T1b·T2 합친 뒤 시작(사전 도우미 필요). spec "변경 기록 3" |
-| T5 상시 실행·켜기/끄기·수준 고르기 | 대기 | — | T3 뒤. launchd 등록은 승인 뒤 |
+| T5 상시 실행 | 완료(10-06 사용자 승인) | main | launchd `com.sonsalmom.readgloss-bridge`(RunAtLoad·KeepAlive). 켜기/끄기·수준 고르기는 T6 패널에서 이미 함 |
 | T6s 설정값 뼈대(settings-core.js) | 완료 | main 3641c0f | |
 | T6a 주석 그리기 개편(설정 반영·CSS 변수·걷기·끄기·오른쪽 위치) | 완료 | main | verifier 통과, P2 3건 |
 | T6b 떠 있는 버튼·퀵 메뉴·패널·설정 탭·미리보기·사이트·테마 | 완료 | main 15d0c3d | verifier 통과, 합칠 때 manifest·background·테스트 충돌 해소 |
@@ -76,6 +76,14 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 - (T11로 해결) 보안 문서 사이트 기본 목록 + 패널 "용어집을 켤 사이트". 다리는 더 이상 사이트로 판단하지 않으니, 확장을 새로고침하지 않은 옛 확장은 HTB 에서도 용어집이 안 나온다.
 - 두 단어 이상 용어(phrases-*.json)는 저장만 됨. 구 단위 주석은 다음 후보.
 - 위키 원자료: ~/dev/llm-wiki/raw/sources/2026-10-06-claude-p-persistent-subscription-bridge.md, 2026-10-06-macos-dictionary-services-en-ko.md
+
+## 다리 상시 실행(launchd, 10-06 등록)
+
+- 설정 원본: `ops/com.sonsalmom.readgloss-bridge.plist` → 설치본 `~/Library/LaunchAgents/com.sonsalmom.readgloss-bridge.plist`. 로그: `data/bridge.out.log`, `data/bridge.err.log`.
+- 상태: `launchctl print gui/$(id -u)/com.sonsalmom.readgloss-bridge | grep state`
+- 코드를 바꾼 뒤 다시 시작: `launchctl kickstart -k gui/$(id -u)/com.sonsalmom.readgloss-bridge`
+- 끄기(등록 해제): `launchctl bootout gui/$(id -u)/com.sonsalmom.readgloss-bridge` (다시 켜기: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.sonsalmom.readgloss-bridge.plist`)
+- 포트 47831 은 이 상시 다리가 쓴다. 시험은 계속 임시 포트로. 세션 안에서 `node bridge/server.mjs` 를 따로 띄우지 않는다(EADDRINUSE).
 
 ## 다음 한 걸음
 
