@@ -206,6 +206,7 @@
 
   function onClick(e) {
     if (host && e.composedPath().includes(host)) return; // 번역 버튼 안
+    if (getSelection()?.isCollapsed === false) return; // 드래그로 글을 골랐으면(드래그 번역이 맡는다) 번역 버튼은 새로 띄우지 않는다
     if (!allowed()) return hide(); // 끄기 범위: 이 사이트·이 페이지·전체 끄기면 번역 버튼을 안 띄운다(더블클릭 사전 카드는 따로 계속 된다)
     const t = e.target;
     const block = findBlock(t?.nodeType === 1 ? t : t?.parentElement);

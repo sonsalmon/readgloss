@@ -261,7 +261,8 @@
     ui.ai.className = 'ai';
     ui.ai.textContent = '가져오는 중…';
     place();
-    const r = await send({ type: 'lookup', word: current.word, sentence: current.sentence, force });
+    const context = current.range && globalThis.readglossSelection?.contextFor?.(current.range); // selection.js 가 나중에 로드되므로 호출 때 참조한다
+    const r = await send({ type: 'lookup', word: current.word, sentence: current.sentence, force, ...(context && { context }) });
     if (my !== seq) return;
     ui.aiBtn.removeAttribute('aria-disabled');
     if (r?.gloss) ui.ai.textContent = `${current.word}: ${r.gloss}`;
@@ -285,6 +286,8 @@
     return document.body;
   }
 
+  globalThis.readglossBlockOf = blockOf; // selection.js(드래그 번역)가 같은 블록 판정을 쓴다
+
   function onDblClick(e) {
     if (host && e.composedPath().includes(host)) return; // 카드 안
     if (e.composedPath().some((n) => n.localName === 'readgloss-ui')) return; // 떠 있는 버튼·패널 안
@@ -300,13 +303,27 @@
     const block = blockOf(range.startContainer);
     const { text, offset } = plainTextAt(block, range.startContainer, range.startOffset); // 자동 주석의 rt 글자는 문장에 섞지 않는다
     const sentence = extractSentence(text, offset + picked.start, picked.word.length);
-    const r = range.getBoundingClientRect();
+    openCard(picked.word, sentence, range.getBoundingClientRect(), range);
+  }
 
+  // rect: 뷰포트 좌표의 단어 사각형. range: 단어를 담은 선택(AI 문맥 뜻이 앞뒤 문맥을 뽑을 때 쓴다).
+  function openCard(word, sentence, r, range) {
     if (host) close();
-    current = { word: picked.word, sentence, aiAsked: false, anchor: { left: r.left + scrollX, top: r.top + scrollY, bottom: r.bottom + scrollY } };
+    current = { word, sentence, aiAsked: false, range: range?.cloneRange(), anchor: { left: r.left + scrollX, top: r.top + scrollY, bottom: r.bottom + scrollY } };
     buildCard();
     askDict().catch(close); // 동기적으로 "찾는 중…" 부터 그린다
   }
+
+  // 드래그 번역(selection.js)이 한 단어를 드래그하면 더블클릭과 같은 사전 카드를 그 자리에 연다.
+  window.addEventListener('readgloss:lookup', (e) => {
+    const d = e.detail;
+    if (!globalThis.readgloss.isEnglishWord(d?.word) || typeof d.sentence !== 'string' || ![d.rect?.left, d.rect?.top, d.rect?.bottom].every(Number.isFinite)) return;
+    try {
+      openCard(d.word, d.sentence, d.rect, d.range);
+    } catch {
+      // 페이지를 깨뜨리지 않는다
+    }
+  });
 
   document.addEventListener(
     'dblclick',

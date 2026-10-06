@@ -76,8 +76,9 @@ test('formatDate: YYYY.MM.DD(현지 날짜), 이상한 값은 빈 문자열', ()
   assert.equal(W.formatDate(NaN), '');
 });
 
-test('panel-words.js: ES 모듈 import/export 없음, manifest 목록 맨 끝에 있다', () => {
+test('panel-words.js: ES 모듈 import/export 없음, manifest 에서 panel.js 뒤(드래그 번역 두 파일만 그 뒤)에 있다', () => {
   assert.doesNotMatch(readFileSync(new URL('../extension/panel-words.js', import.meta.url), 'utf8'), /^\s*(import|export)\s/m);
   const js = JSON.parse(readFileSync(new URL('../extension/manifest.json', import.meta.url), 'utf8')).content_scripts[0].js;
-  assert.equal(js.at(-1), 'panel-words.js');
+  assert.ok(js.indexOf('panel-words.js') > js.indexOf('panel.js'));
+  assert.deepEqual(js.slice(js.indexOf('panel-words.js') + 1), ['selection-core.js', 'selection.js']);
 });
