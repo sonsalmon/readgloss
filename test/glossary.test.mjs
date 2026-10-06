@@ -57,8 +57,11 @@ test('find: 활성 분야 안에서만, 앞선 분야 먼저. 복수형은 단�
   assert.equal(G.find('features', ['ml']).key, 'feature');
   assert.equal(G.find('outliers', ['math']).key, 'outlier');
   // 겹치는 단어: 분야 순서가 곧 우선순위
-  assert.equal(G.find('vector', ['math', 'security']).ko, '벡터');
-  assert.equal(G.find('vector', ['security', 'math']).ko, '벡터(경로)');
+  assert.equal(G.find('root', ['math', 'security']).ko, '근(루트)');
+  assert.equal(G.find('root', ['security', 'math']).ko, '루트(최고 권한)');
+  assert.equal(G.find('binary', ['ml', 'security']).ko, '이진');
+  assert.equal(G.find('binary', ['security', 'ml']).ko, '바이너리');
+  assert.equal(G.find('vector', ['security', 'math']).ko, '벡터', '공격 벡터도 벡터라 보안 쪽에서 괄호 설명을 뺐다');
 });
 
 test('variants: 원형 먼저, 복수형 규칙만(-ing·-ed 는 사전 원형에 맡긴다)', () => {

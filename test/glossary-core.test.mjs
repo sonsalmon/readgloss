@@ -46,11 +46,27 @@ test('inputFromDoc: 수식 DOM 질의 한 번 + code·h1~h3 글자(길이 상한
   assert.equal(G.inputFromDoc({ querySelector: () => ({}), querySelectorAll: () => [] }).hasMathDom, true);
 });
 
+test('detectMl: ML 낱말이 든 제목이 둘 이상이면 ML 글(HTB 머신러닝 모듈 제목 모양)', () => {
+  assert.equal(G.detectMl({ headingTexts: ['Introduction to Machine Learning', 'Deep Learning (DL)'] }), true);
+  assert.equal(G.detectMl({ headingTexts: ['Perceptrons', 'Perceptrons', 'Structure of a Perceptron'] }), true);
+  assert.equal(G.detectMl({ headingTexts: ['Q-Learning', 'The Q-Learning Algorithm'] }), true);
+  assert.equal(G.detectMl({ headingTexts: ['Support Vector Machines (SVMs)', 'Kernel Trick'] }), false, '하나뿐');
+  assert.equal(G.detectMl({ headingTexts: ['SQL Injection', 'Union Based Injection', 'Classification of Attacks'] }), false);
+  assert.equal(G.detectMl({ headingTexts: ['Principal Component Analysis (PCA)', 'Principal Component Analysis (PCA)'] }), true);
+  assert.equal(G.detectMl({ headingTexts: ['Anomaly Detection', 'Isolation Forest'] }), true);
+  assert.equal(G.detectMl({}), false);
+  assert.equal(G.detectMl(), false);
+});
+
 test('hint: 자동이면 host 와 domains, 끄기면 빈 객체(아무것도 안 보낸다)', () => {
   const doc = { querySelector: () => null, querySelectorAll: (s) => (s === 'code' ? htbLike.codeTexts : htbLike.headingTexts).map((t) => ({ textContent: t })) };
   assert.deepEqual(G.hint({ glossary: 'auto' }, doc, 'academy.hackthebox.com'), { host: 'academy.hackthebox.com', domains: ['math'] });
   assert.deepEqual(G.hint({}, doc, 'example.com'), { host: 'example.com', domains: ['math'] }, '설정 값이 없으면 자동');
   assert.deepEqual(G.hint({ glossary: 'off' }, doc, 'academy.hackthebox.com'), {});
+  const mlDoc = { querySelector: () => null, querySelectorAll: (s) => (s === 'code' ? [] : [{ textContent: 'Neural Networks' }, { textContent: 'Gradient Descent' }]) };
+  assert.deepEqual(G.hint({}, mlDoc, 'academy.hackthebox.com'), { host: 'academy.hackthebox.com', domains: ['ml'] });
+  const both = { querySelector: () => null, querySelectorAll: (s) => (s === 'code' ? [{ textContent: 'x_t' }] : [{ textContent: 'Neural Networks' }, { textContent: 'Gradient Descent' }]) };
+  assert.deepEqual(G.hint({}, both, 'a.com').domains, ['ml', 'math']);
   const plain = { querySelector: () => null, querySelectorAll: () => [] };
   assert.deepEqual(G.hint({ glossary: 'auto' }, plain, 'example.com'), { host: 'example.com', domains: [] });
 });

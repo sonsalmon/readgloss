@@ -21,6 +21,7 @@ const DICT = {
   payload: entry('payload', '수익 하중'),
   kernel: entry('kernel', '알맹이'),
   vector: entry('vector', '매개체'),
+  root: entry('root', '뿌리'),
   mitigate: entry('mitigate', '완화시키다'),
 };
 function fakeDict() {
@@ -95,18 +96,18 @@ test('/annotate: 일반 사이트라도 domains 힌트(math)가 오면 수학 �
 test('/annotate 캐시 분리: 같은 단어가 도메인 조합에 따라 다르게, 되돌려도 섞이지 않는다', async () => {
   const s = await start();
   try {
-    const a = async (extra) => (await items(s, { words: ['kernel', 'vector'], ...extra }));
+    const a = async (extra) => (await items(s, { words: ['kernel', 'root'], level: 'A2', ...extra }));
     const plain = await a({});
     const math = await a({ domains: ['math'] });
     const sec = await a({ host: HTB });
     const mathFirst = await a({ host: HTB, domains: ['math'] });
-    assert.equal(plain.vector.gloss, '매개체');
-    assert.equal(math.vector.gloss, '벡터');
-    assert.equal(sec.vector.gloss, '벡터(경로)');
-    assert.equal(mathFirst.vector.gloss, '벡터');
+    assert.equal(plain.root.gloss, '뿌리');
+    assert.equal(math.root.gloss, '근(루트)');
+    assert.equal(sec.root.gloss, '루트(최고 권한)');
+    assert.equal(mathFirst.root.gloss, '근(루트)');
     assert.equal(mathFirst.kernel.gloss, '핵(커널)');
     assert.equal(sec.kernel.gloss, '커널');
-    assert.equal((await a({})).vector.gloss, '매개체');
+    assert.equal((await a({})).root.gloss, '뿌리');
   } finally {
     await s.bridge.close();
   }
