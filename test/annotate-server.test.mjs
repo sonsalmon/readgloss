@@ -12,7 +12,10 @@ const MINE = `chrome-extension://${EXT}`;
 const HOST = '127.0.0.1:47831';
 const FAKE = new URL('../fixtures/fake-dict.mjs', import.meta.url).pathname;
 
-async function start(dict = createDict({ bin: process.execPath, args: [FAKE], timeoutMs: 1500 })) {
+// 도우미는 node 를 새로 띄우는 가짜라서 npm test 병렬 부하에서는 첫 응답이 1초 넘게 걸릴 수 있다. 멈춤 시험만 짧게 쓰고 나머지는 넉넉히.
+const fakeDict = (timeoutMs = 10_000) => createDict({ bin: process.execPath, args: [FAKE], timeoutMs });
+
+async function start(dict = fakeDict()) {
   const dir = mkdtempSync(join(tmpdir(), 'rg-ann-'));
   const asked = [];
   const bridge = createBridge({
@@ -122,9 +125,9 @@ test('/annotate: 도우미가 없으면 503 dict-unavailable(쉬운 단어만이
 });
 
 test('/annotate: 도우미가 멈추면 502 dict-failed, 다음 요청은 다시 떠서 동작', async () => {
-  const s = await start();
+  const s = await start(fakeDict(4000));
   try {
-    assert.equal((await s.post({ words: ['hang'], level: 'B1' }, s.auth)).status, 502); // hang 은 B1 단어라 사전이 필요한 등급으로 묻는다(timeoutMs 1500)
+    assert.equal((await s.post({ words: ['hang'], level: 'B1' }, s.auth)).status, 502); // hang 은 B1 단어라 사전이 필요한 등급으로 묻는다(timeoutMs 4000)
     assert.equal((await s.post({ words: ['payload'] }, s.auth)).status, 200);
   } finally {
     await s.bridge.close();

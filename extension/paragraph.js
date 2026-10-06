@@ -2,7 +2,7 @@
 (() => {
   const core = globalThis.readglossParagraph;
   if (!core) return;
-  const { MAX_TEXT, BUTTON_SIZE, TRANSLATION_TAG, TRANSLATION_STYLE, isTargetText, findBlock, insertPlacement, textOf, buttonPosition } = core;
+  const { MAX_TEXT, BUTTON_SIZE, TRANSLATION_TAG, TRANSLATION_STYLE, isTargetText, findBlock, insertPlacement, textOf, textExceeds, buttonPosition } = core;
 
   const MESSAGES = {
     'bridge-off': '다리가 꺼져 있어요. 터미널에서 node ~/dev/readgloss/bridge/server.mjs 를 실행해 주세요',
@@ -198,8 +198,8 @@
     if (host && e.composedPath().includes(host)) return; // 번역 버튼 안
     const t = e.target;
     const block = findBlock(t?.nodeType === 1 ? t : t?.parentElement);
-    // ponytail: 아주 큰 블록(레이아웃용 td 등)은 글자를 걷기 전에 거른다. 4000자를 조금 넘는 문단은 버튼이 뜨고 "너무 길어요"를 보여 준다.
-    if (!block || block.textContent.length > MAX_TEXT * 4 || !isTargetText(textOf(block, { isHidden }))) return hide();
+    // ponytail: 아주 큰 블록(레이아웃용 td 등)은 글자를 걷기 전에 거른다(주석 rt 글자는 세지 않는다). 4000자를 조금 넘는 문단은 버튼이 뜨고 "너무 길어요"를 보여 준다.
+    if (!block || textExceeds(block, MAX_TEXT * 4) || !isTargetText(textOf(block, { isHidden }))) return hide();
     show(block);
   }
 

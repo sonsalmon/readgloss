@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 // extension/paragraph-core.js 는 text.js 와 같은 classic script. 전역 readglossParagraph 로 쓴다.
 await import('../extension/paragraph-core.js');
-const { MAX_TEXT, MIN_TEXT, TRANSLATION_TAG, TRANSLATION_STYLE, normalizeText, isTargetText, findBlock, insertPlacement, textOf, buttonPosition } = globalThis.readglossParagraph;
+const { MAX_TEXT, MIN_TEXT, TRANSLATION_TAG, TRANSLATION_STYLE, normalizeText, isTargetText, findBlock, insertPlacement, textOf, textExceeds, buttonPosition } = globalThis.readglossParagraph;
 
 // 브라우저 없이 쓰는 가짜 DOM. el('p', {attrs}, ...children), 문자열 자식은 텍스트 노드.
 function el(tag, attrs = {}, ...kids) {
@@ -116,6 +116,15 @@ test('textOf: 자동 주석(ruby data-readgloss=ann)은 원래 단어는 남기�
   assert.equal(textOf(p), 'Attackers exploit the payload now.');
   const li = el('li', {}, 'Item ', ann('delve', '손으로 더듬다'), tr('번역문이 여기 들어 있다'), ' end');
   assert.equal(textOf(li), 'Item delve end'); // 번역 노드는 통째로, 주석은 rt 만 뺀다
+});
+
+test('textExceeds: 길이 상한은 주석 rt 글자를 빼고 잰다(주석이 많은 긴 문단이 일찍 막히지 않게)', () => {
+  const words = Array.from({ length: 50 }, () => ann('exploit', '이용하다이용하다이용하다')); // 단어 7자 + rt 12자
+  const p = el('p', {}, ...words);
+  assert.ok(!textExceeds(p, 350)); // 본문 350자, rt 600자를 합치면 넘는다
+  assert.ok(textExceeds(p, 349));
+  assert.ok(!textExceeds(el('p', {}, 'a ', tr('가'.repeat(500)), 'b'), 10)); // 번역 노드는 세지 않는다
+  assert.ok(textExceeds(el('p', {}, 'x'.repeat(11)), 10));
 });
 
 test('textOf: 다른 data-readgloss 노드(button 등)는 통째로 제외, 페이지 자신의 ruby·rt 는 그대로', () => {

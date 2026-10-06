@@ -66,6 +66,18 @@
     return normalizeText(parts.join(''));
   }
 
+  // 본문 글자 수가 limit 를 넘는지. 번역 노드와 주석 rt 는 세지 않고(textContent 로 재면 주석 글자가 섞여 일찍 막힌다), 넘는 순간 걷기를 멈춰 아주 큰 블록도 싸다.
+  function textExceeds(node, limit) {
+    let n = 0;
+    const walk = (x) => {
+      if (x.nodeType === 3) return (n += x.nodeValue.length) > limit;
+      if (x.nodeType !== 1 || isOurs(x) || isAnnNote(x) || SKIP_TEXT.has(x.tagName)) return false;
+      for (const c of x.childNodes) if (walk(c)) return true;
+      return false;
+    };
+    return walk(node);
+  }
+
   // 번역 버튼 위치(뷰포트 좌표). blockRect: 블록 사각형, firstLine: 블록 첫 줄 사각형(없으면 블록 맨 위).
   // 왼쪽 바깥 여백이 모자라면(left < 32) 블록 안쪽 왼쪽 위에 겹친다.
   function buttonPosition({ blockRect, firstLine = { top: blockRect.top, height: BUTTON_SIZE }, size = BUTTON_SIZE }) {
@@ -79,6 +91,6 @@
 
   globalThis.readglossParagraph = {
     MAX_TEXT, MIN_TEXT, BUTTON_SIZE, TRANSLATION_TAG, TRANSLATION_STYLE,
-    normalizeText, isTargetText, findBlock, insertPlacement, textOf, buttonPosition,
+    normalizeText, isTargetText, findBlock, insertPlacement, textOf, textExceeds, buttonPosition,
   };
 })();
