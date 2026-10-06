@@ -12,6 +12,7 @@ const EXT = 'abcdefghijklmnopabcdefghijklmnop';
 const MINE = `chrome-extension://${EXT}`;
 const HOST = '127.0.0.1:47831';
 const HTB = 'academy.hackthebox.com';
+const SEC = ['security', 'ml', 'math']; // 확장이 목록에 걸린 사이트에서 보내는 힌트(extension/glossary-core.js hint)
 
 const entry = (headword, gloss) => ({ headword, raw: `${headword} | x | ${gloss}`, senses: [{ text: gloss }] });
 const DICT = {
@@ -67,10 +68,10 @@ test('/annotate: host 도 domains 도 없으면 지금과 같다(사전 뜻 그�
   }
 });
 
-test('/annotate: HTB 에서는 transpose 가 전치 계열(용어집 뜻 + term:true + domain)', async () => {
+test('/annotate: 확장이 security·ml·math 힌트를 보내면 transpose 가 전치 계열(용어집 뜻 + term:true + domain)', async () => {
   const s = await start();
   try {
-    const it = await items(s, { words: ['transpose', 'payload', 'mitigate'], host: HTB });
+    const it = await items(s, { words: ['transpose', 'payload', 'mitigate'], domains: SEC });
     assert.equal(it.transpose.gloss, '전치(행렬)');
     assert.equal(it.transpose.term, true);
     assert.equal(it.transpose.domain, 'math');
@@ -78,6 +79,20 @@ test('/annotate: HTB 에서는 transpose 가 전치 계열(용어집 뜻 + term:
     assert.equal(it.payload.gloss, '페이로드');
     assert.equal(it.payload.domain, 'security');
     assert.deepEqual(it.mitigate, { lemma: 'mitigate', level: null, gloss: '완화시키다' }, '용어집에 없는 단어는 사전 뜻 그대로');
+  } finally {
+    await s.bridge.close();
+  }
+});
+
+test('/annotate: 다리는 사이트를 판단하지 않는다 — HTB host 만 오면 사전 첫 뜻, /dict·/translate 도 마찬가지', async () => {
+  const s = await start();
+  try {
+    const it = await items(s, { words: ['transpose', 'payload'], host: HTB });
+    assert.deepEqual(it.transpose, { lemma: 'transpose', level: null, gloss: '뒤바꾸다' });
+    assert.equal(it.payload.gloss, '수익 하중');
+    assert.equal('term' in (await s.post('/dict', { word: 'transposed', host: HTB })).json, false);
+    await s.post('/translate', { text: 'The transpose of a matrix.', host: HTB });
+    assert.deepEqual(s.prompts[0].terms, []);
   } finally {
     await s.bridge.close();
   }
@@ -100,8 +115,8 @@ test('/annotate 캐시 분리: 같은 단어가 도메인 조합에 따라 다�
     const a = async (extra) => (await items(s, { words: ['kernel', 'root'], level: 'A2', ...extra }));
     const plain = await a({});
     const math = await a({ domains: ['math'] });
-    const sec = await a({ host: HTB });
-    const mathFirst = await a({ host: HTB, domains: ['math'] });
+    const sec = await a({ domains: SEC });
+    const mathFirst = await a({ domains: ['math', 'security', 'ml'] });
     assert.equal(plain.root.gloss, '뿌리');
     assert.equal(math.root.gloss, '근(루트)');
     assert.equal(sec.root.gloss, '루트(최고 권한)');
@@ -117,13 +132,13 @@ test('/annotate 캐시 분리: 같은 단어가 도메인 조합에 따라 다�
 test('/annotate: 용어집 단어도 수준·아는 단어 규칙은 그대로(쉬운 단어는 빠진다), 복수·활용형도 원형으로', async () => {
   const s = await start();
   try {
-    const it = await items(s, { words: ['function', 'matrices', 'normalized', 'eigenvalues'], host: HTB, level: 'C1' });
+    const it = await items(s, { words: ['function', 'matrices', 'normalized', 'eigenvalues'], domains: SEC, level: 'C1' });
     assert.equal(it.function, undefined, 'function 은 A2 라 C1 에서 빠진다');
     assert.deepEqual(it.matrices, { lemma: 'matrix', level: null, gloss: '행렬', term: true, domain: 'math' });
     assert.equal(it.normalized.gloss, '정규화');
     assert.equal(it.normalized.lemma, 'normalize');
     assert.equal(it.eigenvalues.gloss, '고윳값');
-    assert.equal((await items(s, { words: ['function'], host: HTB, level: 'A2' })).function.gloss, '함수');
+    assert.equal((await items(s, { words: ['function'], domains: SEC, level: 'A2' })).function.gloss, '함수');
   } finally {
     await s.bridge.close();
   }
@@ -133,7 +148,7 @@ test('/annotate: 모르는 단어 목록 위반은 그대로 400, host·domains 
   const s = await start();
   try {
     assert.equal((await s.post('/annotate', { words: ['transpose'], host: 7, domains: 'math' })).status, 200);
-    assert.equal((await s.post('/annotate', { words: 'x', host: HTB })).status, 400);
+    assert.equal((await s.post('/annotate', { words: 'x', domains: SEC })).status, 400);
   } finally {
     await s.bridge.close();
   }
@@ -142,12 +157,12 @@ test('/annotate: 모르는 단어 목록 위반은 그대로 400, host·domains 
 test('/dict: 용어집에 있는 원형이면 term:{ko, domain}, 없으면 필드 없음', async () => {
   const s = await start();
   try {
-    const hit = (await s.post('/dict', { word: 'transposed', host: HTB })).json;
+    const hit = (await s.post('/dict', { word: 'transposed', domains: SEC })).json;
     assert.equal(hit.lemma, 'transpose');
     assert.deepEqual(hit.term, { ko: '전치(행렬)', domain: 'math' });
     const none = (await s.post('/dict', { word: 'transpose' })).json;
     assert.equal('term' in none, false);
-    const miss = (await s.post('/dict', { word: 'eigenvectors', host: HTB })).json; // 사전에 없어도 용어집은 답한다
+    const miss = (await s.post('/dict', { word: 'eigenvectors', domains: SEC })).json; // 사전에 없어도 용어집은 답한다
     assert.equal(miss.found, false);
     assert.deepEqual(miss.term, { ko: '고유벡터', domain: 'math' });
     assert.equal('term' in (await s.post('/dict', { word: 'mitigate', host: 'example.com' })).json, false);
@@ -162,11 +177,11 @@ test('/translate: 문단에 나온 용어집 단어를 용어 지정으로 ask �
     const text = 'The transpose of a matrix swaps rows and columns.';
     assert.equal((await s.post('/translate', { text })).json.translation, '번역1');
     assert.deepEqual(s.prompts[0].terms, []);
-    const htb = (await s.post('/translate', { text, host: HTB })).json;
+    const htb = (await s.post('/translate', { text, domains: SEC })).json;
     assert.equal(htb.cached, false, '도메인 조합이 다르면 같은 문단도 새로 번역한다');
     assert.ok(s.prompts[1].terms.includes('transpose=전치(행렬)'));
     assert.ok(s.prompts[1].terms.includes('matrix=행렬'));
-    assert.equal((await s.post('/translate', { text, host: HTB })).json.cached, true);
+    assert.equal((await s.post('/translate', { text, domains: SEC })).json.cached, true);
     assert.equal((await s.post('/translate', { text })).json.cached, true);
     assert.equal(s.prompts.length, 2);
   } finally {
@@ -200,10 +215,10 @@ test('createTranslate: 캐시 키에 도메인 조합이 들어가고, 없으면
 test('constructor 같은 상속 속성 이름은 용어가 아니다: 사전 뜻이 그대로 나오고 번역 용어 지정에도 안 실린다', async () => {
   const s = await start();
   try {
-    const it = await items(s, { words: ['constructor'], host: HTB });
+    const it = await items(s, { words: ['constructor'], domains: SEC });
     assert.deepEqual(it.constructor, { lemma: 'constructor', level: null, gloss: '건설자' });
-    assert.equal('term' in (await s.post('/dict', { word: 'constructor', host: HTB })).json, false);
-    await s.post('/translate', { text: 'call the constructor of the vector', host: HTB });
+    assert.equal('term' in (await s.post('/dict', { word: 'constructor', domains: SEC })).json, false);
+    await s.post('/translate', { text: 'call the constructor of the vector', domains: SEC });
     assert.deepEqual(s.prompts.at(-1).terms, ['vector=벡터']);
   } finally {
     await s.bridge.close();

@@ -127,7 +127,7 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
       const lower = word.toLowerCase();
       const e = r.found ? r.entries[0] : null;
       const lemma = e ? lemmaOf(e, lower) : lower;
-      // 분야 용어집(요청의 host·domains 로 켜진 것)에 이 원형이 있으면 카드 맨 위 "용어:" 줄용으로 붙인다. 사전에 없는 단어도 용어집은 답한다.
+      // 분야 용어집(요청의 domains 힌트로 켜진 것)에 이 원형이 있으면 카드 맨 위 "용어:" 줄용으로 붙인다. 사전에 없는 단어도 용어집은 답한다.
       const active = glossary.domains(value);
       const t = glossary.find(lemma, active) ?? glossary.find(lower, active);
       send(res, 200, { ...r, lemma, ...(e ? { gloss: shortGloss(e.senses?.[0]?.text) } : {}), ...(t ? { term: { ko: t.ko, domain: t.domain } } : {}) }, cors);

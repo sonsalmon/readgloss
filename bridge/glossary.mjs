@@ -4,10 +4,6 @@ import { readFileSync } from 'node:fs';
 
 export const DOMAINS = ['security', 'ml', 'math'];
 export const MAX_TERMS = 30; // 번역 프롬프트에 싣는 용어 지정 개수 상한
-const MAX_HOST = 253;
-
-// 사이트 규칙(하위 도메인 포함). 값의 순서가 분야 우선순위다.
-export const SITE_RULES = { 'academy.hackthebox.com': ['security', 'ml', 'math'] };
 
 export function loadGlossaries() {
   return Object.fromEntries(DOMAINS.map((d) => [d, JSON.parse(readFileSync(new URL(`./glossaries/${d}.json`, import.meta.url), 'utf8'))]));
@@ -39,12 +35,10 @@ export function createGlossary(data = loadGlossaries()) {
 
   return {
     find,
-    // 요청 { host?, domains? } -> 활성 분야(우선순위 순). 페이지가 알려 준 힌트가 앞, 사이트 기본값이 뒤. 이상한 값은 조용히 버린다.
+    // 요청 { domains? } -> 활성 분야(우선순위 순 = 힌트 순서). 어느 사이트에서 용어집을 켤지는 확장 설정(glossarySites)이 정하고, 다리는 보내 준 힌트만 믿는다(host 는 안 본다). 이상한 값은 조용히 버린다.
     domains(req) {
       const hints = Array.isArray(req?.domains) ? req.domains.filter((d) => DOMAINS.includes(d)) : [];
-      const host = typeof req?.host === 'string' && req.host.length <= MAX_HOST ? req.host.toLowerCase() : '';
-      const site = Object.entries(SITE_RULES).find(([h]) => host === h || host.endsWith(`.${h}`))?.[1] ?? [];
-      return [...new Set([...hints, ...site])];
+      return [...new Set(hints)];
     },
     // 활성 분야 조합 -> 캐시 키에 붙이는 문자열(순서가 우선순위라 순서도 키의 일부)
     keyOf: (active) => active.join(','),

@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
-import { DOMAINS, MAX_TERMS, SITE_RULES, createGlossary, loadGlossaries, variants } from '../bridge/glossary.mjs';
+import * as glossaryModule from '../bridge/glossary.mjs';
+import { DOMAINS, MAX_TERMS, createGlossary, loadGlossaries, variants } from '../bridge/glossary.mjs';
 
 const G = createGlossary();
 
@@ -27,25 +28,21 @@ test('두 단어 이상(phrases-*.json)은 저장만 하고 용어집에는 섞�
   assert.equal(p['identity matrix'], '단위행렬');
 });
 
-test('사이트 규칙: HTB(하위 도메인 포함)는 보안·ML·수학, 다른 사이트는 없음', () => {
-  assert.deepEqual(SITE_RULES['academy.hackthebox.com'], ['security', 'ml', 'math']);
-  assert.deepEqual(G.domains({ host: 'academy.hackthebox.com' }), ['security', 'ml', 'math']);
-  assert.deepEqual(G.domains({ host: 'ACADEMY.hackthebox.com' }), ['security', 'ml', 'math']);
-  assert.deepEqual(G.domains({ host: 'x.academy.hackthebox.com' }), ['security', 'ml', 'math']);
-  assert.deepEqual(G.domains({ host: 'notacademy.hackthebox.com' }), []);
-  assert.deepEqual(G.domains({ host: 'evil-academy.hackthebox.com.example.org' }), []);
+test('domains: 요청의 domains 힌트만 쓴다. host 는 보지 않는다(사이트 판단은 확장 설정의 몫)', () => {
+  assert.equal('SITE_RULES' in glossaryModule, false);
+  assert.deepEqual(G.domains({ host: 'academy.hackthebox.com' }), []);
   assert.deepEqual(G.domains({ host: 'example.com' }), []);
   assert.deepEqual(G.domains({}), []);
   assert.deepEqual(G.domains(undefined), []);
+  assert.deepEqual(G.domains({ host: 'academy.hackthebox.com', domains: ['security', 'ml', 'math'] }), ['security', 'ml', 'math']);
 });
 
-test('도메인 합치기: 페이지가 알려 준 힌트가 앞, 사이트 기본값이 뒤, 중복 없음, 모르는 값은 버림', () => {
+test('도메인 합치기: 힌트 순서가 우선순위, 중복 없음, 모르는 값은 버림', () => {
   assert.deepEqual(G.domains({ host: 'example.com', domains: ['math'] }), ['math']);
-  assert.deepEqual(G.domains({ host: 'academy.hackthebox.com', domains: ['math'] }), ['math', 'security', 'ml']);
+  assert.deepEqual(G.domains({ domains: ['math', 'security', 'ml'] }), ['math', 'security', 'ml']);
   assert.deepEqual(G.domains({ domains: ['ml', 'ml', 'bogus', 7, 'math'] }), ['ml', 'math']);
   assert.deepEqual(G.domains({ domains: 'math' }), []);
   assert.deepEqual(G.domains({ host: 5, domains: null }), []);
-  assert.deepEqual(G.domains({ host: 'a'.repeat(300) + '.academy.hackthebox.com' }), []);
 });
 
 test('find: 활성 분야 안에서만, 앞선 분야 먼저. 복수형은 단수로 찾는다', () => {
