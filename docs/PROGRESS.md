@@ -9,9 +9,9 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 | 티켓 | 상태 | 브랜치 | 메모 |
 |---|---|---|---|
 | T1 더블클릭 → AI 한국어 뜻 | 완료, 사용자가 Aside에서 사용(delves·module 조회됨) | main 036f7ca | 테스트 51개. 더블클릭 경로는 T1b가 사전으로 바꾸고, AI 뜻은 카드의 버튼으로 남는다 |
-| T1b 더블클릭 → 맥 영한사전 카드 | 진행 중(task wljsq2mkq) | feat/t1b-dict | Swift 도우미 + `/dict` + Relingo식 카드 |
-| T2 문단 클릭 → 왼쪽 버튼 → 페이지에 번역 삽입 | 진행 중(task wljsq2mkq) | feat/t2-paragraph | T1b와 병렬 |
-| T3 어려운 단어 위 자동 주석(판정+ruby, 옛 T3·T4 합침) | 대기 | — | 10-06 결정: 뜻 = 사전 첫 뜻. T1b·T2 합친 뒤 시작(사전 도우미 필요). spec "변경 기록 3" |
+| T1b 더블클릭 → 맥 영한사전 카드 | 완료(Aside 수동 확인 대기) | main 21da4b2 | Swift 도우미 + `/dict` + Relingo식 카드 |
+| T2 문단 클릭 → 왼쪽 버튼 → 페이지에 번역 삽입 | 완료(Aside 수동 확인 대기) | main 2ea1ebf | 합칠 때 server.mjs·background.js 충돌 해소(둘 다 살림). 테스트 105개 |
+| T3 어려운 단어 위 자동 주석(판정+ruby, 옛 T3·T4 합침) | 진행 중 | feat/t3-annotate | 10-06 결정: 뜻 = 사전 첫 뜻. T1b·T2 합친 뒤 시작(사전 도우미 필요). spec "변경 기록 3" |
 | T5 상시 실행·켜기/끄기·수준 고르기 | 대기 | — | T3 뒤. launchd 등록은 승인 뒤 |
 | (후보) 단어장 저장 | 미정 | — | 원래 바람(단어·문장 저장해 외우기), 요청 오면 |
 
@@ -27,6 +27,13 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 - 다리는 자식 claude 의 env 에서 CLAUDE*·ANTHROPIC_* 를 모두 지운다(Claude 앱 셸의 ANTHROPIC_BASE_URL 등을 물려받지 않게, ANTHROPIC_API_KEY 로 과금이 새지 않게). 깨끗한 env 에서 구독 로그인으로 도는 것 확인(10-06, 3.25초).
 - 확장 ID: bmkoabpndmngeoibdfeoidhedhepmchd (manifest key 에서 파생). 개인키는 저장소에 없다.
 
+## 남은 작은 문제(검증 P2)
+
+- li 문단에서 번역 버튼이 글머리표를 가린다. 오류 말풍선이 좁은 화면에서 문단 위에 겹친다.
+- payload 처럼 사전 표제어에 강세 기호가 섞여 발음 칸이 빈다(páylòad).
+- AI 버튼 aria-label 이 보이는 글자를 포함하지 않는다.
+- 사전 평문 일부가 fixtures 로 저장소에 있다(로컬 전용이라 지금은 문제없음, 공개하면 다시 볼 것).
+
 ## 다음 한 걸음
 
-T1b(사전 카드)와 T2(문단 버튼·삽입 번역)를 워크트리 두 개에서 병렬로 돌리고, 끝나면 main에 합쳐 사용자에게 Aside에서 확장 새로고침 뒤 시험을 안내한다.
+사용자가 Aside에서 확장을 새로고침해 사전 카드·문단 번역을 시험한다. 그동안 T3(자동 주석)를 워크트리에서 돌린다. 다리를 새로 받은 사람은 `npm run build:dict`를 한 번 해야 사전이 켜진다.
