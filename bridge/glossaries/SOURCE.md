@@ -16,7 +16,7 @@
    - 일상어라 분야 뜻으로 덮으면 오히려 틀리는 낱말은 뺐다(수학 54개, ML 12개). HTB 후보 용어는 이 거르기에서 보호했다.
 3. 조사에 없던 HTB 모듈 용어 24개는 표준 용어로 직접 보충했다: euclidean, summation, subscript, superscript, manhattan, regression, binary(수학; binary 는 ML·수학 글에서 보안의 "바이너리"보다 앞서게) / classification, clustering, cluster, dimensionality, margin, support, classifier, testing, perceptron, tanh, gradient, kernel, parameter, domain(ML; 보안 뜻과 겹치는 낱말을 ML 글에서 "보안"으로 표시하지 않게) / spam, fraud, intrusion(보안). 복수형(matrices·features·weights·layers 등)은 키로 넣지 않고 코드가 복수 규칙(`bridge/glossary.mjs` 의 `variants`)으로 단수를 찾는다.
 4. 통계 용어는 수학, 딥러닝 용어는 ML 파일에 합쳤다(파일은 세 개뿐).
-5. 같은 낱말이 여러 분야에 있으면(root=근(루트)/루트(최고 권한), binary=이진/바이너리, kernel=핵(커널)/커널 등) 활성 분야 순서의 앞쪽이 이긴다. 순서는 페이지가 알려 준 힌트(ML 글이면 ml, 수식이 있으면 math)가 앞, 사이트 규칙(HTB: security, ml, math)이 뒤다. 그래서 HTB 의 ML·수학 글에서는 binary 가 이진, 보안 글에서는 바이너리로 나온다.
+5. 같은 낱말이 여러 분야에 있으면(root=근(루트)/루트(최고 권한), binary=이진/바이너리, kernel=핵(커널)/커널 등) 활성 분야 순서의 앞쪽이 이긴다. 순서는 페이지가 알려 준 힌트(ML 글이면 ml, 수식이 있으면 math)가 앞, 사이트 목록 힌트(security, ml, math)가 뒤다. 사이트 목록은 다리가 아니라 확장 설정 `glossarySites`(패널의 "용어집을 켤 사이트", 기본 19개)에 있다(2026-10-06 T11). 그래서 HTB 의 ML·수학 글에서는 binary 가 이진, 보안 글에서는 바이너리로 나온다.
 6. 보안 파일의 `vector` 는 조사 값 `벡터(경로)` 를 `벡터` 로 바꿨다(공격 벡터도 "벡터"라 괄호 설명이 오히려 ML·수학 글에서 틀린 뜻으로 보였다).
 7. 2026-10-06 용어 검토 반영: HTB 본문 문맥과 표준 표기에 맞춰 값 15개를 고쳤다. cross=교차(외적은 phrases 의 cross product), tangent=탄젠트, metric=지표(거리 함수), cardinality=농도(원소의 개수), outcome=결과, critical=임계(중요한), significant=유의한(통계)·상당한, dimensionality=차원, capability=능력(역량), handle=처리하다(핸들), origin=원점(오리진), symbol=기호(심볼), key=키(암호 키), apt=APT(지능형 지속 공격), xss=XSS(크로스 사이트 스크립팅).
 8. 알려진 한계(다음 단계 후보): 활용형(-ed/-ing)은 용어집이 직접 풀지 않고 사전이 준 원형으로 찾는다. 사전 도우미가 악센트 표제어를 주는 낱말(transposed 등)은 원형을 못 찾아 사전 뜻이 남을 수 있다.

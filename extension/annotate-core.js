@@ -111,7 +111,8 @@
     return enabledHere(settings, hostname, pageOff) && (settings.annotation.position !== 'none' || settings.mark !== 'none');
   }
   // DOM 구조(또는 다리 요청)가 달라지는 값. 이 값이 바뀌면 다 걷고 다시 그린다. 크기·색·불투명도·굵기·간격·복사 허용은 CSS 변수만 바꾼다.
-  const structuralKey = (s) => [s.annotation.position, s.mark, s.repeat, s.maxPerParagraph, s.level, s.glossary].join('|');
+  // 용어집 사이트 목록도 넣는다: 패널에서 '지금 사이트 추가'를 누르면 새로고침 없이 다시 그린다.
+  const structuralKey = (s) => [s.annotation.position, s.mark, s.repeat, s.maxPerParagraph, s.level, s.glossary, (s.glossarySites ?? []).join(',')].join('|');
 
   // readgloss:words 이벤트 detail({known, unknown}) 반영: known 원형은 건너뛸 집합 skip 에 더하고, unknown 은 뺀다(pageSeen 을 주면 거기서도: 이 페이지에서 한 번만 붙이는 기록 때문에 새 글에서 주석이 막히지 않게). 새로 걷어야 할 known 원형 집합을 돌려준다.
   function applyWords(skip, detail, pageSeen) {
