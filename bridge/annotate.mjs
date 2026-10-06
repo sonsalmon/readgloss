@@ -1,4 +1,4 @@
-// 어려운 영어 단어 판정과 짧은 한국어 뜻(/annotate). AI 는 쓰지 않는다: 맥 영한사전 첫 표제어의 첫 뜻을 다듬는다.
+// 어려운 영어 단어 판정과 짧은 한국어 뜻(/annotate). AI 는 쓰지 않는다: 분야 용어집 → 활성 분야 표시가 붙은 사전 뜻 → 맥 영한사전 첫 표제어의 첫 뜻 순으로 다듬는다.
 import { readFileSync } from 'node:fs';
 import { createGlossary } from './glossary.mjs';
 
@@ -50,6 +50,46 @@ export function shortGloss(sense) {
   return s;
 }
 
+// 분야 표시 뜻 고르기. 사전은 뜻 앞에 〔수학〕〔컴퓨터〕 같은 분야 표시를 붙인다. 같은 〔 〕가 〔…에의〕 같은 문법 메모에도 쓰여서, 아래 분야 낱말에 드는 것만 분야 표시로 본다.
+// 활성 분야(요청 domains)마다 보는 표시. 앞선 분야가 우선이고, 한 분야 안에서는 사전에 먼저 나온 뜻이 이긴다.
+const DOMAIN_TAGS = new Map([
+  ['math', ['수학', '통계', '기하', '대수', '확률']],
+  ['ml', ['컴퓨터', '통계', '수학']],
+  ['security', ['컴퓨터', '통신']],
+]);
+const FIELD_WORDS = new Set([...DOMAIN_TAGS.values()].flat());
+const TAG_GROUP = /〔([^〕]*)〕/g;
+
+// 사전 표제어 배열(parseEntry 결과) -> 분야 표시가 붙은 뜻 목록 [{ tags, ko }](사전에 나온 순서). 분야와 무관하게 만들어서 단어 하나에 한 번만 만들고 캐시한다.
+// 표시가 뜻 맨 앞이 아니어도("빼기, 감하기; 〔수학〕 뺄셈") 표시부터의 첫 조각을 다듬는다. 같은 철자 표제어가 여럿이면 모두 본다.
+export function taggedGlosses(entries) {
+  const out = [];
+  for (const e of entries ?? []) {
+    for (const { text } of e?.senses ?? []) {
+      if (typeof text !== 'string') continue;
+      for (const m of text.matchAll(TAG_GROUP)) {
+        const tags = m[1].split(/[·,，、\s]+/).filter((w) => FIELD_WORDS.has(w));
+        const ko = tags.length ? shortGloss(text.slice(m.index)) : '';
+        if (ko) out.push({ tags, ko });
+      }
+    }
+  }
+  return out;
+}
+
+// 분야 표시 뜻 목록 + 활성 분야(우선순위 순) -> { ko, tag } | null. null 이면 첫 뜻을 쓴다.
+export function pickSense(tagged, domains = []) {
+  for (const d of domains) {
+    const list = DOMAIN_TAGS.get(d);
+    if (!list) continue;
+    for (const t of tagged) {
+      const tag = t.tags.find((x) => list.includes(x));
+      if (tag) return { ko: t.ko, tag };
+    }
+  }
+  return null;
+}
+
 const plain = (s) => s.normalize('NFD').replace(/[̀-ͯ·]/g, '').toLowerCase().replace(/^[-\s]+|[-\s]+$/g, '');
 
 // 사전 표제어 -> 원형 낱말. 도우미의 headword 는 입력 철자(mitigations)나 악센트 철자(páylòad)일 수 있어서
@@ -68,9 +108,9 @@ export function lemmaOf(entry, word) {
 
 // dict: createDict() 같은 { lookup(word) }. levels: 낱말 -> 등급 Map. isKnown: 원형 -> 아는 단어인가(아는 단어는 결과에서 뺀다).
 // glossary: createGlossary() 같은 { find(word, 활성 분야) }. 돌려주는 함수: (words, level, domains) -> { word: { lemma, level, gloss } } — 어려운 단어만.
-// domains(활성 분야, 우선순위 순)에 용어집 뜻이 있으면 gloss 를 그 뜻으로 바꾸고 term:true, domain 을 붙인다. 용어집 덮어쓰기는 사전 캐시(known) 밖에서 해서 분야마다 뜻이 달라도 캐시가 섞이지 않는다.
+// domains(활성 분야, 우선순위 순)에 용어집 뜻이 있으면 gloss 를 그 뜻으로 바꾸고 term:true, domain 을 붙인다. 용어집에 없고 사전 뜻에 활성 분야 표시(〔수학〕 등)가 있으면 그 뜻을 쓴다. 용어집 덮어쓰기는 사전 캐시(known) 밖에서 해서 분야마다 뜻이 달라도 캐시가 섞이지 않는다.
 export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () => false, glossary = createGlossary() }) {
-  const known = new Map(); // 낱말 -> { lemma, level, gloss } | null(사전에 없음·뜻 없음). 기준 등급과 무관해서 등급이 달라도 재사용한다.
+  const known = new Map(); // 낱말 -> { lemma, level, gloss(첫 뜻), tagged(분야 표시 뜻 목록) } | null(사전에 없음·뜻 없음). 기준 등급·분야와 무관해서 달라도 재사용한다. 분야에 맞는 뜻은 매번 고른다.
   const rank = (l) => LEVELS.indexOf(l);
 
   async function resolve(word) {
@@ -81,7 +121,7 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
     const gloss = e ? shortGloss(e.senses?.[0]?.text) : '';
     if (gloss) {
       const lemma = lemmaOf(e, word);
-      v = { lemma, level: levels.get(lemma) ?? null, gloss };
+      v = { lemma, level: levels.get(lemma) ?? null, gloss, tagged: taggedGlosses(r.entries) };
     }
     if (known.size >= MAX_CACHE) known.clear();
     known.set(word, v);
@@ -104,6 +144,7 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
         v = await resolve(w);
         const t = v && glossary.find(v.lemma, domains); // 활용형(normalized)은 사전이 준 원형으로 다시 찾는다
         if (t) v = { lemma: t.key, level: levels.get(t.key) ?? v.level, gloss: t.ko, term: true, domain: t.domain };
+        else if (v) v = { lemma: v.lemma, level: v.level, gloss: pickSense(v.tagged, domains)?.ko ?? v.gloss }; // 용어집에 없으면 활성 분야의 사전 표시 뜻, 없으면 첫 뜻
       }
       // 아는 단어 판정은 캐시(resolve) 밖에서 한다: 취소하면 사전을 다시 부르지 않고 바로 다시 나온다
       if (v && !isKnown(v.lemma) && (v.level === null || rank(v.level) >= min)) items[w] = v;
