@@ -6,7 +6,7 @@
   const P = globalThis.readglossParagraph;
   const blockOf = globalThis.readglossBlockOf; // content.js 가 올려 둔다(더블클릭 사전 카드와 같은 블록 판정)
   if (!core || !T || !P || !blockOf) return;
-  const { classify, around, buildContext, MAX_SIDE } = core;
+  const { classify, around, buildContext, MAX_SIDE, WIDE_SIDE } = core;
   const { extractSentence, plainTextAt, positionBubble } = T;
   const { textOf, textExceeds } = P;
 
@@ -24,6 +24,21 @@
     'ext-reloaded': '확장이 새로 로드됐어요. 이 페이지를 새로고침해 주세요',
   };
   const errText = (r) => MESSAGES[r?.error] ?? `문제가 생겼어요(${r?.error ?? '응답 없음'})`;
+
+  // [내 사전에 추가] 입력칸·"내 사전: …" 줄·약어 줄의 모양. 사전 카드(content.js)도 globalThis.readglossMydict.CSS 로 같이 쓴다.
+  const MD_CSS = `
+    .btn.on { color: var(--rg-accent); border-color: var(--rg-accent); }
+    .mine, .acr { margin-bottom: 8px; padding: 4px 10px; border-radius: 8px; background: var(--rg-accent-soft); color: var(--rg-accent);
+      font-size: 13px; font-weight: 600; word-break: keep-all; overflow-wrap: anywhere; }
+    .mine[hidden], .acr[hidden] { display: none; }
+    .mdform { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 6px; }
+    .mdform[hidden] { display: none; }
+    .mdin { flex: 1 1 140px; min-width: 0; box-sizing: border-box; padding: 3px 8px; border-radius: 7px; border: 1px solid var(--rg-border);
+      background: var(--rg-bg); color: var(--rg-fg); font: inherit; font-size: 13px; }
+    .mdin:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: 1px; }
+    .mderr { flex: 1 0 100%; color: var(--rg-muted); font-size: 12px; }
+    .mderr[hidden] { display: none; }
+  `;
 
   // 카드 디자인 토큰·모양은 content.js 의 사전 카드와 같다(바꿀 땐 같이 바꾼다).
   const DARK = `--rg-bg: #1e2127; --rg-fg: #e6e8eb; --rg-muted: #9aa3ad; --rg-border: #343a44; --rg-accent: #6b9bff;
@@ -53,12 +68,16 @@
     .btn:hover { background: var(--rg-accent-soft); border-color: var(--rg-accent); color: var(--rg-accent); }
     .btn:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: 2px; }
     .btn[aria-disabled="true"] { opacity: .55; cursor: default; }
+    .btn[hidden] { display: none; }
+    .notice { margin-top: 8px; }
+    .notice[hidden] { display: none; }
+    ${MD_CSS}
   `;
 
   let settings = globalThis.readglossSettings?.normalize({}) ?? { selectionTranslate: true, theme: 'auto' }; // 저장된 값을 읽기 전에는 기본값
   let host = null;
   let ui = null; // { card, src, term, out, ctx, ctxBody, note, ctxBtn, copyBtn }
-  let current = null; // { text, range, anchor, mt, ctx, ctxAsked }
+  let current = null; // { text, range, anchor, mt, termKo, ctx, ctxNote, wide, wideNote, mine, phraseId }  ctx·wide 는 문맥·넓은 문맥 번역(성공했을 때만 생김)
   let seq = 0; // 닫거나 새로 열 때마다 올려서 늦게 온 응답을 버린다
   const applyTheme = () => host && (settings.theme === 'light' || settings.theme === 'dark' ? host.setAttribute('data-theme', settings.theme) : host.removeAttribute('data-theme'));
   try {
@@ -75,7 +94,7 @@
 
   async function send(message) {
     try {
-      return await chrome.runtime.sendMessage(message);
+      return await chrome.runtime.sendMessage({ ...message, page: { url: location.href.slice(0, 2000), title: document.title.slice(0, 200) } }); // page: 공부 기록용(T14)
     } catch {
       return { error: 'ext-reloaded' }; // 확장이 다시 로드되면 이 페이지의 연결이 끊긴다
     }
@@ -89,20 +108,20 @@
     return textOf(box, { isHidden: (el) => /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) });
   }
 
-  // block 의 앞(dir -1)·뒤(dir 1) 블록 글. 형제를 따라가다 없으면 한 단계 위로. 문서 순서로 돌려준다. 1500자가 모이면 멈춘다.
-  // ponytail: 형제 하나가 6000자를 넘으면(큰 래퍼) 거기서 멈춘다. 안으로 내려가 찾지는 않는다 -- 문맥이 짧아질 뿐이다.
-  function neighbors(block, dir) {
+  // block 의 앞(dir -1)·뒤(dir 1) 블록 글. 형제를 따라가다 없으면 한 단계 위로. 문서 순서로 돌려준다. limit(기본 1500, 넓게는 6000)자가 모이면 멈춘다.
+  // ponytail: 형제 하나가 한도의 4배(기본 6000자, 넓게는 24000자)를 넘으면(큰 래퍼) 거기서 멈춘다. 안으로 내려가 찾지는 않는다 -- 문맥이 짧아질 뿐이다.
+  function neighbors(block, dir, limit = MAX_SIDE) {
     const out = [];
     let size = 0;
     let node = block;
-    for (let guard = 0; guard < 60 && size < MAX_SIDE && node && node !== document.body && node !== document.documentElement; guard++) {
+    for (let guard = 0; guard < 60 && size < limit && node && node !== document.body && node !== document.documentElement; guard++) {
       const sib = dir < 0 ? node.previousElementSibling : node.nextElementSibling;
       if (!sib) {
         node = node.parentElement;
         continue;
       }
       node = sib;
-      if (textExceeds(sib, 6000)) break;
+      if (textExceeds(sib, limit * 4)) break;
       const t = textOf(sib, { isHidden });
       if (!t) continue;
       out.push(t);
@@ -121,15 +140,23 @@
     return found.slice(-core.MAX_HEADINGS).map((h) => textOf(h, { isHidden }));
   }
 
-  // 선택을 담은 글 블록 앞뒤와 제목·소제목 -> 다리에 싣는 context. 못 만들면 undefined(문맥 없이 번역).
-  function contextFor(range) {
+  // [더 넓게 보기]용 페이지 목차: 문서 전체 h1~h3 중 20개(많으면 선택 근처). 선택 위쪽 제목 수를 세서 pickHeadings 에 맡긴다.
+  function pageHeadings(node) {
+    const all = [...document.querySelectorAll('h1, h2, h3')];
+    const before = all.filter((h) => h.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING).length;
+    return core.pickHeadings(all, before, core.WIDE_HEADINGS).map((h) => textOf(h, { isHidden }));
+  }
+
+  // 선택을 담은 글 블록 앞뒤와 제목·소제목 -> 다리에 싣는 context. 못 만들면 undefined(문맥 없이 번역). wide: [더 넓게 보기](앞뒤 6000자 + 페이지 목차 20개).
+  function contextFor(range, wide = false) {
     try {
       const sc = range.startContainer;
       const ec = range.endContainer;
       const sb = blockOf(sc);
       const eb = blockOf(ec);
       const { head, tail } = around(sb, sc, range.startOffset, eb, ec, range.endOffset);
-      return buildContext({ prev: neighbors(sb, -1), head, tail, next: neighbors(eb, 1), title: document.title, headings: headingsAbove(sc) });
+      const limit = wide ? WIDE_SIDE : MAX_SIDE;
+      return buildContext({ prev: neighbors(sb, -1, limit), head, tail, next: neighbors(eb, 1, limit), title: document.title, headings: wide ? pageHeadings(sc) : headingsAbove(sc), wide });
     } catch {
       return undefined;
     }
@@ -151,6 +178,62 @@
     return b;
   }
 
+  // [내 사전에 추가] 한 벌(버튼 + 입력칸·저장·취소). 드래그 카드와 사전 카드(content.js)가 같이 쓴다.
+  // key: 내 사전 키(mydictKey 를 통과한 것). spec(): 지금 기본값 { ko, exp?, note? }. resize(): 입력칸이 열리고 닫혀 카드 키가 달라질 때. onSaved(ko): 저장 뒤.
+  // 반환: { btn, form, setHas(ko|null) }. btn 은 카드 안 버튼 줄에, form 도 그 줄 끝(한 줄 전체)에 넣는다.
+  function createMydict({ key, spec, resize = () => {}, onSaved = () => {} }) {
+    let has = null; // 내 사전에 있는 뜻
+    const input = el('input', 'mdin');
+    input.type = 'text';
+    input.maxLength = 80;
+    input.setAttribute('aria-label', '내 사전에 저장할 뜻');
+    const err = el('div', 'mderr');
+    err.hidden = true;
+    err.setAttribute('role', 'status');
+    const ok = button('저장', '내 사전에 저장', () => save());
+    const no = button('취소', '내 사전 저장 취소', () => ((form.hidden = true), resize()));
+    const form = el('div', 'mdform');
+    form.hidden = true;
+    form.append(input, ok, no, err);
+    const btn = button('', '', () => open());
+    const paint = () => {
+      btn.textContent = has === null ? '내 사전에 추가' : '내 사전에 있음 ✓';
+      btn.setAttribute('aria-label', has === null ? '내 사전에 추가' : '내 사전에 있음 ✓, 누르면 뜻 고치기');
+      btn.classList.toggle('on', has !== null);
+    };
+    paint();
+    const fail = (text) => ((err.hidden = false), (err.textContent = text), resize());
+    function open() {
+      if (!form.hidden) return void ((form.hidden = true), resize());
+      input.value = has ?? spec().ko ?? '';
+      err.hidden = true;
+      form.hidden = false;
+      resize();
+      input.focus();
+      input.select();
+    }
+    async function save() {
+      if (ok.getAttribute('aria-disabled') === 'true') return;
+      const ko = input.value.trim().replace(/\s+/g, ' ').slice(0, 80);
+      if (!ko) return fail('뜻을 적어 주세요');
+      ok.setAttribute('aria-disabled', 'true');
+      const s = spec();
+      const r = await send(core.mydictMessage({ key, ko, exp: s.exp, note: s.note, url: location.href, title: document.title }));
+      ok.removeAttribute('aria-disabled');
+      if (!r?.entries) return fail(errText(r));
+      has = ko;
+      window.dispatchEvent(new CustomEvent('readgloss:mydict', { detail: { set: [key], delete: [] } })); // 이 페이지의 주석을 바로 바꾼다(annotate.js)
+      form.hidden = true;
+      err.hidden = true;
+      paint();
+      onSaved(ko);
+      resize();
+    }
+    input.addEventListener('keydown', (e) => e.key === 'Enter' && !e.isComposing && save());
+    return { btn, form, setHas: (ko) => ((has = ko), paint()) };
+  }
+  globalThis.readglossMydict = { CSS: MD_CSS, create: createMydict }; // content.js 의 사전 카드도 클릭·그리기 때 참조한다(그쪽이 먼저 로드되므로 호출 때 읽는다)
+
   function close() {
     seq++;
     current = null;
@@ -168,6 +251,17 @@
     });
     host.style.left = `${p.left}px`;
     host.style.top = `${p.top}px`;
+  }
+
+  // 문맥 번역 구역(제목 + 번역 + note). 처음엔 숨긴다.
+  function section(title) {
+    const box = el('div', 'ctx');
+    box.hidden = true;
+    const body = el('div', 'out', '');
+    body.setAttribute('role', 'status');
+    const note = el('div', 'note');
+    box.append(el('div', 'ctx-title', title), body, note);
+    return { box, body, note };
   }
 
   // text: 선택 원문(정리한 것). 너무 길면(long) 안내만 보인다. 모든 글은 textContent 로만 넣는다(innerHTML 금지).
@@ -188,24 +282,72 @@
       scroll.append(el('div', 'msg', '너무 길어요(문단 번역 버튼을 써 주세요)'));
       card.append(scroll);
     } else {
+      ui.mine = el('div', 'mine'); // "내 사전: 뜻" (내 사전에 있을 때만)
+      ui.mine.hidden = true;
       ui.term = el('div', 'term');
       ui.out = el('div', 'out', '번역 중…');
       ui.out.setAttribute('role', 'status');
-      ui.ctx = el('div', 'ctx');
-      ui.ctx.hidden = true;
-      ui.ctxBody = el('div', 'out', '');
-      ui.ctxBody.setAttribute('role', 'status');
-      ui.note = el('div', 'note');
-      ui.ctx.append(el('div', 'ctx-title', '문맥 번역'), ui.ctxBody, ui.note);
-      scroll.append(el('div', 'src', text), ui.term, ui.out, ui.ctx);
-      ui.ctxBtn = button('문맥 번역', '문맥 번역: 앞뒤 문맥을 보고 AI 가 번역', () => askContext());
+      ui.short = section('문맥 번역');
+      ui.wide = section('넓은 문맥 번역');
+      ui.notice = el('div', 'msg notice');
+      ui.notice.hidden = true;
+      ui.notice.setAttribute('role', 'status');
+      scroll.append(ui.mine, el('div', 'src', text), ui.term, ui.out, ui.short.box, ui.wide.box, ui.notice);
+      ui.ctxBtn = button('', '', () => askContext(core.stageButton('ctx', stage()).wide));
+      ui.saveBtn = button('', '', () => togglePhrase());
+      ui.saveBtn.setAttribute('aria-disabled', 'true'); // 단어장 상태를 받으면 켠다
       ui.copyBtn = button('복사', '번역문 복사', () => copy());
       const foot = el('div', 'foot');
-      foot.append(ui.ctxBtn, ui.copyBtn);
+      foot.append(ui.ctxBtn, ui.saveBtn);
+      const key = core.mydictKey(text); // 키 규칙에 안 맞는 선택(너무 길거나 허용 밖 글자)은 [내 사전에 추가] 를 숨긴다
+      if (key) {
+        ui.md = createMydict({
+          key,
+          spec: () => ({ ko: core.bestMeaning({ wide: current?.wide, ctx: current?.ctx, mt: current?.mt, term: current?.termKo }), exp: current?.mine?.exp, note: current?.wide !== undefined ? current.wideNote : current?.ctxNote ?? current?.mine?.note }),
+          resize: () => ui && place(),
+          onSaved: (ko) => current && paintMine({ ...current.mine, ko }),
+        });
+        foot.append(ui.md.btn);
+      }
+      foot.append(ui.copyBtn);
+      if (ui.md) foot.append(ui.md.form);
       card.append(scroll, foot);
+      paintCtxBtn();
+      paintSaveBtn();
     }
     shadow.append(style, card);
     document.documentElement.append(host);
+  }
+
+  const stage = () => ({ done: current.ctx !== undefined, wide: current.wide !== undefined });
+
+  function paintCtxBtn() {
+    const m = core.stageButton('ctx', stage());
+    ui.ctxBtn.hidden = m.hidden;
+    ui.ctxBtn.textContent = m.text;
+    ui.ctxBtn.setAttribute('aria-label', m.label);
+  }
+
+  function paintSaveBtn() {
+    const m = globalThis.readglossWords.buttonModel({ saved: current.phraseId != null }).save;
+    ui.saveBtn.textContent = m.text;
+    ui.saveBtn.setAttribute('aria-label', m.label);
+    ui.saveBtn.classList.toggle('on', current.phraseId != null);
+  }
+
+  // 내 사전에 있는 선택: 카드 맨 위 "내 사전: 뜻" 줄 + 버튼은 [내 사전에 있음 ✓]
+  function paintMine(mine) {
+    current.mine = mine;
+    ui.mine.hidden = false;
+    ui.mine.textContent = `내 사전: ${mine.ko}`;
+    ui.md?.setHas(mine.ko);
+    place();
+  }
+
+  function notify(text) {
+    ui.notice.hidden = !text;
+    ui.notice.textContent = text;
+    place();
   }
 
   async function askMt() {
@@ -214,6 +356,7 @@
     if (my !== seq) return;
     if (r?.translation) {
       current.mt = r.translation;
+      current.termKo = r.term?.ko;
       ui.out.textContent = r.translation;
       const line = globalThis.readglossGlossary?.termLine(r.term) ?? '';
       ui.term.textContent = line;
@@ -222,37 +365,68 @@
       ui.out.className = 'out err';
       ui.out.textContent = errText(r);
     }
+    if (typeof r?.mine?.ko === 'string' && r.mine.ko) paintMine(r.mine);
     place();
   }
 
-  async function askContext() {
+  // 단어장 상태(저장된 구)를 받아 버튼을 켠다. 못 받으면 꺼진 채로 둔다.
+  async function loadPhraseState() {
+    const my = seq;
+    const s = await send({ type: 'words', op: 'get' });
+    if (my !== seq || !s?.known) return;
+    current.phraseId = core.findPhrase(s.phrases, current.text);
+    ui.saveBtn.removeAttribute('aria-disabled');
+    paintSaveBtn();
+  }
+
+  async function togglePhrase() {
+    if (ui.saveBtn.getAttribute('aria-disabled') === 'true') return;
+    const my = seq;
+    const saved = current.phraseId != null;
+    ui.saveBtn.setAttribute('aria-disabled', 'true');
+    notify('');
+    const message = saved
+      ? { type: 'words', op: 'unsave-phrase', id: current.phraseId }
+      : core.phraseMessage({ text: current.text, mt: current.mt, ctx: current.wide ?? current.ctx, ctxNote: current.wide !== undefined ? current.wideNote : current.ctxNote, wide: current.wide !== undefined, url: location.href, title: document.title });
+    const r = await send(message);
+    if (my !== seq) return;
+    ui.saveBtn.removeAttribute('aria-disabled');
+    if (r && !r.error) current.phraseId = saved ? null : (r.id ?? core.findPhrase(r.phrases, current.text));
+    else notify(errText(r));
+    paintSaveBtn();
+    place();
+  }
+
+  // wide: [더 넓게 보기] 단계. 앞 결과(문맥 번역)는 남기고 "넓은 문맥 번역" 구역에 보탠다.
+  async function askContext(wide) {
     if (ui.ctxBtn.getAttribute('aria-disabled') === 'true') return;
     const my = seq;
-    const force = current.ctxAsked === true; // 두 번째 누름부터는 캐시를 건너뛰고 다시 번역한다
-    current.ctxAsked = true;
+    const sec = wide ? ui.wide : ui.short;
     ui.ctxBtn.setAttribute('aria-disabled', 'true');
-    ui.ctx.hidden = false;
-    ui.ctxBody.className = 'out';
-    ui.ctxBody.textContent = '번역 중…';
-    ui.note.textContent = '';
+    sec.box.hidden = false;
+    sec.body.className = 'out';
+    sec.body.textContent = wide ? '글 앞뒤와 목차를 넓게 보고 번역 중…' : '번역 중…';
+    sec.note.textContent = '';
     place();
-    const r = await send({ type: 'translate-context', text: current.text, context: contextFor(current.range), force, ...hint() });
+    const r = await send({ type: 'translate-context', text: current.text, context: contextFor(current.range, wide), wide, ...hint() });
     if (my !== seq) return;
     ui.ctxBtn.removeAttribute('aria-disabled');
     if (r?.translation) {
-      current.ctx = r.translation;
-      ui.ctxBody.textContent = r.translation;
-      ui.note.textContent = r.note ?? '';
+      sec.body.textContent = r.translation;
+      sec.note.textContent = r.note ?? '';
+      if (wide) [current.wide, current.wideNote] = [r.translation, r.note ?? ''];
+      else [current.ctx, current.ctxNote] = [r.translation, r.note ?? ''];
     } else {
-      ui.ctxBody.className = 'out err';
-      ui.ctxBody.textContent = errText(r);
+      sec.body.className = 'out err';
+      sec.body.textContent = errText(r);
     }
+    paintCtxBtn();
     place();
   }
 
-  // 가장 마지막에 얻은 번역(문맥 번역이 있으면 그것)을 클립보드로. 실패하면 조용히 둔다.
+  // 가장 마지막에 얻은 번역(넓은 문맥 > 문맥 > 맥 번역)을 클립보드로. 실패하면 조용히 둔다.
   async function copy() {
-    const text = current.ctx ?? current.mt;
+    const text = current.wide ?? current.ctx ?? current.mt;
     if (!text) return;
     const my = seq;
     try {
@@ -293,7 +467,10 @@
     current = { text: cls.text, range: range.cloneRange(), anchor: { left: r.left + scrollX, top: r.top + scrollY, bottom: r.bottom + scrollY } };
     build(cls.text, cls.kind === 'long');
     place();
-    if (cls.kind === 'phrase') askMt().catch(close);
+    if (cls.kind === 'phrase') {
+      askMt().catch(close);
+      loadPhraseState().catch(() => {});
+    }
   }
 
   document.addEventListener(

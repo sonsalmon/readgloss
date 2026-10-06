@@ -45,6 +45,11 @@
     .ai { margin: 2px 12px 0; padding: 6px 10px; border-radius: 8px; background: var(--rg-accent-soft); font-size: 13px; }
     .ai[hidden] { display: none; }
     .ai.err { background: none; color: var(--rg-muted); padding-left: 0; }
+    .ai + .ai { margin-top: 6px; }
+    .tops { display: flex; flex-direction: column; gap: 6px; padding: 10px 16px 0; }
+    .tops[hidden] { display: none; }
+    .tops .mine, .tops .acr { margin-bottom: 0; }
+    .btn[hidden] { display: none; }
     .foot { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 12px 12px; }
     .btn { all: unset; box-sizing: border-box; cursor: pointer; padding: 3px 10px; border-radius: 7px; border: 1px solid var(--rg-border);
       color: var(--rg-fg); font-size: 12.5px; line-height: 1.6; }
@@ -71,7 +76,7 @@
   let host = null;
   let ui = null; // { card, scroll, ai, aiBtn, saveBtn, knownBtn }
   let seq = 0; // 닫거나 새로 열 때마다 올려서 늦게 온 응답을 버린다
-  let current = null; // { word, sentence, anchor, aiAsked, lemma, gloss, state }  lemma·gloss 는 /dict 응답, state 는 /words 응답
+  let current = null; // { word, sentence, anchor, ai, aiWide, lemma, gloss, state, mine, acr, termKo, senseKo, firstSense }  lemma·gloss 는 /dict 응답, state 는 /words 응답, ai·aiWide 는 AI 문맥 뜻(짧은·넓은)
 
   // 사전·AI 가 준 글은 textContent 로만 넣는다(innerHTML 금지).
   function el(tag, cls, text) {
@@ -87,21 +92,30 @@
     applyTheme();
     const shadow = host.attachShadow({ mode: 'closed' }); // 페이지 CSS 와 격리
     const style = el('style');
-    style.textContent = CSS;
+    style.textContent = CSS + (globalThis.readglossMydict?.CSS ?? ''); // 내 사전 입력칸 모양은 selection.js 가 올려 둔 것(그쪽이 나중에 로드돼도 카드는 사용자가 열 때 만든다)
     const card = el('div', 'card');
     card.setAttribute('role', 'dialog');
     card.setAttribute('aria-label', `${current.word} 사전`);
+    const tops = el('div', 'tops'); // 카드 맨 위: "내 사전: 뜻"·약어 줄
+    tops.hidden = true;
+    const mine = el('div', 'mine');
+    mine.hidden = true;
+    const acr = el('div', 'acr');
+    acr.hidden = true;
+    tops.append(mine, acr);
     const scroll = el('div', 'scroll');
     scroll.tabIndex = 0;
     const term = el('div', 'term'); // 분야 용어집 뜻("용어: 전치(행렬) · 수학") 또는 사전의 분야 표시 뜻("분야 뜻: 곱셈 · 수학"). 사전 결과가 오면 채운다
     const ai = el('div', 'ai');
     ai.hidden = true;
     ai.setAttribute('role', 'status');
+    const aiWide = el('div', 'ai'); // [더 넓게 보기] 결과(앞 결과는 남긴다)
+    aiWide.hidden = true;
+    aiWide.setAttribute('role', 'status');
 
     const foot = el('div', 'foot');
-    const aiBtn = el('button', 'btn', 'AI 문맥 뜻');
+    const aiBtn = el('button', 'btn');
     aiBtn.type = 'button';
-    aiBtn.setAttribute('aria-label', 'AI 문맥 뜻: 이 문장 속 뜻 보기'); // 보이는 글자(AI 문맥 뜻)를 포함
     aiBtn.addEventListener('click', () => current && askAi());
     const naver = el('a', 'btn', '네이버에서 열기');
     naver.href = `https://en.dict.naver.com/#/search?query=${encodeURIComponent(current.word)}`;
@@ -117,12 +131,30 @@
     };
     const saveBtn = mkWordBtn('save');
     const knownBtn = mkWordBtn('known');
-    foot.append(saveBtn, knownBtn, aiBtn, naver);
+    foot.append(saveBtn, knownBtn, aiBtn);
+    ui = { card, tops, mine, acr, term, scroll, ai, aiWide, aiBtn, saveBtn, knownBtn };
+    const md = globalThis.readglossMydict;
+    const key = globalThis.readglossSelection.mydictKey(current.word); // 키 규칙에 안 맞으면 [내 사전에 추가] 를 숨긴다
+    if (md && key) {
+      ui.md = md.create({
+        key,
+        spec: () => ({
+          ko: globalThis.readglossSelection.bestMeaning({ wide: current?.aiWide, ai: current?.ai, acr: current?.acr?.ko, term: current?.termKo, sense: current?.senseKo, first: globalThis.readglossSelection.firstMeaning(current?.firstSense) }),
+          exp: current?.acr?.exp ?? current?.mine?.exp,
+          note: current?.mine?.note,
+        }),
+        resize: () => current && place(),
+        onSaved: (ko) => current && paintMine({ ...current.mine, ko }),
+      });
+      foot.append(ui.md.btn);
+    }
+    foot.append(naver);
+    if (ui.md) foot.append(ui.md.form);
 
-    card.append(term, scroll, ai, foot);
+    card.append(tops, term, scroll, ai, aiWide, foot);
     shadow.append(style, card);
     document.documentElement.append(host);
-    ui = { card, term, scroll, ai, aiBtn, saveBtn, knownBtn };
+    paintAiBtn();
     paintWordButtons();
   }
 
@@ -231,7 +263,7 @@
 
   async function send(message) {
     try {
-      return await chrome.runtime.sendMessage(message);
+      return await chrome.runtime.sendMessage({ ...message, page: { url: location.href.slice(0, 2000), title: document.title.slice(0, 200) } }); // page: 공부 기록용(T14)
     } catch {
       return { error: 'ext-reloaded' }; // 확장이 다시 로드되면 이 페이지의 연결이 끊긴다
     }
@@ -245,31 +277,95 @@
     const line = (globalThis.readglossGlossary?.termLine(r?.term) ?? '') || (r?.sense?.ko ? `분야 뜻: ${r.sense.ko} · ${r.sense.tag}` : ''); // 용어가 없을 때만 다리가 준 분야 표시 뜻(sense)
     ui.term.textContent = line;
     ui.term.classList.toggle('on', line !== '');
+    current.termKo = r?.term?.ko;
+    current.senseKo = r?.sense?.ko;
+    current.firstSense = r?.entries?.[0]?.senses?.[0]?.text; // [내 사전에 추가] 의 마지막 기본 뜻 후보
+    if (typeof r?.mine?.ko === 'string' && r.mine.ko) paintMine(r.mine);
+    if (globalThis.readglossSelection.isAcronym(current.word)) showAcronym(r, my).catch(() => {});
     if (r?.found && r.entries?.length) renderEntries(r.entries);
     else if (r?.found === false) showMessage('사전에 없어요');
     else showMessage(MESSAGES[r?.error] ?? `문제가 생겼어요(${r?.error ?? '응답 없음'})`);
     if (typeof r?.lemma === 'string') loadWordState(r, my).catch(() => {});
   }
 
+  // 사전 카드 맨 위 줄들(내 사전·약어)은 하나라도 있으면 보인다.
+  const paintTops = () => (ui.tops.hidden = ui.mine.hidden && ui.acr.hidden);
+
+  // 내 사전에 있는 단어: 카드 맨 위 "내 사전: 뜻" + 버튼은 [내 사전에 있음 ✓]
+  function paintMine(mine) {
+    current.mine = mine;
+    ui.mine.hidden = false;
+    ui.mine.textContent = `내 사전: ${mine.ko}`;
+    ui.md?.setHas(mine.ko);
+    paintTops();
+    place();
+  }
+
+  function paintAcronym() {
+    const a = current.acr;
+    const line = a ? globalThis.readglossSelection.acronymLine({ word: current.word, ...a }) : '';
+    ui.acr.hidden = line === '';
+    ui.acr.textContent = line;
+    paintTops();
+    place();
+  }
+
+  // 페이지 글 전체(너무 크면 단어가 있는 블록)에서 "(PCA)" 앞의 풀이를 찾는다.
+  // ponytail: 대문자 약어를 더블클릭할 때마다 본문을 한 번 훑는다(40만 자까지). 느려지면 첫 결과를 페이지별로 캐시한다.
+  function pageExpansion(word) {
+    const { textOf, textExceeds } = globalThis.readglossParagraph;
+    const isHidden = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName);
+    const root = textExceeds(document.body, 400_000) ? blockOf(current.range?.startContainer ?? document.body) : document.body;
+    return globalThis.readglossSelection.expandAcronym(textOf(root, { isHidden }), word);
+  }
+
+  // 전부 대문자 2~6자(PCA)면 약어 줄: 내 사전·약어집의 풀이, 없으면 페이지 글에서 찾은 풀이와 그 맥 번역.
+  async function showAcronym(r, my) {
+    const exp = r?.mine?.exp ?? r?.acronym?.exp; // 내 사전이 먼저
+    if (exp) {
+      current.acr = { exp, ko: r.mine?.ko ?? r.acronym?.ko };
+      return paintAcronym();
+    }
+    const found = pageExpansion(current.word);
+    if (!found) return;
+    current.acr = { exp: found, page: true };
+    paintAcronym();
+    const t = await send({ type: 'mt', text: found, ...(globalThis.readglossGlossary?.hint({ glossary, glossarySites }, document, location.hostname) ?? {}) });
+    if (my !== seq || !t?.translation) return;
+    current.acr.ko = t.translation;
+    paintAcronym();
+  }
+
+  function paintAiBtn() {
+    const m = globalThis.readglossSelection.stageButton('ai', { done: current.ai !== undefined, wide: current.aiWide !== undefined });
+    ui.aiBtn.hidden = m.hidden;
+    ui.aiBtn.textContent = m.text;
+    ui.aiBtn.setAttribute('aria-label', m.label);
+  }
+
+  // [AI 문맥 뜻] -> 결과 뒤 [더 넓게 보기](글 앞뒤 6000자 + 목차) -> 숨김. 앞 결과는 남기고 아래에 넓은 결과를 보탠다.
   async function askAi() {
     if (ui.aiBtn.getAttribute('aria-disabled') === 'true') return;
     const my = seq;
-    const force = current.aiAsked === true; // 두 번째 누름부터는 캐시를 건너뛰고 다시 묻는다
-    current.aiAsked = true;
+    const wide = globalThis.readglossSelection.stageButton('ai', { done: current.ai !== undefined, wide: current.aiWide !== undefined }).wide;
+    const box = wide ? ui.aiWide : ui.ai;
     ui.aiBtn.setAttribute('aria-disabled', 'true');
-    ui.ai.hidden = false;
-    ui.ai.className = 'ai';
-    ui.ai.textContent = '가져오는 중…';
+    box.hidden = false;
+    box.className = 'ai';
+    box.textContent = wide ? '글 앞뒤와 목차를 넓게 보고 찾는 중…' : '가져오는 중…';
     place();
-    const context = current.range && globalThis.readglossContextFor?.(current.range); // selection.js 가 나중에 로드되므로 호출 때 참조한다
-    const r = await send({ type: 'lookup', word: current.word, sentence: current.sentence, force, ...(context && { context }) });
+    const context = current.range && globalThis.readglossContextFor?.(current.range, wide); // selection.js 가 나중에 로드되므로 호출 때 참조한다
+    const r = await send({ type: 'lookup', word: current.word, sentence: current.sentence, wide, ...(context && { context }) });
     if (my !== seq) return;
     ui.aiBtn.removeAttribute('aria-disabled');
-    if (r?.gloss) ui.ai.textContent = `${current.word}: ${r.gloss}`;
-    else {
-      ui.ai.className = 'ai err';
-      ui.ai.textContent = MESSAGES[r?.error] ?? `문제가 생겼어요(${r?.error ?? '응답 없음'})`;
+    if (r?.gloss) {
+      box.textContent = `${wide ? '넓은 문맥 · ' : ''}${current.word}: ${r.gloss}`;
+      current[wide ? 'aiWide' : 'ai'] = r.gloss;
+    } else {
+      box.className = 'ai err';
+      box.textContent = MESSAGES[r?.error] ?? `문제가 생겼어요(${r?.error ?? '응답 없음'})`;
     }
+    paintAiBtn();
     place();
   }
 
@@ -309,7 +405,7 @@
   // rect: 뷰포트 좌표의 단어 사각형. range: 단어를 담은 선택(AI 문맥 뜻이 앞뒤 문맥을 뽑을 때 쓴다).
   function openCard(word, sentence, r, range) {
     if (host) close();
-    current = { word, sentence, aiAsked: false, range: range?.cloneRange(), anchor: { left: r.left + scrollX, top: r.top + scrollY, bottom: r.bottom + scrollY } };
+    current = { word, sentence, range: range?.cloneRange(), anchor: { left: r.left + scrollX, top: r.top + scrollY, bottom: r.bottom + scrollY } };
     buildCard();
     askDict().catch(close); // 동기적으로 "찾는 중…" 부터 그린다
   }

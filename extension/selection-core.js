@@ -5,6 +5,8 @@
   const MAX_SIDE = 1500;
   const MAX_TITLE = 200; // 제목·소제목 한 줄의 상한
   const MAX_HEADINGS = 3;
+  const WIDE_SIDE = 6000; // [더 넓게 보기]: 앞뒤 각 6000자·소제목(목차) 20개(다리의 wide 상한과 맞춘다)
+  const WIDE_HEADINGS = 20;
   const MIN_LATIN_RATIO = 0.5; // 글자(\p{L}) 중 영어 알파벳 비율
   const NONE = Object.freeze({ kind: 'none' });
 
@@ -32,16 +34,113 @@
   }
 
   // 다리에 싣는 문맥. prev·next: 앞·뒤 블록 글(문서 순서), headings: 선택 위쪽 소제목(문서 순서, 가까운 쪽이 끝). 선택에 가까운 글을 남긴다.
-  function buildContext({ prev = [], head = '', tail = '', next = [], title = '', headings = [] }) {
+  // wide: [더 넓게 보기] 용(앞뒤 6000자, 소제목 20개).
+  function buildContext({ prev = [], head = '', tail = '', next = [], title = '', headings = [], wide = false }) {
+    const side = wide ? WIDE_SIDE : MAX_SIDE;
     const before = norm([...prev, head].join(' '));
     const after = norm([tail, ...next].join(' '));
     return {
-      before: before.slice(-MAX_SIDE).trimStart(),
-      after: after.slice(0, MAX_SIDE).trimEnd(),
+      before: before.slice(-side).trimStart(),
+      after: after.slice(0, side).trimEnd(),
       title: norm(title).slice(0, MAX_TITLE),
-      headings: headings.map((h) => norm(h).slice(0, MAX_TITLE)).filter(Boolean).slice(-MAX_HEADINGS),
+      headings: headings.map((h) => norm(h).slice(0, MAX_TITLE)).filter(Boolean).slice(wide ? -WIDE_HEADINGS : -MAX_HEADINGS),
     };
   }
 
-  globalThis.readglossSelection = { MAX_TEXT, MAX_SIDE, MAX_TITLE, MAX_HEADINGS, classify, around, buildContext };
+  // 페이지 목차(문서 순서) 중 max 개: 많으면 선택 위치(before = 선택 위쪽 제목 수) 근처를 남겨 현재 절이 들어가게 한다. 위쪽 70%.
+  function pickHeadings(list, before, max = WIDE_HEADINGS) {
+    if (list.length <= max) return list;
+    const start = Math.min(Math.max(before - Math.ceil(max * 0.7), 0), list.length - max);
+    return list.slice(start, start + max);
+  }
+
+  // ---- [문맥 번역]/[AI 문맥 뜻] -> [더 넓게 보기] -> 숨김 ----
+  const STAGE_FIRST = { ctx: ['문맥 번역', '문맥 번역: 앞뒤 문맥을 보고 AI 가 번역'], ai: ['AI 문맥 뜻', 'AI 문맥 뜻: 이 문장 속 뜻 보기'] };
+  const STAGE_WIDE_LABEL = { ctx: '더 넓게 보기: 글 앞뒤와 목차를 더 넓게 보고 다시 번역', ai: '더 넓게 보기: 글 앞뒤와 목차를 더 넓게 보고 뜻 찾기' };
+  // kind: 'ctx'(드래그 카드) | 'ai'(사전 카드). done: 짧은 문맥 결과가 나왔나, wide: 넓은 결과까지 나왔나. wide 는 누르면 wide 로 요청한다는 뜻.
+  function stageButton(kind, { done = false, wide = false } = {}) {
+    if (wide) return { hidden: true, wide: false, text: '', label: '' };
+    if (done) return { hidden: false, wide: true, text: '더 넓게 보기', label: STAGE_WIDE_LABEL[kind] };
+    const [text, label] = STAGE_FIRST[kind];
+    return { hidden: false, wide: false, text, label };
+  }
+
+  // ---- 내 사전 ----
+  const clip = (s, n) => norm(s).slice(0, n);
+  const KEY_RE = /^[a-z0-9 '’.-]{1,80}$/;
+  // 선택 원문 -> 내 사전 키(소문자·공백 정리). 키 규칙(1~80자, [a-z0-9 '’.-])에 안 맞으면 null.
+  const mydictKey = (raw) => {
+    const k = norm(raw).toLowerCase();
+    return KEY_RE.test(k) ? k : null;
+  };
+
+  // 사전 뜻 글 -> 첫 뜻만: 〈…〉《…》(…)[…] 설명을 걷고 ; 앞까지.
+  const firstMeaning = (text) => norm(norm(text).replace(/[〈《(（[][^〉》)）\]]*[〉》)）\]]/g, '').split(/[;；]/)[0]);
+
+  // 내 사전에 넣을 기본 뜻: 넓은 문맥 번역 > 문맥 번역 > AI 문맥 뜻 > 약어 뜻 > 맥 번역 > 용어 > 사전 분야 뜻 > 사전 첫 뜻. 80자까지.
+  const MEANING_ORDER = ['wide', 'ctx', 'ai', 'acr', 'mt', 'term', 'sense', 'first'];
+  function bestMeaning(m = {}) {
+    for (const k of MEANING_ORDER) if (norm(m[k])) return clip(m[k], 80);
+    return '';
+  }
+
+  // 다리 /mydict 'set' 요청. 상한(ko 80·exp 120·note 200)에 맞추고 빈 칸은 뺀다.
+  function mydictMessage({ key, ko, exp, note, url, title }) {
+    const msg = { type: 'mydict', op: 'set', key, ko: clip(ko, 80) };
+    for (const [k, v, n] of [['exp', exp, 120], ['note', note, 200], ['url', url, 2000], ['title', title, 200]]) if (clip(v, n)) msg[k] = clip(v, n);
+    return msg;
+  }
+
+  // ---- 구·문장 단어장 ----
+  // mt: 맥 번역, ctx: 문맥(또는 넓은 문맥) 번역, wide: ctx 가 넓은 문맥 결과인가. 맥 번역이 없어도 저장된다(translation 0자 허용).
+  function phraseMessage({ text, mt = '', ctx = '', ctxNote = '', wide = false, url, title }) {
+    const msg = { type: 'words', op: 'save-phrase', text, translation: clip(mt, 2000) };
+    if (norm(ctx)) {
+      msg.context = { translation: clip(ctx, 2000) };
+      if (norm(ctxNote)) msg.context.note = clip(ctxNote, 400);
+      if (wide) msg.context.wide = true;
+    }
+    if (clip(url, 2000)) msg.url = clip(url, 2000);
+    if (clip(title, 200)) msg.title = clip(title, 200);
+    return msg;
+  }
+  const findPhrase = (phrases, text) => Object.entries(phrases ?? {}).find(([, p]) => p?.text === text)?.[0] ?? null;
+
+  // ---- 약어 ----
+  const isAcronym = (s) => typeof s === 'string' && /^[A-Z]{2,6}$/.test(s);
+  const STOP = new Set(['of', 'and', 'the', 'for', 'in', 'on', 'to', 'a', 'an', 'with', 'by', 'or']);
+  const MAX_EXPAND_WORDS = 8;
+
+  // 페이지 글에서 "(PCA)" 앞의 낱말들 중 머리글자가 약어와 맞는 구를 찾는다(소문자로). (PCAs) 같은 복수도 본다. 못 찾으면 null.
+  // 하이픈은 낱말 경계(Cross-Site). 작은 낱말(of·and·the…)은 머리글자가 안 맞으면 건너뛴다. 문장 부호는 넘지 않는다. 최대 8낱말.
+  // ponytail: 머리글자가 아닌 약어(XSS = cross-site scripting 의 X)는 못 찾는다 — 그러면 약어집·내 사전이 답이다.
+  function expandAcronym(text, acronym) {
+    if (!isAcronym(acronym) || typeof text !== 'string') return null;
+    const letters = [...acronym];
+    const paren = new RegExp(`\\(\\s*${acronym}(?:s|'s|’s)?\\s*\\)`, 'g');
+    for (const m of text.matchAll(paren)) {
+      const pre = text.slice(Math.max(0, m.index - 300), m.index);
+      const toks = [...pre.matchAll(/[A-Za-z0-9][A-Za-z0-9'’]*/g)].map((t) => ({ word: t[0], start: t.index, end: t.index + t[0].length }));
+      const last = toks.at(-1);
+      if (!last || pre.slice(last.end).trim() !== '') continue;
+      let i = letters.length - 1;
+      let first = null;
+      for (let j = toks.length - 1, used = 0; j >= 0 && used < MAX_EXPAND_WORDS && i >= 0; j--, used++) {
+        if (j < toks.length - 1 && /[,;:.!?()[\]]/.test(pre.slice(toks[j].end, toks[j + 1].start))) break; // 문장 부호를 넘지 않는다
+        const w = toks[j].word;
+        if (w[0].toUpperCase() === letters[i]) (first = toks[j], i--);
+        else if (!(i < letters.length - 1 && STOP.has(w.toLowerCase()))) break;
+      }
+      if (i < 0) return norm(pre.slice(first.start, last.end)).toLowerCase();
+    }
+    return null;
+  }
+
+  // 카드 맨 위 약어 줄: "PCA = principal component analysis · 주성분 분석 (이 페이지)". 풀이가 없으면 ''.
+  const acronymLine = ({ word, exp, ko, page }) => (exp ? `${word} = ${exp}${ko ? ` · ${ko}` : ''}${page ? ' (이 페이지)' : ''}` : '');
+
+  globalThis.readglossSelection = {
+    MAX_TEXT, MAX_SIDE, MAX_TITLE, MAX_HEADINGS, WIDE_SIDE, WIDE_HEADINGS,
+    classify, around, buildContext, pickHeadings, stageButton, mydictKey, firstMeaning, bestMeaning, mydictMessage, phraseMessage, findPhrase, isAcronym, expandAcronym, acronymLine,
+  };
 })();
