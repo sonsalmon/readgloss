@@ -43,3 +43,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   lookup(msg).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
   return true; // 비동기 응답
 });
+
+// 더블클릭 사전 카드: 맥 영한사전 조회(/dict). 구독 호출이 아니라 즉시·무료.
+async function dict({ word }, retried = false) {
+  const token = await getToken(retried);
+  if (!token) return { error: 'pair-failed' };
+  const res = await bridgeFetch('/dict', {
+    method: 'POST',
+    headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ word }),
+  });
+  if (res.status === 401 && !retried) return dict({ word }, true);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: data.error || `http-${res.status}` };
+  return data;
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'dict') return;
+  dict(msg).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
+  return true; // 비동기 응답
+});
