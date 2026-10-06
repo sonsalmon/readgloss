@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { LEVELS, createAnnotate, lemmaOf, loadWordLevels, parseWordLevels, shortGloss } from '../bridge/annotate.mjs';
+import { ANNOTATE_LEVELS, LEVELS, createAnnotate, lemmaOf, loadWordLevels, parseWordLevels, shortGloss } from '../bridge/annotate.mjs';
 import { createDict, parseEntry } from '../bridge/dict.mjs';
 
 const fx = JSON.parse(readFileSync(new URL('../fixtures/dict-plain.json', import.meta.url), 'utf8'));
@@ -155,6 +155,31 @@ test('캐시: 같은 단어는 사전을 한 번만 부르고 기준 등급이 �
   await a(['delves', 'payload', 'zzyzx', 'delves']);
   await a(['delves', 'payload', 'zzyzx'], 'C1');
   assert.deepEqual(d.calls, ['delves', 'payload', 'zzyzx']);
+});
+
+test('아는 단어: 원형이 아는 단어면 결과에서 빼고, 취소하면 사전을 다시 부르지 않고 바로 다시 나온다', async () => {
+  const d = fakeDict(table);
+  const known = new Set();
+  const a = createAnnotate({ dict: d, levels, isKnown: (l) => known.has(l) });
+  assert.deepEqual(Object.keys(await a(['delves', 'payload'])), ['delves', 'payload']);
+  known.add('delve'); // 표면형 delves 의 원형
+  assert.deepEqual(Object.keys(await a(['delves', 'payload'])), ['payload']);
+  known.delete('delve');
+  assert.deepEqual(Object.keys(await a(['delves', 'payload'])), ['delves', 'payload']);
+  assert.deepEqual(d.calls, ['delves', 'payload']);
+});
+
+test('아는 단어: 표면형 자체가 아는 원형이면 사전도 안 부른다', async () => {
+  const d = fakeDict(table);
+  const a = createAnnotate({ dict: d, levels, isKnown: (l) => l === 'payload' });
+  assert.deepEqual(await a(['payload']), {});
+  assert.deepEqual(d.calls, []);
+});
+
+test('C2: 기준 등급 C2 는 C2 단어와 목록 밖 단어만(C1 exterior·B2 delve 는 빠진다)', async () => {
+  assert.ok(ANNOTATE_LEVELS.includes('C2'));
+  const a = createAnnotate({ dict: fakeDict(table), levels });
+  assert.deepEqual(Object.keys(await a(['cloak', 'exterior', 'delves', 'payload'], 'C2')).sort(), ['cloak', 'payload']);
 });
 
 test('사전 오류는 캐시하지 않고 그대로 던진다', async () => {

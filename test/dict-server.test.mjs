@@ -85,7 +85,7 @@ test('/dict: 사전에 없으면 found:false', async () => {
   try {
     const r = await s.req('POST', '/dict', { headers: s.auth, body: { word: 'deserialize' } });
     assert.equal(r.status, 200);
-    assert.deepEqual(r.json(), { found: false });
+    assert.deepEqual(r.json(), { found: false, lemma: 'deserialize' });
   } finally {
     await s.bridge.close();
   }

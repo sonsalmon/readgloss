@@ -9,7 +9,8 @@ import { extensionIdFromKey } from './ext-id.mjs';
 import { AiParseError } from './parse.mjs';
 import { SYSTEM_PROMPT, WORD_RE, buildPrompt, createLookup } from './lookup.mjs';
 import { DictUnavailableError, createDict } from './dict.mjs';
-import { ANNOTATE_LEVELS, DEFAULT_LEVEL, createAnnotate } from './annotate.mjs';
+import { ANNOTATE_LEVELS, DEFAULT_LEVEL, createAnnotate, lemmaOf, shortGloss } from './annotate.mjs';
+import { createWords, parseWordsOp } from './words.mjs';
 import { MAX_TEXT, buildTranslatePrompt, createTranslate, normalizeText } from './translate.mjs';
 
 const PORT = 47831;
@@ -69,12 +70,13 @@ function sendAiError(res, e, cors) {
 }
 
 // ask({word, sentence}) / askTranslate(문단) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
-export function createBridge({ ask, askTranslate, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), tokenFile, extensionId, dict = createDict() }) {
+export function createBridge({ ask, askTranslate, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), tokenFile, extensionId, dict = createDict() }) {
   const token = loadOrCreateToken(tokenFile);
   const tokenBuf = Buffer.from(token);
   const lookup = createLookup({ cache: createCache(cacheFile), ask });
   const translate = createTranslate({ cache: createCache(translationsFile), ask: askTranslate });
-  const annotate = createAnnotate({ dict });
+  const words = createWords({ file: wordsFile });
+  const annotate = createAnnotate({ dict, isKnown: words.isKnown });
   const mine = `chrome-extension://${extensionId}`;
 
   const tokenOk = (h) => {
@@ -117,7 +119,11 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
     const word = value?.word;
     if (typeof word !== 'string' || !WORD_RE.test(word)) return send(res, 400, { error: 'bad-request' }, cors);
     try {
-      send(res, 200, await dict.lookup(word), cors);
+      // 원형(lemma)은 /annotate 와 같은 함수로 다리가 정한다. 카드 버튼과 단어장은 이 값만 쓴다. gloss 는 단어장에 남길 짧은 뜻.
+      const r = await dict.lookup(word);
+      const lower = word.toLowerCase();
+      const e = r.found ? r.entries[0] : null;
+      send(res, 200, e ? { ...r, lemma: lemmaOf(e, lower), gloss: shortGloss(e.senses?.[0]?.text) } : { ...r, lemma: lower }, cors);
     } catch (e) {
       if (e instanceof DictUnavailableError) send(res, 503, { error: 'dict-unavailable' }, cors);
       else send(res, 502, { error: 'dict-failed' }, cors);
@@ -137,6 +143,16 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
       if (e instanceof DictUnavailableError) send(res, 503, { error: 'dict-unavailable' }, cors);
       else send(res, 502, { error: 'dict-failed' }, cors);
     }
+  }
+
+  // 내 단어: GET -> { known, saved, history }, POST { op, lemma, ... } -> 바뀐 같은 모양의 상태
+  async function handleWords(req, res, cors) {
+    if (req.method === 'GET') return send(res, 200, words.all(), cors);
+    const { value, status } = await readJson(req);
+    if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+    const op = parseWordsOp(value);
+    if (!op) return send(res, 400, { error: 'bad-request' }, cors);
+    send(res, 200, words.apply(op), cors);
   }
 
   async function handle(req, res) {
@@ -177,6 +193,10 @@ export function createBridge({ ask, askTranslate, cacheFile, translationsFile = 
     if (path === '/annotate') {
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleAnnotate(req, res, cors);
+    }
+    if (path === '/words') {
+      if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleWords(req, res, cors);
     }
     if (path === '/translate') {
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);

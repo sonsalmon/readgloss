@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 
 export const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 export const DEFAULT_LEVEL = 'B2';
-export const ANNOTATE_LEVELS = ['A2', 'B1', 'B2', 'C1']; // 요청에서 고를 수 있는 기준 등급
+export const ANNOTATE_LEVELS = ['A2', 'B1', 'B2', 'C1', 'C2']; // 요청에서 고를 수 있는 기준 등급
 const FILES = ['cefrj-vocabulary-profile-1.5.csv', 'octanove-vocabulary-profile-c1c2-1.0.csv'];
 const MAX_CACHE = 50_000;
 const MAX_GLOSS = 12;
@@ -63,9 +63,9 @@ export function lemmaOf(entry, word) {
   return word;
 }
 
-// dict: createDict() 같은 { lookup(word) }. levels: 낱말 -> 등급 Map.
+// dict: createDict() 같은 { lookup(word) }. levels: 낱말 -> 등급 Map. isKnown: 원형 -> 아는 단어인가(아는 단어는 결과에서 뺀다).
 // 돌려주는 함수: (words, level) -> { word: { lemma, level, gloss } } — 어려운 단어만.
-export function createAnnotate({ dict, levels = loadWordLevels() }) {
+export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () => false }) {
   const known = new Map(); // 낱말 -> { lemma, level, gloss } | null(사전에 없음·뜻 없음). 기준 등급과 무관해서 등급이 달라도 재사용한다.
   const rank = (l) => LEVELS.indexOf(l);
 
@@ -91,8 +91,10 @@ export function createAnnotate({ dict, levels = loadWordLevels() }) {
       // ponytail: 표면형이 목록에서 이미 기준 미만이면 원형 확인 없이 쉬움. 흔한 단어는 표제어가 많아 사전이 20ms 쯤 걸리기 때문이고, 어긋나면 주석이 덜 붙을 뿐이다.
       const own = levels.get(w);
       if (own !== undefined && rank(own) < min) continue;
+      if (isKnown(w)) continue; // 표면형이 곧 아는 원형이면 사전도 안 부른다
       const v = await resolve(w);
-      if (v && (v.level === null || rank(v.level) >= min)) items[w] = v;
+      // 아는 단어 판정은 캐시(resolve) 밖에서 한다: 취소하면 사전을 다시 부르지 않고 바로 다시 나온다
+      if (v && !isKnown(v.lemma) && (v.level === null || rank(v.level) >= min)) items[w] = v;
     }
     return items;
   };
