@@ -14,7 +14,7 @@
    - confidence `low` 5건은 뺐다: stationary(수학), module(수학, 보안 `module`=모듈은 high 라 남김), loot, detonate, tarpit.
    - 값에 한글이 없는 약어 14건(DNS·TLS·VPN 등)은 뺐다. 번역어가 아니라 원문 그대로라 "용어:" 줄이 의미 없다.
    - 일상어라 분야 뜻으로 덮으면 오히려 틀리는 낱말은 뺐다(수학 54개, ML 12개). HTB 후보 용어는 이 거르기에서 보호했다.
-3. 조사에 없던 HTB 모듈 용어 19개는 표준 용어로 직접 보충했다: euclidean, summation, subscript, superscript, manhattan, regression(수학) / classification, clustering, cluster, dimensionality, margin, support, classifier, testing, perceptron, tanh(ML) / spam, fraud, intrusion(보안). 복수형(matrices·features·weights·layers 등)은 키로 넣지 않고 코드가 복수 규칙(`bridge/glossary.mjs` 의 `variants`)으로 단수를 찾는다.
+3. 조사에 없던 HTB 모듈 용어 24개는 표준 용어로 직접 보충했다: euclidean, summation, subscript, superscript, manhattan, regression, binary(수학; binary 는 ML·수학 글에서 보안의 "바이너리"보다 앞서게) / classification, clustering, cluster, dimensionality, margin, support, classifier, testing, perceptron, tanh, gradient, kernel, parameter, domain(ML; 보안 뜻과 겹치는 낱말을 ML 글에서 "보안"으로 표시하지 않게) / spam, fraud, intrusion(보안). 복수형(matrices·features·weights·layers 등)은 키로 넣지 않고 코드가 복수 규칙(`bridge/glossary.mjs` 의 `variants`)으로 단수를 찾는다.
 4. 통계 용어는 수학, 딥러닝 용어는 ML 파일에 합쳤다(파일은 세 개뿐).
 5. 같은 낱말이 여러 분야에 있으면(root=근(루트)/루트(최고 권한), binary=이진/바이너리, kernel=핵(커널)/커널 등) 활성 분야 순서의 앞쪽이 이긴다. 순서는 페이지가 알려 준 힌트(ML 글이면 ml, 수식이 있으면 math)가 앞, 사이트 규칙(HTB: security, ml, math)이 뒤다. 그래서 HTB 의 ML·수학 글에서는 binary 가 이진, 보안 글에서는 바이너리로 나온다.
 6. 보안 파일의 `vector` 는 조사 값 `벡터(경로)` 를 `벡터` 로 바꿨다(공격 벡터도 "벡터"라 괄호 설명이 오히려 ML·수학 글에서 틀린 뜻으로 보였다).
