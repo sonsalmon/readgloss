@@ -13,10 +13,10 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 | T2 문단 클릭 → 왼쪽 버튼 → 페이지에 번역 삽입 | 완료(Aside 수동 확인 대기) | main 2ea1ebf | 합칠 때 server.mjs·background.js 충돌 해소(둘 다 살림). 테스트 105개 |
 | T3 어려운 단어 위 자동 주석(판정+ruby, 옛 T3·T4 합침) | 완료(Aside 수동 확인 대기) | main d46332a | 10-06 결정: 뜻 = 사전 첫 뜻. T1b·T2 합친 뒤 시작(사전 도우미 필요). spec "변경 기록 3" |
 | T5 상시 실행·켜기/끄기·수준 고르기 | 대기 | — | T3 뒤. launchd 등록은 승인 뒤 |
-| T6s 설정값 뼈대(settings-core.js) | 대기 | feat/t6s-settings | 먼저 만들어 main에 넣고 아래 셋이 이어받음 |
-| T6a 주석 그리기 개편(설정 반영·CSS 변수·걷기·끄기·오른쪽 위치) | 대기 | feat/t6a-render | T6b·T7과 병렬 |
-| T6b 떠 있는 버튼·퀵 메뉴·패널·설정 탭·미리보기·사이트·테마 | 대기 | feat/t6-panel | T6a·T7과 병렬 |
-| T7 내 단어: 단어장 추가·아는 단어·최근 찾은 단어(35,36) | 대기 | feat/t7-words | T6과 병렬, 패널 탭 등록 방식으로 연결 |
+| T6s 설정값 뼈대(settings-core.js) | 완료 | main 3641c0f | |
+| T6a 주석 그리기 개편(설정 반영·CSS 변수·걷기·끄기·오른쪽 위치) | 완료(통합 확인 중) | main | verifier 통과, P2 3건 |
+| T6b 떠 있는 버튼·퀵 메뉴·패널·설정 탭·미리보기·사이트·테마 | 완료(통합 확인 중) | main 15d0c3d | verifier 통과, 합칠 때 manifest·background·테스트 충돌 해소 |
+| T7 내 단어: 단어장 추가·아는 단어·최근 찾은 단어(35,36) | 완료(통합 확인 중) | main | verifier 통과, 테스트 합계 226 |
 | T8 어휘량 추정(6) | 대기 | — | T6·T7 합친 뒤 |
 
 ## 미리 정해 둔 것
@@ -52,6 +52,12 @@ T1 → (T1b ∥ T2) → T3 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티
 - 모양 세부(글자 크기·색 등)를 사용자가 값으로 조정할 수 있게.
 - Relingo처럼 화면 오른쪽에 떠 있다가 클릭하면 펼쳐지는 설정 패널.
 - Relingo 기능 번호 목록을 받아 사용자가 고른 것을 더해 한 번 더 구현 루프(조사 워크플로 wzc8aykwz 진행 중).
+
+## T6·T7 뒤 확인 안 한 것
+
+- 격리 월드(content script)에서 document.adoptedStyleSheets 채택이 되는지. 안 되면 <style> 대체 경로로 들어간다(엄한 CSP 페이지에선 막힐 수 있음). 판가름: Aside 실사용.
+- 툴바 아이콘 → 패널 열기가 tabs 권한 없이 되는지. 판가름: Aside 실사용.
+- 통합 확인 워크플로 wato0ui0i(세 조각 맞물림) 진행 중.
 
 ## 다음 한 걸음
 
