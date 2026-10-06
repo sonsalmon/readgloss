@@ -30,15 +30,16 @@ function parseLine(line) {
   return null;
 }
 
-function readAll(file) {
-  let raw;
+// 파일의 비지 않은 줄들(없으면 [])
+function readLines(file) {
   try {
-    raw = readFileSync(file, 'utf8');
+    return readFileSync(file, 'utf8').split('\n').filter(Boolean);
   } catch {
     return [];
   }
-  return raw.split('\n').filter(Boolean).map(parseLine).filter(Boolean);
 }
+
+const readAll = (file) => readLines(file).map(parseLine).filter(Boolean);
 
 // ?days= 값(문자열|undefined) -> 정수 1~60(기본 7) | null(틀림)
 export function parseDays(v) {
@@ -50,16 +51,10 @@ export function parseDays(v) {
 
 export function createStudy({ file, now = Date.now }) {
   // 기동 때 90일보다 오래된 줄과 깨진 줄을 정리한다(바뀐 것이 있을 때만 임시 파일 -> rename).
-  const kept = readAll(file);
+  const lines = readLines(file);
   const cutoff = now() - RETENTION_DAYS * DAY_MS;
-  const fresh = kept.filter((v) => v.ts >= cutoff);
-  let rawLines = 0;
-  try {
-    rawLines = readFileSync(file, 'utf8').split('\n').filter(Boolean).length;
-  } catch {
-    // 파일 없음
-  }
-  if (fresh.length !== rawLines) {
+  const fresh = lines.map(parseLine).filter((v) => v && v.ts >= cutoff);
+  if (fresh.length !== lines.length) {
     mkdirSync(dirname(file), { recursive: true });
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, fresh.map((v) => `${JSON.stringify(v)}\n`).join(''));
