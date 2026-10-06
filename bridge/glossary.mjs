@@ -1,5 +1,5 @@
 // 분야 용어집: 사전 첫 뜻보다 먼저 쓰는 "분야별 정식 번역어". AI 는 쓰지 않고, 파일 세 개(bridge/glossaries/*.json)를 한 번 읽어 둔다.
-// 데이터를 만든 방법·출처는 bridge/glossaries/SOURCE.md. 두 단어 이상(phrases-*.json)은 아직 쓰지 않는다.
+// 데이터를 만든 방법·출처는 bridge/glossaries/SOURCE.md. 두 단어 이상(phrases-*.json)은 낱말 용어집에 섞지 않고, 드래그 번역(/mt)이 구 전체가 같을 때만 findPhrase 로 찾는다.
 import { readFileSync } from 'node:fs';
 
 export const DOMAINS = ['security', 'ml', 'math'];
@@ -8,6 +8,8 @@ export const MAX_TERMS = 30; // 번역 프롬프트에 싣는 용어 지정 개�
 export function loadGlossaries() {
   return Object.fromEntries(DOMAINS.map((d) => [d, JSON.parse(readFileSync(new URL(`./glossaries/${d}.json`, import.meta.url), 'utf8'))]));
 }
+
+export const loadPhrases = () => Object.fromEntries(DOMAINS.map((d) => [d, JSON.parse(readFileSync(new URL(`./glossaries/phrases-${d}.json`, import.meta.url), 'utf8'))]));
 
 // 낱말 -> 용어집에서 찾아볼 후보 철자(원형 먼저, 복수형 규칙만).
 // ponytail: -ing·-ed 는 일부러 안 푼다(meaning -> mean 같은 오탐). 그런 활용형은 사전이 준 원형으로 다시 찾는다.
@@ -21,7 +23,7 @@ export function variants(word) {
   return out;
 }
 
-export function createGlossary(data = loadGlossaries()) {
+export function createGlossary(data = loadGlossaries(), phrases = loadPhrases()) {
   const find = (word, active = []) => {
     for (const v of variants(word)) {
       for (const d of active) {
@@ -33,8 +35,19 @@ export function createGlossary(data = loadGlossaries()) {
     return null;
   };
 
+  // 구 전체(공백 정리·소문자·앞뒤 부호 제거)가 켜진 분야의 구와 같을 때만. 부분 일치·활용형은 안 푼다(없으면 맥 번역 결과만 보인다).
+  const findPhrase = (text, active = []) => {
+    const key = String(text).toLowerCase().replace(/\s+/g, ' ').replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
+    for (const d of active) {
+      const ko = key && phrases[d] && Object.hasOwn(phrases[d], key) ? phrases[d][key] : null;
+      if (typeof ko === 'string' && ko) return { ko, domain: d };
+    }
+    return null;
+  };
+
   return {
     find,
+    findPhrase,
     // 요청 { domains? } -> 활성 분야(우선순위 순 = 힌트 순서). 어느 사이트에서 용어집을 켤지는 확장 설정(glossarySites)이 정하고, 다리는 보내 준 힌트만 믿는다(host 는 안 본다). 이상한 값은 조용히 버린다.
     domains(req) {
       const hints = Array.isArray(req?.domains) ? req.domains.filter((d) => DOMAINS.includes(d)) : [];

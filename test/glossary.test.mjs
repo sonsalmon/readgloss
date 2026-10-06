@@ -142,3 +142,17 @@ test('T13 검토 반영: translation 은 ML 글에선 번역(기계 번역), 수
   assert.equal(ko('translation', ['math', 'ml']), '평행 이동');
   assert.equal(loadGlossaries().math.measure, '측정(척도)');
 });
+
+test('findPhrase: 정규화·소문자 text 가 켜진 분야의 구와 같을 때만(맥 번역 카드의 "용어:" 줄용)', () => {
+  assert.deepEqual(G.findPhrase('dot product', ['math']), { ko: '내적', domain: 'math' });
+  assert.deepEqual(G.findPhrase('Dot   Product', ['math']), { ko: '내적', domain: 'math' });
+  assert.deepEqual(G.findPhrase('"dot product".', ['math']), { ko: '내적', domain: 'math' }, '앞뒤 부호는 걷는다');
+  assert.equal(G.findPhrase('dot product', ['ml']), null, '꺼진 분야는 안 본다');
+  assert.equal(G.findPhrase('dot product', []), null);
+  assert.equal(G.findPhrase('the dot product of two vectors', ['math']), null, '구 전체가 같아야 한다');
+  assert.equal(G.findPhrase('constructor', ['math']), null);
+  assert.equal(G.findPhrase('', ['math']), null);
+  // 힌트 순서가 우선순위
+  const g = createGlossary({ math: {}, ml: {}, security: {} }, { math: { 'a b': '수학' }, ml: { 'a b': '머신' }, security: {} });
+  assert.equal(g.findPhrase('a b', ['ml', 'math']).domain, 'ml');
+});
