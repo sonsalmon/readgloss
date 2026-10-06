@@ -280,7 +280,7 @@
     ui.term.classList.toggle('on', line !== '');
     current.termKo = r?.term?.ko;
     current.senseKo = r?.sense?.ko;
-    current.firstSense = r?.entries?.[0]?.senses?.[0]?.text; // [내 사전에 추가] 의 마지막 기본 뜻 후보
+    current.firstSense = r?.gloss || r?.entries?.[0]?.senses?.[0]?.text; // [내 사전에 추가] 의 마지막 기본 뜻 후보. 다리의 gloss 는 원형 항목 기준(matrices 의 첫 항목 '…의 복수형' 안내를 건너뜀)
     if (typeof r?.mine?.ko === 'string' && r.mine.ko) paintMine(r.mine);
     if (globalThis.readglossSelection.isAcronym(current.word)) showAcronym(r, my).catch(() => {});
     if (r?.found && r.entries?.length) renderEntries(r.entries);
