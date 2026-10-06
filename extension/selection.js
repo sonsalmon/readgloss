@@ -85,7 +85,8 @@
   function selectedText(range) {
     const box = document.createElement('div');
     box.append(range.cloneContents());
-    return textOf(box);
+    // 복제본은 문서 밖이라 getComputedStyle 이 안 먹는다: 폼 컨트롤만 태그로 뺀다(입력창을 가로질러 드래그해도 그 글이 섞이지 않게).
+    return textOf(box, { isHidden: (el) => /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) });
   }
 
   // block 의 앞(dir -1)·뒤(dir 1) 블록 글. 형제를 따라가다 없으면 한 단계 위로. 문서 순서로 돌려준다. 1500자가 모이면 멈춘다.

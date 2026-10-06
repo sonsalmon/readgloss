@@ -292,7 +292,11 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
   const manifest = JSON.parse(readFileSync(join(root, 'extension', 'manifest.json'), 'utf8'));
   const extensionId = extensionIdFromKey(manifest.key);
   const client = createClaudeClient({ systemPrompt: SYSTEM_PROMPT, cwd: join(dataDir, 'claude-cwd') });
+  const dict = createDict();
+  const mt = createMt();
   const bridge = createBridge({
+    dict,
+    mt,
     ask: async (a) => (await client.ask(buildPrompt(a))).text,
     askTranslate: async (text, terms) => (await client.ask(buildTranslatePrompt(text, terms), { timeoutMs: 60_000 })).text,
     askContext: async (prompt) => (await client.ask(prompt)).text,
@@ -308,7 +312,12 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
   process.on('SIGTERM', stop);
   process.on('exit', () => client.close());
   bridge.listen().then(
-    (port) => console.log(`readgloss 다리: http://127.0.0.1:${port} (확장 ID ${extensionId})`),
+    (port) => {
+      console.log(`readgloss 다리: http://127.0.0.1:${port} (확장 ID ${extensionId})`);
+      // 미리 깨우기: 사전·맥 번역 도우미의 첫 호출은 느리다(사전 약 1초, 번역 모델 적재 약 5초). 실패해도 첫 요청 때 다시 띄운다.
+      dict.lookup('warm').catch(() => {});
+      mt.translate('Hello.').catch(() => {});
+    },
     (e) => {
       console.error(e.code === 'EADDRINUSE' ? `포트 ${PORT} 가 이미 쓰이고 있어요. 다리가 이미 떠 있는지 확인해 주세요.` : e.message);
       process.exit(1);
