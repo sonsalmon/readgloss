@@ -135,3 +135,10 @@ test('T13 보충: 사전 첫 뜻이 엉뚱한 사칙연산 용어(multiplication
   assert.equal(ko('loops', ['ml']), '루프');
   assert.equal(ko('functionality', ['ml']), '기능');
 });
+
+test('T13 검토 반영: translation 은 ML 글에선 번역(기계 번역), 수학 글에선 평행 이동 / measure 는 동사 쓰임이 앞', () => {
+  const ko = (w, d) => G.find(w, d)?.ko;
+  assert.equal(ko('translation', ['ml', 'math']), '번역');
+  assert.equal(ko('translation', ['math', 'ml']), '평행 이동');
+  assert.equal(loadGlossaries().math.measure, '측정(척도)');
+});

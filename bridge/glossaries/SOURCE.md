@@ -21,6 +21,7 @@
 7. 2026-10-06 용어 검토 반영: HTB 본문 문맥과 표준 표기에 맞춰 값 15개를 고쳤다. cross=교차(외적은 phrases 의 cross product), tangent=탄젠트, metric=지표(거리 함수), cardinality=농도(원소의 개수), outcome=결과, critical=임계(중요한), significant=유의한(통계)·상당한, dimensionality=차원, capability=능력(역량), handle=처리하다(핸들), origin=원점(오리진), symbol=기호(심볼), key=키(암호 키), apt=APT(지능형 지속 공격), xss=XSS(크로스 사이트 스크립팅).
 8. 2026-10-06 T13 보충: HTB 본문 1892 후보 낱말 중 사전 첫 뜻이 분야 뜻과 다른 것(multiplication 증가→곱셈 등)을 조사 에이전트가 모아 122개를 더했다(수학 51·ML 66·보안 5, 기존 키 변경 없음). `trade-off` 는 키가 한 단어(영문 소문자)가 아니어서 뺐고, `intercept` 는 보안의 가로채기 대신 수학·ML 글용 `절편` 을 두 파일에 새로 넣었다. 사전 분야 표시 뜻을 고르는 규칙(`bridge/annotate.mjs` 의 `pickSense`)이 엉뚱하게 고르는 낱말 4개는 용어집으로 막았다: vertical=수직의(수학), explicit=명시적인·loop=루프·functionality=기능(ML).
 9. 알려진 한계(다음 단계 후보): 활용형(-ed/-ing)은 용어집이 직접 풀지 않고 사전이 준 원형으로 찾는다. 사전 도우미가 악센트 표제어를 주는 낱말(transposed 등)은 원형을 못 찾아 사전 뜻이 남을 수 있다.
+10. 2026-10-06 T13 검토 반영: translation 은 HTB 본문에서 기계 번역 뜻(text generation, translation services)이라 ML 파일에 `번역`, 수학 파일에 `평행 이동`을 둬서 힌트 순서(ML 글=ml 먼저)로 가른다. measure 는 본문에서 동사로 더 자주 쓰여 `척도(측정)` 를 `측정(척도)` 로 바꿨다(수학의 측도는 범위 밖). 티켓에 없던 규칙 2건: 흔한 낱말(A1~B1)과 표시 뒤에 쓰임 제한이 붙은 뜻은 분야 표시 뜻에서 뺀다(`bridge/annotate.mjs` 의 `COMMON_MAX`).
 
 ## 출처(조사 에이전트가 적은 것)
 
