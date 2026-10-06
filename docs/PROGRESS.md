@@ -8,7 +8,7 @@ T1 → (T2 ∥ T3) → T4 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티�
 
 | 티켓 | 상태 | 브랜치 | 메모 |
 |---|---|---|---|
-| T1 더블클릭 → 한국어 뜻 | 진행 중 | feat/t1-lookup | 워크플로 task wo0a04r99, run wf_bc85f233-183 |
+| T1 더블클릭 → 한국어 뜻 | 완료(Aside 수동 확인 대기) | main 036f7ca | 테스트 51개, verifier 통과(P2 2건), 첫 호출 1.79초 |
 | T2 문단 번역 | 대기 | — | T1 뒤 |
 | T3 어려운 단어 판정·일괄 주석 | 대기 | — | T1 뒤, T2와 병렬 |
 | T4 ruby 주석 그리기 | 대기 | — | T3 뒤 |
@@ -23,6 +23,9 @@ T1 → (T2 ∥ T3) → T4 → T5. 각 티켓은 `~/dev/readgloss-worktrees/<티�
 - Relingo가 같은 Aside 프로필에 깔려 있다. readgloss는 그냥 더블클릭으로 동작하므로, 시험 전에 Relingo를 끄라고 안내한다.
 - 구독 호출 상한: 구현 워커 10회, 검증 워커 5회(벤치 포함). 테스트는 가짜 AI만 쓴다.
 
+- 다리는 자식 claude 의 env 에서 CLAUDE*·ANTHROPIC_* 를 모두 지운다(Claude 앱 셸의 ANTHROPIC_BASE_URL 등을 물려받지 않게, ANTHROPIC_API_KEY 로 과금이 새지 않게). 깨끗한 env 에서 구독 로그인으로 도는 것 확인(10-06, 3.25초).
+- 확장 ID: bmkoabpndmngeoibdfeoidhedhepmchd (manifest key 에서 파생). 개인키는 저장소에 없다.
+
 ## 다음 한 걸음
 
-T1 워크플로 결과를 받아 main에 합치고, 다리를 띄운 뒤 사용자에게 Aside에서 확장 불러오기를 안내한다.
+사용자가 Aside 에서 `~/dev/readgloss/extension` 을 불러와 더블클릭을 확인하면, T2(문단 번역)와 T3(어려운 단어 판정)을 워크트리 두 개에서 병렬로 돌린다.
