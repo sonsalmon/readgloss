@@ -203,7 +203,7 @@
   // [내 사전에 추가] 한 벌(버튼 + 입력칸·저장·취소). 드래그 카드와 사전 카드(content.js)가 같이 쓴다.
   // key: 내 사전 키(mydictKey 를 통과한 것). spec(): 지금 기본값 { ko, exp?, note? }. resize(): 입력칸이 열리고 닫혀 카드 키가 달라질 때. onSaved(ko): 저장 뒤.
   // 반환: { btn, form, setHas(ko|null) }. btn 은 카드 안 버튼 줄에, form 도 그 줄 끝(한 줄 전체)에 넣는다.
-  function createMydict({ key, spec, resize = () => {}, onSaved = () => {} }) {
+  function createMydict({ key, spec, source = () => ({ url: location.href, title: document.title }), resize = () => {}, onSaved = () => {} }) {
     let has = null; // 내 사전에 있는 뜻
     const input = el('input', 'mdin');
     input.type = 'text';
@@ -241,7 +241,8 @@
       ok.setAttribute('aria-disabled', 'true');
       const s = spec();
       const k = typeof key === 'function' ? key() : key; // 사전 카드는 다리가 준 원형(lemma)을 저장 때 읽는다
-      const r = await send(core.mydictMessage({ key: k, ko, exp: s.exp, note: s.note, url: location.href, title: document.title }));
+      const src = source(); // 사전 카드는 패널 저장 문장의 출처를, 드래그 카드는 지금 페이지를 (기본값)
+      const r = await send(core.mydictMessage({ key: k, ko, exp: s.exp, note: s.note, url: src.url, title: src.title }));
       ok.removeAttribute('aria-disabled');
       if (!r?.entries) return fail(errText(r));
       has = ko;
@@ -285,7 +286,8 @@
       ul.append(li);
       const it = { row, btn };
       btn.addEventListener('click', (e) => {
-        e.stopPropagation(); // 이 블록이 든 문단·링크의 페이지 동작에 닿지 않게(preventDefault 는 하지 않는다)
+        e.stopPropagation(); // 이 블록이 든 문단·링크의 페이지 동작에 닿지 않게
+        e.preventDefault(); // 우리 버튼(type=button)이라 링크 안 카드의 <p> 안에 놓여도 따라가지 않는다. 페이지의 다른 클릭은 막지 않는다
         toggle(it);
       });
       return it;

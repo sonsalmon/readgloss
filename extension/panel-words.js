@@ -59,6 +59,16 @@
     return null;
   }
 
+  // 저장·알아요 성공 뒤 카드가 쏘는 window 'readgloss:words' detail. known·unknown 은 기존 계약 그대로 두고(annotate.js 가 읽는다),
+  // 단어장 저장·빼기는 saved·unsaved 키를 더한다(패널이 숫자·목록을 다시 읽는 신호).
+  function wordEventDetail(op, lemma) {
+    if (op === 'known') return { known: [lemma], unknown: [] };
+    if (op === 'unknown') return { known: [], unknown: [lemma] };
+    if (op === 'save') return { known: [], unknown: [], saved: [lemma] };
+    if (op === 'unsave') return { known: [], unknown: [], unsaved: [lemma] };
+    return null;
+  }
+
   // 동작 -> 다리에 보낼 메시지. save 는 줄이 가진 단어·뜻·문장·주소를 그대로 싣는다.
   const messageFor = (op, row) => (op === 'save' ? { type: 'words', op, lemma: row.lemma, word: row.word, gloss: row.gloss, sentence: row.sentence, url: row.url } : { type: 'words', op, lemma: row.lemma });
 
@@ -165,7 +175,7 @@
   const unsavePhraseMessage = (id) => ({ type: 'words', op: 'unsave-phrase', id });
 
   globalThis.readglossWords = {
-    LISTS, SUBS, formatDate, counts, countsAll, actionsFor, rowsFor, buttonModel, eventDetail, messageFor,
+    LISTS, SUBS, formatDate, counts, countsAll, actionsFor, rowsFor, buttonModel, eventDetail, wordEventDetail, messageFor,
     clip, PHRASE_FILTERS, phraseCounts, phrasePrimary, phraseRows, pickWord, lookupDetail, mydictRows, checkMydict, mydictMessage, mydictEventDetail, unsavePhraseMessage,
   };
 
@@ -265,6 +275,7 @@
     let confirming = null; // 한 번 더 눌러야 지워지는 key
     let formErr = { where: '', text: '' };
     let selfEvent = false;
+    let selfWords = false;
 
     const root = el('div', 'rgw');
     const style = el('style');
@@ -337,10 +348,18 @@
       draw();
     });
 
-    // 다른 곳(카드)에서 내 사전이 바뀌면 다시 읽는다. 패널이 새로 그려져 이 노드가 떨어지면 스스로 거둔다.
+    // 다른 곳(카드)에서 단어장·아는 단어(readgloss:words)나 내 사전(readgloss:mydict)이 바뀌면 다시 읽는다.
+    // 패널이 새로 그려져 이 노드가 떨어지면 스스로 거둔다(panel-study.js 와 같은 방식).
+    const onWords = () => {
+      if (!root.isConnected) return window.removeEventListener('readgloss:words', onWords);
+      if (!selfWords) loadWords(); // 입력칸의 draft 는 draw 가 그대로 살린다
+    };
+    window.addEventListener('readgloss:words', onWords);
     const onMine = () => {
       if (!root.isConnected) return window.removeEventListener('readgloss:mydict', onMine);
-      if (!selfEvent) loadMine();
+      if (selfEvent) return;
+      loadMine();
+      loadWords(); // 내 사전이 바뀌어도 단어장 숫자·목록을 다시 맞춘다
     };
     window.addEventListener('readgloss:mydict', onMine);
 
@@ -353,7 +372,11 @@
         state = r;
         message = '';
         const detail = W.eventDetail(op, row.lemma);
-        if (detail) window.dispatchEvent(new CustomEvent('readgloss:words', { detail }));
+        if (detail) {
+          selfWords = true; // 패널 자신이 낸 이벤트로 다시 읽는 되돌이를 막는다
+          window.dispatchEvent(new CustomEvent('readgloss:words', { detail }));
+          selfWords = false;
+        }
       } else message = errText(r);
       draw();
     }
@@ -577,15 +600,18 @@
       draw();
     }
 
-    draw();
-    loadMine();
-    ctx.send({ type: 'words', op: 'get' }).then((r) => {
+    async function loadWords() {
+      const r = await ctx.send({ type: 'words', op: 'get' });
       if (r?.known && r.saved && r.history) {
         state = r;
         message = '';
       } else message = errText(r, '불러오지 못했어요');
       draw();
-    });
+    }
+
+    draw();
+    loadMine();
+    loadWords();
   }
 
   (globalThis.readglossPanelTabs ||= []).push({ id: 'words', title: '내 단어', order: 20, render });

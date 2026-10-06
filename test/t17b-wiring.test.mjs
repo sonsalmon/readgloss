@@ -63,14 +63,18 @@ test('계약 9 접착: 사전 카드가 저장 문맥·출처를 쓰고, 패널 
   assert.match(panel, /!e\.readglossCardClosed/);
 });
 
-test('계약 10: 바뀐 확장 코드는 textContent 만 쓰고, 문맥·카드 코드는 preventDefault·chrome.storage 를 들이지 않는다', () => {
+test('계약 10: 바뀐 확장 코드는 textContent 만 쓰고, preventDefault 는 우리 버튼(표현 [☆])에서만, chrome.storage 는 들이지 않는다', () => {
   for (const f of ['selection.js', 'paragraph.js', 'panel-words.js', 'content.js', 'selection-core.js', 'background.js']) {
     assert.doesNotMatch(read(f), /\.innerHTML\s*=/, `${f}: innerHTML 금지`);
   }
+  for (const f of ['paragraph.js', 'panel-words.js', 'content.js', 'selection-core.js']) {
+    assert.doesNotMatch(read(f), /\.preventDefault\(/, `${f}: 페이지 기본 동작을 막지 않는다`);
+  }
+  // 정밀 예외(T18): selection.js 의 표현 [☆]/[★] 버튼 click 한 곳에서만 링크 이동을 막는다. 페이지의 다른 요소·링크 클릭은 막지 않는다.
+  const sel = read('selection.js');
+  assert.equal((sel.match(/\.preventDefault\(/g) ?? []).length, 1, 'preventDefault 는 표현 버튼 click 한 곳뿐');
   for (const f of ['selection.js', 'paragraph.js', 'panel-words.js', 'content.js', 'selection-core.js']) {
-    const src = read(f);
-    assert.doesNotMatch(src, /\.preventDefault\(/, `${f}: preventDefault 금지`);
-    assert.doesNotMatch(src, /chrome\.storage/, `${f}: storage 를 새로 쓰지 않는다`);
+    assert.doesNotMatch(read(f), /chrome\.storage/, `${f}: storage 를 새로 쓰지 않는다`);
   }
 });
 

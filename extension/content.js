@@ -145,6 +145,8 @@
           note: current?.mine?.note,
         }),
         resize: () => current && place(),
+        // 패널의 저장 문장에서 연 카드는 그 문장을 저장한 페이지를, 지금 연 카드는 지금 페이지를 출처로 남긴다(sourceUrl 참고)
+        source: () => ({ url: sourceUrl(), title: current.source?.title ?? document.title.slice(0, 200) }),
         onSaved: (ko) => current && paintMine({ ...current.mine, ko }),
       });
       foot.append(ui.md.btn);
@@ -236,7 +238,7 @@
     if (my !== seq) return;
     if (r?.known && r.saved) {
       current.state = r;
-      const detail = W.eventDetail(op, current.lemma);
+      const detail = W.wordEventDetail(op, current.lemma); // 저장·빼기까지 패널이 숫자·목록을 다시 읽게 알린다
       if (detail) window.dispatchEvent(new CustomEvent('readgloss:words', { detail })); // 이 페이지의 주석을 바로 걷거나 되살린다
     } else {
       ui.ai.hidden = false;
