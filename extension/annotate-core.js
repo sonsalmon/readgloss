@@ -113,11 +113,11 @@
   // DOM 구조(또는 다리 요청)가 달라지는 값. 이 값이 바뀌면 다 걷고 다시 그린다. 크기·색·불투명도·굵기·간격·복사 허용은 CSS 변수만 바꾼다.
   const structuralKey = (s) => [s.annotation.position, s.mark, s.repeat, s.maxPerParagraph, s.level].join('|');
 
-  // readgloss:words 이벤트 detail({known, unknown}) 반영: known 원형은 건너뛸 집합 skip 에 더하고, unknown 은 뺀다. 새로 걷어야 할 known 원형 집합을 돌려준다.
-  function applyWords(skip, detail) {
+  // readgloss:words 이벤트 detail({known, unknown}) 반영: known 원형은 건너뛸 집합 skip 에 더하고, unknown 은 뺀다(pageSeen 을 주면 거기서도: 이 페이지에서 한 번만 붙이는 기록 때문에 새 글에서 주석이 막히지 않게). 새로 걷어야 할 known 원형 집합을 돌려준다.
+  function applyWords(skip, detail, pageSeen) {
     const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x) : []);
     const known = new Set(list(detail?.known));
-    for (const l of list(detail?.unknown)) skip.delete(l);
+    for (const l of list(detail?.unknown)) (skip.delete(l), pageSeen?.delete(l));
     for (const l of known) skip.add(l);
     return known;
   }
@@ -210,7 +210,8 @@
 
   // 간격(gapEm): 위 = 주석 단어 좌우 바깥 여백, 오른쪽 = 단어와 "(뜻)" 사이.
   const ANNOT_CSS = `
-ruby[data-readgloss="ann"] { ruby-position: over; margin-inline: var(--rg-ann-gap, 0em); }
+ruby[data-readgloss="ann"] { ruby-position: over; ruby-align: center; margin-inline: var(--rg-ann-gap, 0em); }
+rt[data-readgloss="gloss"] { white-space: nowrap; }
 [data-rg-word] { color: var(--rg-mark-color, currentColor); background-color: var(--rg-mark-bg, transparent); text-decoration-line: var(--rg-mark-line, none);
   text-decoration-style: dotted; text-decoration-thickness: 1.5px; text-underline-offset: .18em; border-radius: 2px; }
 [data-readgloss="gloss"] { font-size: var(--rg-ann-size, 55%); color: var(--rg-ann-color, currentColor); opacity: var(--rg-ann-opacity, .7); font-weight: var(--rg-ann-weight, 400);

@@ -295,6 +295,23 @@ test('readgloss:words: known 원형은 skip 집합에 넣고 걷을 원형으로
   assert.equal(draw(b2, cfg({ repeat: 'always' }), state), 0);
 });
 
+test('readgloss:words unknown: 알아요 취소한 원형은 이 페이지에서 한 번만 주던 기록(pageSeen)에서도 빠져, 새 블록에 다시 주석이 붙는다', () => {
+  const doc = makeDoc();
+  const state = fresh();
+  const b = block(doc, 'Attackers exploit the payload now');
+  draw(b, cfg({ maxPerParagraph: 0 }), state); // repeat 기본 'page'
+  assert.ok(state.pageSeen.has('payload'));
+  const b2 = block(doc, 'Another payload here');
+  assert.equal(draw(b2, cfg({ maxPerParagraph: 0 }), state), 0, '이미 본 원형이라 안 붙는다');
+  applyWords(state.skip, { unknown: ['payload'] }, state.pageSeen);
+  assert.equal(state.pageSeen.has('payload'), false);
+  assert.ok(state.pageSeen.has('exploit'), '다른 원형은 그대로');
+  const b3 = block(doc, 'Dynamic payload text');
+  assert.equal(draw(b3, cfg({ maxPerParagraph: 0 }), state), 1);
+  applyWords(state.skip, { unknown: ['payload'] }); // pageSeen 을 안 줘도 던지지 않는다
+  assert.match(readFileSync(new URL('../extension/annotate.js', import.meta.url), 'utf8'), /applyWords\(state\.skip, e\.detail, state\.pageSeen\)/); // 접착 코드가 실제로 넘긴다
+});
+
 test('끄기 범위: enabled=false · 이 페이지만 끄기 · 끌 사이트 목록이면 자동 주석이 꺼진다', () => {
   const s = cfg();
   assert.equal(enabledHere(s, 'example.com', false), true);
@@ -391,4 +408,20 @@ test('annotate.js: 두 이벤트·설정 변경·끄기 범위를 연결하고, 
   assert.match(para, /addEventListener\('readgloss:pageoff'/);
   assert.match(para, /enabledHere\(/);
   assert.match(para, /buttonPosition\(\{[^}]*\blist\b/); // li 글머리표 비켜 두기
+});
+
+test('paragraph.js: 버튼 말풍선 색이 설정 테마를 따른다(auto 면 미디어 쿼리, light·dark 면 호스트 data-theme)', () => {
+  const para = readFileSync(new URL('../extension/paragraph.js', import.meta.url), 'utf8');
+  assert.match(para, /@media \(prefers-color-scheme: dark\) \{\s*:host\(:not\(\[data-theme="light"\]\)\) \.wrap \{ \$\{DARK\} \}/);
+  assert.match(para, /:host\(\[data-theme="dark"\]\) \.wrap \{ \$\{DARK\} \}/);
+  assert.doesNotMatch(para, /@media \(prefers-color-scheme: dark\) \{\s*\.wrap/, '미디어 쿼리가 .wrap 을 직접 바꾸면 밝게 고정이 안 먹는다');
+  assert.match(para, /setAttribute\('data-theme'/);
+  assert.match(para, /removeAttribute\('data-theme'/);
+  assert.ok(para.match(/applyTheme\(/g).length >= 3, '정의 + 버튼 만들 때 + 설정 읽을·바뀔 때');
+});
+
+test('annotate-core: 위쪽 주석 뜻은 가운데 정렬·줄바꿈 없음(공백 낀 뜻이 단어 폭에 흩어지지 않게)', () => {
+  const css = globalThis.readglossAnnotStyle.css;
+  assert.match(css, /ruby\[data-readgloss="ann"\][^}]*ruby-align: center/);
+  assert.match(css, /rt\[data-readgloss="gloss"\][^}]*white-space: nowrap/);
 });

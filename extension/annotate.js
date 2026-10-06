@@ -225,7 +225,7 @@
 
   // 이 페이지에서만 쓰는 상태 이벤트(window CustomEvent, 계약 C)
   addEventListener('readgloss:words', (e) => {
-    const gone = applyWords(state.skip, e.detail);
+    const gone = applyWords(state.skip, e.detail, state.pageSeen);
     if (e.detail?.unknown?.length) for (const k of Object.keys(cache)) delete cache[k]; // 아는 단어였다고 캐시된 빈 답을 버린다
     if (gone.size && running) {
       unwrapAnnotations(document, gone); // 아는 단어의 주석을 지금 걷는다

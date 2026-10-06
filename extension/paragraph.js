@@ -16,14 +16,14 @@
     'ext-reloaded': '확장이 새로 로드됐어요. 이 페이지를 새로고침해 주세요',
   };
 
+  const DARK = '--rg-bg:#1e2127; --rg-fg:#e6e8eb; --rg-muted:#9aa3ad; --rg-border:#343a44; --rg-accent:#6b9bff; --rg-accent-soft:rgba(107,155,255,.14); --rg-shadow:0 8px 28px rgba(0,0,0,.45);';
   // 카드·버튼 공통 디자인 토큰(밝은 기본 + 어두운 모드). 바꾸지 말 것.
   const CSS = `
     .wrap { --rg-bg:#ffffff; --rg-fg:#1f2328; --rg-muted:#656d76; --rg-border:#e3e6ea; --rg-accent:#2f6feb; --rg-accent-soft:rgba(47,111,235,.10);
       --rg-shadow:0 8px 28px rgba(15,23,42,.14), 0 1px 3px rgba(15,23,42,.08); --rg-radius:10px;
       position: relative; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif; }
-    @media (prefers-color-scheme: dark) {
-      .wrap { --rg-bg:#1e2127; --rg-fg:#e6e8eb; --rg-muted:#9aa3ad; --rg-border:#343a44; --rg-accent:#6b9bff; --rg-accent-soft:rgba(107,155,255,.14); --rg-shadow:0 8px 28px rgba(0,0,0,.45); }
-    }
+    @media (prefers-color-scheme: dark) { :host(:not([data-theme="light"])) .wrap { ${DARK} } }
+    :host([data-theme="dark"]) .wrap { ${DARK} }
     .btn { all: unset; box-sizing: border-box; position: relative; display: grid; place-items: center; width: ${BUTTON_SIZE}px; height: ${BUTTON_SIZE}px;
       border-radius: 50%; border: 1px solid var(--rg-border); background: var(--rg-bg); color: var(--rg-accent); box-shadow: var(--rg-shadow); cursor: pointer; }
     .btn::before { content: ''; position: absolute; inset: -6px; border-radius: 50%; } /* 눈에 보이는 크기는 22px, 누를 수 있는 영역만 넓힘 */
@@ -44,6 +44,8 @@
 
   let settings = globalThis.readglossSettings?.normalize({}) ?? { enabled: true, sites: [] }; // 저장된 값을 읽기 전에는 기본값
   let pageOff = globalThis.readglossPageOff === true; // 이 페이지만 끄기(T6b 가 이벤트로 알리고 전역에도 둔다)
+  // 테마(설정 'theme'): auto 면 속성 없이 prefers-color-scheme, light·dark 면 호스트에 data-theme 로 강제(content.js 카드와 같다)
+  const applyTheme = () => host && (settings.theme === 'light' || settings.theme === 'dark' ? host.setAttribute('data-theme', settings.theme) : host.removeAttribute('data-theme'));
   const allowed = () => enabledHere(settings, location.hostname, pageOff);
   let host = null;
   let ui = null; // { btn, bubble }
@@ -97,6 +99,7 @@
     shadow.append(style, wrap);
     document.documentElement.append(host);
     ui = { btn, bubble };
+    applyTheme();
   }
 
   // 블록의 첫 글자 줄 사각형(버튼을 첫 줄 높이에 맞추려고). 못 구하면 undefined -> 블록 맨 위.
@@ -228,8 +231,8 @@
     if (!allowed()) hide();
   });
   try {
-    globalThis.readglossSettings?.load().then((s) => ((settings = s), allowed() || hide()), () => {});
-    globalThis.readglossSettings?.onChange((s) => ((settings = s), allowed() || hide()));
+    globalThis.readglossSettings?.load().then((s) => ((settings = s), applyTheme(), allowed() || hide()), () => {});
+    globalThis.readglossSettings?.onChange((s) => ((settings = s), applyTheme(), allowed() || hide()));
   } catch {
     // 확장이 다시 로드된 뒤의 낡은 페이지: 기본값으로 둔다
   }
