@@ -116,7 +116,8 @@ function fel(tag, attrs = {}, ...kids) {
   for (const k of n.childNodes) k.parentElement = n;
   return n;
 }
-const fann = (word, gloss) => fel('ruby', { 'data-readgloss': 'ann' }, word, fel('rt', {}, gloss));
+const fann = (word, gloss) => fel('ruby', { 'data-readgloss': 'ann' }, word, fel('rt', { 'data-readgloss': 'gloss' }, gloss));
+const fannRight = (word, gloss) => fel('span', { 'data-readgloss': 'ann' }, word, fel('span', { 'data-readgloss': 'gloss' }, `(${gloss})`));
 
 test('plainTextAt: 주석 rt 글자와 우리 번역 노드는 빼고, 컨테이너 위치를 글자 위치로 바꾼다', () => {
   const r = fann('exploit', '이용하다');
@@ -131,6 +132,15 @@ test('plainTextAt: 주석 rt 글자와 우리 번역 노드는 빼고, 컨테이
   const second = plainTextAt(p, pay, 2);
   assert.equal(extractSentence(second.text, second.offset - 2, 'payload'.length), 'Then payload runs.');
   assert.equal(text.includes('이용하다') || text.includes('번역문') || text.includes('수익'), false);
+});
+
+test('plainTextAt: 오른쪽 위치("(뜻)" span)에서도 문장에 뜻이 섞이지 않는다(회귀), 페이지 자신의 rt 는 본문', () => {
+  const r = fannRight('exploit', '이용하다');
+  const p = fel('p', {}, 'The attacker will ', r, ' the flaw.');
+  const { text, offset } = plainTextAt(p, r.childNodes[0], 0);
+  assert.equal(text, 'The attacker will exploit the flaw.');
+  assert.equal(extractSentence(text, offset, 'exploit'.length), 'The attacker will exploit the flaw.');
+  assert.equal(plainTextAt(fel('p', {}, 'a ', fel('ruby', {}, '漢', fel('rt', {}, 'kan'))), null, 0).text, 'a 漢kan');
 });
 
 test('plainTextAt: 요소 컨테이너(offset = 자식 번호)·찾지 못한 컨테이너·일반 글', () => {

@@ -24,10 +24,11 @@
   const BUTTON_GAP = 6;
   const MIN_LEFT_MARGIN = 32;
 
-  // 우리가 넣은 노드 중 문단 글에 속하지 않는 것: 번역 블록·버튼. 자동 주석(data-readgloss="ann")은 원래 단어가 본문이라 여기에 안 든다.
-  const isOurs = (n) => n.hasAttribute?.('data-readgloss') === true && n.getAttribute('data-readgloss') !== 'ann';
-  // 자동 주석의 뜻 글자(rt)만 뺀다. 페이지 자신의 ruby·rt 는 본문이다.
-  const isAnnNote = (n) => n.tagName === 'RT' && n.parentElement?.getAttribute?.('data-readgloss') === 'ann';
+  // 우리가 넣은 노드: 번역 블록·버튼·자동 주석(ann 감싸개와 뜻 글자 gloss). 클릭해도 문단을 찾지 못하게 하는 대상은 번역 블록·버튼뿐이다.
+  const mark = (n) => (n.hasAttribute?.('data-readgloss') === true ? n.getAttribute('data-readgloss') : null);
+  const isOurs = (n) => { const m = mark(n); return m !== null && m !== 'ann' && m !== 'gloss'; };
+  // 본문 글자에서 빼는 노드: 위 + 자동 주석의 뜻 글자(위치와 상관없이 data-readgloss="gloss", ann 감싸개 안의 원래 단어는 본문). 페이지 자신의 ruby·rt 는 본문이다.
+  const isExcluded = (n) => isOurs(n) || mark(n) === 'gloss';
 
   const normalizeText = (s) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : '');
 
@@ -51,13 +52,13 @@
 
   const insertPlacement = (tagName) => (INSIDE_END.has(String(tagName).toUpperCase()) ? 'beforeend' : 'afterend');
 
-  // node 아래 글자를 모은 정규화 문자열. 우리가 넣은 번역 노드는 건너뛰고, 자동 주석은 rt 글자만 뺀다(주석 붙은 단어 자체는 번역 원문에 남아야 한다). (li·td 는 번역을 안에 넣으므로 다시 번역할 때 한국어가 섞이지 않게).
+  // node 아래 글자를 모은 정규화 문자열. 우리가 넣은 번역 노드는 건너뛰고, 자동 주석은 뜻 글자(gloss)만 뺀다(주석 붙은 단어 자체는 번역 원문에 남아야 한다). (li·td 는 번역을 안에 넣으므로 다시 번역할 때 한국어가 섞이지 않게).
   // opts.isHidden(el): 화면에 안 보이는 요소(display:none 등)를 건너뛰는 훅. innerText 대신 직접 걷는 이유: 번역 노드 제외를 DOM 없이 시험하려고.
   function textOf(node, { isHidden } = {}) {
     const parts = [];
     (function walk(n) {
       if (n.nodeType === 3) return void parts.push(n.nodeValue);
-      if (n.nodeType !== 1 || isOurs(n) || isAnnNote(n) || SKIP_TEXT.has(n.tagName) || isHidden?.(n)) return;
+      if (n.nodeType !== 1 || isExcluded(n) || SKIP_TEXT.has(n.tagName) || isHidden?.(n)) return;
       const brk = BREAK.has(n.tagName);
       if (brk) parts.push(' ');
       for (const c of n.childNodes) walk(c);
@@ -66,12 +67,12 @@
     return normalizeText(parts.join(''));
   }
 
-  // 본문 글자 수가 limit 를 넘는지. 번역 노드와 주석 rt 는 세지 않고(textContent 로 재면 주석 글자가 섞여 일찍 막힌다), 넘는 순간 걷기를 멈춰 아주 큰 블록도 싸다.
+  // 본문 글자 수가 limit 를 넘는지. 번역 노드와 주석 뜻 글자는 세지 않고(textContent 로 재면 주석 글자가 섞여 일찍 막힌다), 넘는 순간 걷기를 멈춰 아주 큰 블록도 싸다.
   function textExceeds(node, limit) {
     let n = 0;
     const walk = (x) => {
       if (x.nodeType === 3) return (n += x.nodeValue.length) > limit;
-      if (x.nodeType !== 1 || isOurs(x) || isAnnNote(x) || SKIP_TEXT.has(x.tagName)) return false;
+      if (x.nodeType !== 1 || isExcluded(x) || SKIP_TEXT.has(x.tagName)) return false;
       for (const c of x.childNodes) if (walk(c)) return true;
       return false;
     };

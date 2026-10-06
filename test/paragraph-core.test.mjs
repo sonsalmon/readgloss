@@ -109,20 +109,31 @@ test('findBlock: 우리가 넣은 번역 노드(와 그 안)는 대상이 아니
   void p;
 });
 
-const ann = (word, gloss) => el('ruby', { 'data-readgloss': 'ann' }, word, el('rt', {}, gloss));
+// 계약 B 의 주석 모양: 위 = ruby + rt, 오른쪽 = span + span("(뜻)"). 뜻 글자 노드는 둘 다 data-readgloss="gloss".
+const ann = (word, gloss, position = 'top') =>
+  position === 'right'
+    ? el('span', { 'data-readgloss': 'ann', 'data-lemma': word }, word, el('span', { 'data-readgloss': 'gloss' }, `(${gloss})`))
+    : el('ruby', { 'data-readgloss': 'ann', 'data-lemma': word }, word, el('rt', { 'data-readgloss': 'gloss' }, gloss));
 
-test('textOf: 자동 주석(ruby data-readgloss=ann)은 원래 단어는 남기고 rt 글자만 뺀다', () => {
+test('textOf: 자동 주석(data-readgloss=ann)은 원래 단어는 남기고 뜻 글자(gloss)만 뺀다', () => {
   const p = el('p', {}, 'Attackers ', ann('exploit', '이용하다'), ' the ', ann('payload', '수익 하중'), ' now.');
   assert.equal(textOf(p), 'Attackers exploit the payload now.');
   const li = el('li', {}, 'Item ', ann('delve', '손으로 더듬다'), tr('번역문이 여기 들어 있다'), ' end');
-  assert.equal(textOf(li), 'Item delve end'); // 번역 노드는 통째로, 주석은 rt 만 뺀다
+  assert.equal(textOf(li), 'Item delve end'); // 번역 노드는 통째로, 주석은 뜻 글자만 뺀다
 });
 
-test('textExceeds: 길이 상한은 주석 rt 글자를 빼고 잰다(주석이 많은 긴 문단이 일찍 막히지 않게)', () => {
-  const words = Array.from({ length: 50 }, () => ann('exploit', '이용하다이용하다이용하다')); // 단어 7자 + rt 12자
-  const p = el('p', {}, ...words);
-  assert.ok(!textExceeds(p, 350)); // 본문 350자, rt 600자를 합치면 넘는다
-  assert.ok(textExceeds(p, 349));
+test('textOf: 오른쪽 위치("(뜻)" span)에서도 번역 원문에 뜻이 섞이지 않는다(회귀)', () => {
+  const p = el('p', {}, 'Attackers ', ann('exploit', '이용하다', 'right'), ' the ', ann('payload', '수익 하중', 'right'), ' now.');
+  assert.equal(textOf(p), 'Attackers exploit the payload now.');
+  assert.equal(textOf(el('li', {}, 'Item ', ann('delve', '더듬다', 'right'), tr('번역문이 여기 들어 있다'), ' end')), 'Item delve end');
+});
+
+test('textExceeds: 길이 상한은 주석 뜻 글자를 빼고 잰다(위·오른쪽 모두, 주석이 많은 긴 문단이 일찍 막히지 않게)', () => {
+  for (const position of ['top', 'right']) {
+    const p = el('p', {}, ...Array.from({ length: 50 }, () => ann('exploit', '이용하다이용하다이용하다', position))); // 단어 7자 + 뜻 12자(+괄호)
+    assert.ok(!textExceeds(p, 350), position); // 본문 350자, 뜻 글자를 합치면 넘는다
+    assert.ok(textExceeds(p, 349), position);
+  }
   assert.ok(!textExceeds(el('p', {}, 'a ', tr('가'.repeat(500)), 'b'), 10)); // 번역 노드는 세지 않는다
   assert.ok(textExceeds(el('p', {}, 'x'.repeat(11)), 10));
 });
@@ -132,11 +143,13 @@ test('textOf: 다른 data-readgloss 노드(button 등)는 통째로 제외, 페�
   assert.equal(textOf(p), 'a b 漢kan');
 });
 
-test('findBlock: 주석 붙은 단어(ruby ann)와 그 rt 를 눌러도 문단 블록을 찾는다', () => {
+test('findBlock: 주석 붙은 단어(ann)와 그 뜻 글자(gloss)를 눌러도 문단 블록을 찾는다', () => {
   const r = ann('exploit', '이용하다');
   const p = el('p', {}, 'x ', r);
   assert.equal(findBlock(r), p);
   assert.equal(findBlock(r.childNodes[1]), p); // rt
+  const q = el('p', {}, 'y ', ann('payload', '뜻', 'right'));
+  assert.equal(findBlock(q.childNodes[1].childNodes[1]), q); // 오른쪽 위치의 "(뜻)" span
   assert.equal(findBlock(tr('번역')), null); // 번역 노드는 여전히 대상이 아니다
 });
 
@@ -185,6 +198,6 @@ test('manifest: content script 목록에 paragraph-core.js, paragraph.js 가 이
   const m = JSON.parse(readFileSync(new URL('../extension/manifest.json', import.meta.url), 'utf8'));
   const js = m.content_scripts[0].js;
   const i = js.indexOf('paragraph-core.js');
-  assert.ok(i > 0 && js[i + 1] === 'paragraph.js', js.join()); // 뒤에 붙는 스크립트(annotate)는 각자 시험한다
+  assert.ok(i > 0 && js.indexOf('paragraph.js') > i, js.join()); // 사이에 끼는 파일(annotate-core, content)은 각자 시험한다
   for (const f of ['paragraph-core.js', 'paragraph.js']) assert.doesNotMatch(readFileSync(new URL(`../extension/${f}`, import.meta.url), 'utf8'), /^\s*(import|export)\s/m, f);
 });

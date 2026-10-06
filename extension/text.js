@@ -70,12 +70,12 @@
     return { left: left + viewport.scrollX, top: top + viewport.scrollY };
   }
 
-  // block 안 글자(자동 주석의 rt 와 우리가 넣은 번역 노드는 뺀다)와, (container, offset) 지점이 그 글자 안 몇 번째인지.
+  // block 안 글자(자동 주석의 뜻 글자 data-readgloss="gloss" 와 우리가 넣은 번역 노드는 뺀다, ann 감싸개 안의 원래 단어는 남긴다)와, (container, offset) 지점이 그 글자 안 몇 번째인지.
   // textContent·Range.toString() 은 rt 글자까지 섞어서 쓰지 못한다. container 가 요소면 offset 은 자식 번호. 못 찾으면 글자 끝.
   function plainTextAt(block, container, offset) {
     const skip = (n) => {
       const rg = n.getAttribute?.('data-readgloss');
-      return (rg != null && rg !== 'ann') || (n.tagName === 'RT' && n.parentElement?.getAttribute?.('data-readgloss') === 'ann');
+      return rg != null && rg !== 'ann';
     };
     let text = '';
     let at = -1;
