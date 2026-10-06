@@ -125,3 +125,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   words(msg).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
   return true; // 비동기 응답
 });
+
+// --- 패널(T6b): 헤더의 다리 상태 점. /ping 은 토큰이 필요해서 다른 요청과 같은 흐름으로 보낸다. ---
+async function ping(retried = false) {
+  const token = await getToken(retried);
+  if (!token) return { error: 'pair-failed' };
+  const res = await bridgeFetch('/ping', { headers: { 'X-Bridge-Token': token } });
+  if (res.status === 401 && !retried) return ping(true);
+  return res.ok ? { ok: true } : { error: `http-${res.status}` };
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'ping') return;
+  ping().then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
+  return true; // 비동기 응답
+});
+
+// 툴바 아이콘을 누르면 그 탭의 패널을 연다(떠 있는 버튼을 숨겨도 열 수 있게). sendMessage 는 'tabs' 권한이 필요 없고,
+// content script 가 없는 페이지(chrome:// 등)에서는 거절되니 삼킨다.
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.id != null) chrome.tabs.sendMessage(tab.id, { type: 'open-panel' }).catch(() => {});
+});

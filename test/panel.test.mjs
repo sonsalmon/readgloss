@@ -128,3 +128,15 @@ test('themeAttr: auto 는 속성을 없애고 light·dark 는 그대로', () => 
   assert.equal(C.themeAttr('light'), 'light');
   assert.equal(C.themeAttr('x'), null);
 });
+
+test('manifest: panel.js 는 annotate.js 뒤, 탭 파일(panel-words.js)보다 앞(계약 G), action 있음, 권한은 storage 하나', async () => {
+  const { readFileSync } = await import('node:fs');
+  const m = JSON.parse(readFileSync(new URL('../extension/manifest.json', import.meta.url), 'utf8'));
+  const js = m.content_scripts[0].js;
+  assert.ok(js.indexOf('panel.js') > js.indexOf('annotate.js'), js.join());
+  if (js.includes('panel-words.js')) assert.ok(js.indexOf('panel.js') < js.indexOf('panel-words.js'), js.join());
+  assert.ok(js.indexOf('settings-core.js') < js.indexOf('panel.js'));
+  assert.deepEqual(m.action, { default_title: 'readgloss' });
+  assert.deepEqual(m.permissions, ['storage']); // tabs 권한 없이 툴바 아이콘 -> sendMessage
+  assert.doesNotMatch(readFileSync(new URL('../extension/panel.js', import.meta.url), 'utf8'), /^\s*(import|export)\s/m);
+});

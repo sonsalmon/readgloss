@@ -7,10 +7,11 @@
   "permissions": ["storage"],
   "host_permissions": ["http://127.0.0.1:47831/*"],
   "background": { "service_worker": "background.js" },
+  "action": { "default_title": "readgloss" },
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["text.js", "settings-core.js", "paragraph-core.js", "annotate-core.js", "content.js", "paragraph.js", "annotate.js", "panel-words.js"],
+      "js": ["text.js", "settings-core.js", "paragraph-core.js", "annotate-core.js", "content.js", "paragraph.js", "annotate.js", "panel.js", "panel-words.js"],
       "all_frames": false
     }
   ]
