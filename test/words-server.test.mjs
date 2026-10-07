@@ -142,6 +142,44 @@ test('/dict: 원형 lemma 와 짧은 뜻 gloss 를 더해 준다(mitigations -> 
   }
 });
 
+test('/words memo: 단어·구에 붙고 ts 유지, 응답 모양(단어 전체 상태·구 {id, phrases}), 없는 대상 404, 1000자 초과 400, 공부 기록 없음', async () => {
+  const s = await start();
+  try {
+    await s.words({ op: 'save', lemma: 'mitigation', word: 'mitigations', gloss: '완화' });
+    const ts = (await s.req('GET', '/words', { headers: s.auth })).json().saved.mitigation.ts;
+    const m = await s.words({ op: 'memo', lemma: 'Mitigation', memo: '모듈 290' });
+    assert.equal(m.status, 200);
+    assert.deepEqual(Object.keys(m.json()).sort(), ['history', 'known', 'phrases', 'saved']); // 단어는 전체 상태
+    assert.equal(m.json().saved.mitigation.memo, '모듈 290');
+    assert.equal(m.json().saved.mitigation.ts, ts); // ts 는 그대로
+    await s.words({ op: 'save', lemma: 'mitigation', word: 'mitigation', gloss: '경감' }); // 재저장해도 메모는 남는다
+    assert.equal((await s.req('GET', '/words', { headers: s.auth })).json().saved.mitigation.memo, '모듈 290');
+    assert.equal('memo' in (await s.words({ op: 'memo', lemma: 'mitigation', memo: '' })).json().saved.mitigation, false); // '' 이면 삭제
+    // 없는 단어 -> 404 not-found
+    const miss = await s.words({ op: 'memo', lemma: 'nope', memo: 'x' });
+    assert.equal(miss.status, 404);
+    assert.deepEqual(miss.json(), { error: 'not-found' });
+    // 구: 저장 -> 메모
+    const id = (await s.words({ op: 'save-phrase', text: 'Apply the patch.', translation: '패치를 적용한다.' })).json().id;
+    const pm = await s.words({ op: 'memo', id, memo: '구 메모' });
+    assert.equal(pm.status, 200);
+    assert.deepEqual(Object.keys(pm.json()).sort(), ['id', 'phrases']); // 구는 { id, phrases }
+    assert.equal(pm.json().id, id);
+    assert.equal(pm.json().phrases[id].memo, '구 메모');
+    assert.equal((await s.words({ op: 'memo', id: 'ffffffffffff', memo: 'x' })).status, 404); // 없는 구
+    // 길이 초과는 자르지 않고 400
+    assert.equal((await s.words({ op: 'memo', lemma: 'mitigation', memo: 'x'.repeat(1001) })).status, 400);
+    assert.equal(s.asked.length, 0); // 메모는 AI 를 안 부른다
+    // 공부 기록을 남기지 않는다: 앞선 save 기록은 그대로, 메모만 더하면 줄 수가 늘지 않는다
+    const logsBefore = readFileSync(join(s.dir, 'study-log.jsonl'), 'utf8');
+    await s.words({ op: 'memo', lemma: 'mitigation', memo: '마지막 메모' });
+    await s.words({ op: 'memo', id, memo: '마지막 구 메모' });
+    assert.equal(readFileSync(join(s.dir, 'study-log.jsonl'), 'utf8'), logsBefore);
+  } finally {
+    await s.bridge.close();
+  }
+});
+
 // 실제 맥 사전 도우미 실연동(darwin + native/macdict 가 있을 때만)
 const bin = new URL('../native/macdict', import.meta.url).pathname;
 const skip = process.platform !== 'darwin' || !existsSync(bin) ? '맥이 아니거나 npm run build:dict 를 안 했어요' : false;

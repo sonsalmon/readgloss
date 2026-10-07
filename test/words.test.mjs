@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MAX_HISTORY, createWords, parseWordsOp } from '../bridge/words.mjs';
+import { MEMO_MAX, MAX_HISTORY, createWords, parseWordsOp, phraseId } from '../bridge/words.mjs';
 
 const tmp = () => join(mkdtempSync(join(tmpdir(), 'rg-words-')), 'words.json');
 const clock = (start = 1000) => {
@@ -117,4 +117,74 @@ test('createWords: 깨진 파일은 빈 상태로 시작하되 원본을 .broken
   assert.deepEqual(Object.keys(v.saved), ['fine']);
   assert.deepEqual(v.history.map((x) => x.lemma), ['ok']);
   assert.equal(existsSync(`${file2}.broken`), false);
+});
+
+// ---- T19: 메모(memo) ----
+
+test('parseWordsOp memo: 단어(lemma)/구(id) 중 정확히 하나, memo 0~1000자만 통과한다', () => {
+  assert.deepEqual(parseWordsOp({ op: 'memo', lemma: 'Mitigation', memo: '완화 메모' }), { op: 'memo', lemma: 'mitigation', memo: '완화 메모' });
+  assert.deepEqual(parseWordsOp({ op: 'memo', id: 'abcdefabcdef', memo: '' }), { op: 'memo', id: 'abcdefabcdef', memo: '' });
+  assert.deepEqual(parseWordsOp({ op: 'memo', lemma: 'delve', memo: '가'.repeat(MEMO_MAX) }).memo.length, MEMO_MAX);
+  // 둘 다·둘 다 아님, 잘못된 lemma·id, memo 길이 초과·타입 오류는 거절
+  for (const v of [
+    { op: 'memo', memo: 'x' },
+    { op: 'memo', lemma: 'delve', id: 'abcdefabcdef', memo: 'x' },
+    { op: 'memo', lemma: '1bad', memo: 'x' },
+    { op: 'memo', lemma: 'a b', memo: 'x' },
+    { op: 'memo', id: 'ABCDEF', memo: 'x' },
+    { op: 'memo', id: 5, memo: 'x' },
+    { op: 'memo', lemma: 'delve', memo: 'x'.repeat(MEMO_MAX + 1) },
+    { op: 'memo', lemma: 'delve', memo: 5 },
+    { op: 'memo', lemma: 'delve' },
+  ]) {
+    assert.equal(parseWordsOp(v), null, JSON.stringify(v));
+  }
+});
+
+test('createWords memo: saved 단어에 붙고 ts 는 그대로, "" 이면 지우고, 없는 대상은 null(404)', () => {
+  const { w } = fresh();
+  run(w, { op: 'save', lemma: 'mitigation', word: 'mitigations', gloss: '완화' });
+  const tsBefore = w.all().saved.mitigation.ts;
+  const out = run(w, { op: 'memo', lemma: 'mitigation', memo: 'HTB 모듈 290' });
+  assert.equal(out.saved.mitigation.memo, 'HTB 모듈 290');
+  assert.equal(out.saved.mitigation.ts, tsBefore); // ts 는 바꾸지 않는다
+  // 다시 save 해도 메모는 남는다
+  run(w, { op: 'save', lemma: 'mitigation', word: 'mitigation', gloss: '경감' });
+  assert.equal(w.all().saved.mitigation.memo, 'HTB 모듈 290');
+  assert.equal(w.all().saved.mitigation.gloss, '경감');
+  // 빈 문자열이면 칸을 지운다
+  assert.equal('memo' in run(w, { op: 'memo', lemma: 'mitigation', memo: '' }).saved.mitigation, false);
+  // saved 에 없으면 null
+  assert.equal(w.apply(parseWordsOp({ op: 'memo', lemma: 'delve', memo: 'x' })), null);
+});
+
+test('createWords memo: phrases 구에 붙고 응답은 { id, phrases }, 다시 save-phrase 해도 유지, 없으면 null', () => {
+  const { w } = fresh();
+  const id = phraseId('Apply the patch.');
+  run(w, { op: 'save-phrase', text: 'Apply the patch.', translation: '패치를 적용한다.' });
+  const tsBefore = w.all().phrases[id].ts;
+  const out = run(w, { op: 'memo', id, memo: '보안 패치 맥락' });
+  assert.deepEqual(Object.keys(out).sort(), ['id', 'phrases']);
+  assert.equal(out.id, id);
+  assert.equal(out.phrases[id].memo, '보안 패치 맥락');
+  assert.equal(out.phrases[id].ts, tsBefore);
+  run(w, { op: 'save-phrase', text: 'Apply the patch.', translation: '고친 번역' });
+  assert.equal(w.all().phrases[id].memo, '보안 패치 맥락');
+  assert.equal(w.all().phrases[id].translation, '고친 번역');
+  assert.equal(w.apply(parseWordsOp({ op: 'memo', id: 'ffffffffffff', memo: 'x' })), null);
+});
+
+test('createWords: 파일을 다시 열어도 memo 를 살린다(1000자 초과 memo 는 버린다)', () => {
+  const file = tmp();
+  writeFileSync(
+    file,
+    JSON.stringify({
+      saved: { keep: { word: 'keep', gloss: '지킴', ts: 5, memo: '살아남는 메모' }, drop: { word: 'drop', gloss: '버림', ts: 6, memo: 'x'.repeat(MEMO_MAX + 1) } },
+      phrases: { abcdefabcdef: { text: 'phrase here', translation: '뜻', ts: 7, memo: '구 메모' } },
+    }),
+  );
+  const v = createWords({ file }).all();
+  assert.equal(v.saved.keep.memo, '살아남는 메모');
+  assert.equal('memo' in v.saved.drop, false);
+  assert.equal(v.phrases.abcdefabcdef.memo, '구 메모');
 });

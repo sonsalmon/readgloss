@@ -123,7 +123,7 @@
       .filter((p) => !q || [p.text, p.translation, p.context?.translation, p.context?.note, p.sentence].some((f) => norm(f).includes(q)))
       .map((p) => ({
         id: p.id, text: p.text, preview: clip(p.text, 300), translation: p.translation ?? '', context: p.context ?? null,
-        kind: kindOf(p), sentence: p.sentence ?? '', primary: phrasePrimary(p), sourceTitle: p.title ?? '',
+        kind: kindOf(p), sentence: p.sentence ?? '', primary: phrasePrimary(p), sourceTitle: p.title ?? '', memo: p.memo ?? '',
         title: p.title || hostOf(p.url ?? ''), href: safeHref(p.url ?? ''), ts: p.ts,
       }));
   }
@@ -173,10 +173,12 @@
   // 내 사전이 바뀌면 주석을 걷고 다시 입히라고 알리는 이벤트(window 'readgloss:mydict')
   const mydictEventDetail = (op, key) => (op === 'delete' ? { set: [], delete: [key] } : { set: [key], delete: [] });
   const unsavePhraseMessage = (id) => ({ type: 'words', op: 'unsave-phrase', id });
+  // T19: 메모 저장 메시지. byId 면 구·문장(id), 아니면 단어(lemma).
+  const memoMessage = (key, memo, byId = false) => ({ type: 'words', op: 'memo', ...(byId ? { id: key } : { lemma: key }), memo: String(memo ?? '') });
 
   globalThis.readglossWords = {
     LISTS, SUBS, formatDate, counts, countsAll, actionsFor, rowsFor, buttonModel, eventDetail, wordEventDetail, messageFor,
-    clip, PHRASE_FILTERS, phraseCounts, phrasePrimary, phraseRows, pickWord, lookupDetail, mydictRows, checkMydict, mydictMessage, mydictEventDetail, unsavePhraseMessage,
+    clip, PHRASE_FILTERS, phraseCounts, phrasePrimary, phraseRows, pickWord, lookupDetail, mydictRows, checkMydict, mydictMessage, mydictEventDetail, unsavePhraseMessage, memoMessage,
   };
 
   // ---- 그리기 ----
@@ -209,6 +211,8 @@
     .wrap { white-space: normal; overflow-wrap: anywhere; }
     .sent { color: var(--w-muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .sent.wrap { white-space: normal; overflow-wrap: anywhere; }
+    .memo { color: var(--w-muted); font-size: 12.5px; margin-top: 3px; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .memo::before { content: "메모 · "; color: var(--w-accent); font-weight: 600; }
     .exp { color: var(--w-muted); font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
     .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
     .date { color: var(--w-muted); font-size: 12px; margin-right: auto; font-variant-numeric: tabular-nums; }
@@ -230,6 +234,7 @@
     .form { display: grid; gap: 6px; padding: 8px 0; }
     .form label { display: grid; gap: 2px; font-size: 12px; color: var(--w-muted); }
     .form input { box-sizing: border-box; width: 100%; padding: 4px 8px; border-radius: 7px; border: 1px solid var(--w-border); background: none; color: var(--w-fg); font: inherit; font-size: 13.5px; }
+    .form textarea { box-sizing: border-box; width: 100%; min-height: 44px; padding: 4px 8px; border-radius: 7px; border: 1px solid var(--w-border); background: none; color: var(--w-fg); font: inherit; font-size: 13.5px; resize: vertical; }
     .btns { display: flex; gap: 6px; justify-content: flex-end; }
     .err { color: var(--w-err); font-size: 12.5px; overflow-wrap: anywhere; }
     .addbar { margin: 8px 0 0; }
@@ -272,6 +277,10 @@
     let adding = false;
     let editing = null; // 고치는 중인 key
     let draft = { ko: '', note: '' };
+    let memoEdit = null; // 메모 고치는 중인 { kind: 'word'|'phrase', key }
+    let memoDraft = '';
+    let memoErr = '';
+    let focusMemo = false;
     let confirming = null; // 한 번 더 눌러야 지워지는 key
     let formErr = { where: '', text: '' };
     let selfEvent = false;
@@ -327,7 +336,7 @@
       b.type = 'button';
       b.addEventListener('click', () => {
         list = l.id;
-        editing = confirming = null;
+        editing = confirming = memoEdit = null;
         draw();
       });
       subs.append(b);
@@ -338,6 +347,7 @@
       b.type = 'button';
       b.addEventListener('click', () => {
         phraseKind = f.id;
+        memoEdit = null;
         draw();
       });
       kinds.append(b);
@@ -392,6 +402,50 @@
         state = { ...state, phrases: r?.phrases ?? rest }; // 다리가 새 목록을 주면 그것을, 아니면 이 줄만 뺀다
       }
       message = ok ? '' : errText(r);
+      draw();
+    }
+
+    // T19: 메모 고치기. Enter 저장 · Shift+Enter 줄바꿈 · Esc 취소, keydown 은 페이지로 새지 않게 멈춘다.
+    function memoForm(kind, key) {
+      const form = el('div', 'form');
+      const ta = el('textarea');
+      ta.value = memoDraft;
+      ta.maxLength = 1000;
+      ta.rows = 2;
+      ta.setAttribute('aria-label', '메모 (Enter 저장, Shift+Enter 줄바꿈)');
+      ta.addEventListener('input', () => (memoDraft = ta.value));
+      ta.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+          memoEdit = null;
+          memoErr = '';
+          draw();
+        } else if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault(); // Enter 로 저장한다(줄바꿈은 Shift+Enter). 이 입력칸 안에서만 막는다.
+          saveMemo(kind, key);
+        }
+      });
+      form.append(ta);
+      if (memoErr) {
+        const err = el('div', 'err', memoErr);
+        err.setAttribute('role', 'alert');
+        form.append(err);
+      }
+      return form;
+    }
+
+    async function saveMemo(kind, key) {
+      if (busy) return;
+      busy = true;
+      const r = await ctx.send(W.memoMessage(key, memoDraft, kind === 'phrase'));
+      busy = false;
+      if (r?.error) memoErr = errText(r);
+      else {
+        memoErr = '';
+        memoEdit = null;
+        if (kind === 'word') state = r; // 단어 메모 응답은 전체 상태
+        else if (r?.phrases) state = { ...state, phrases: r.phrases }; // 구 메모 응답은 { id, phrases }
+      }
       draw();
     }
 
@@ -476,8 +530,15 @@
         s.title = r.sentence;
         li.append(s);
       }
+      // T19: 메모는 단어장(saved) 줄에서만 보이고 고칠 수 있다(다리도 saved 에만 붙인다).
+      const editingMemo = list === 'saved' && memoEdit?.kind === 'word' && memoEdit.key === r.lemma;
+      if (editingMemo) li.append(memoForm('word', r.lemma));
+      else if (list === 'saved' && r.memo) li.append(el('div', 'memo', r.memo));
       const meta = el('div', 'meta');
       meta.append(el('span', 'date', W.formatDate(r.ts)));
+      if (list === 'saved' && !editingMemo) {
+        meta.append(btn(r.memo ? '메모 고치기' : '메모', () => { memoEdit = { kind: 'word', key: r.lemma }; memoDraft = r.memo ?? ''; memoErr = ''; focusMemo = true; draw(); }, 'act', `${r.lemma} 메모`));
+      }
       for (const a of r.actions) meta.append(btn(a.label, () => act(a.op, r), 'act', `${r.lemma} ${a.label}`));
       li.append(meta);
       return li;
@@ -503,6 +564,9 @@
         if (p.primary.text) li.append(el('div', 'ptrans', p.primary.text));
         if (p.context?.note) li.append(el('div', 'exp', p.context.note));
       }
+      const editingMemo = memoEdit?.kind === 'phrase' && memoEdit.key === p.id;
+      if (editingMemo) li.append(memoForm('phrase', p.id));
+      else if (p.memo) li.append(el('div', 'memo', p.memo));
       const meta = el('div', 'meta');
       meta.append(el('span', 'date', W.formatDate(p.ts)));
       if (p.href) {
@@ -513,6 +577,7 @@
         a.title = p.href;
         meta.append(a);
       }
+      if (!editingMemo) meta.append(btn(p.memo ? '메모 고치기' : '메모', () => { memoEdit = { kind: 'phrase', key: p.id }; memoDraft = p.memo ?? ''; memoErr = ''; focusMemo = true; draw(); }, 'act', `${p.preview.slice(0, 30)} 메모`));
       meta.append(btn('빼기', () => removePhrase(p), 'act', `${p.preview.slice(0, 30)} 단어장에서 빼기`));
       li.append(meta);
       return li;
@@ -589,6 +654,10 @@
       addErr.textContent = formErr.where === 'add' ? formErr.text : '';
       addToggle.setAttribute('aria-expanded', String(adding));
       ul.replaceChildren(...rows.map(build));
+      if (focusMemo) {
+        focusMemo = false;
+        root.querySelector?.('textarea')?.focus?.();
+      }
     }
 
     async function loadMine() {

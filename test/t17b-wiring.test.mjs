@@ -63,13 +63,16 @@ test('계약 9 접착: 사전 카드가 저장 문맥·출처를 쓰고, 패널 
   assert.match(panel, /!e\.readglossCardClosed/);
 });
 
-test('계약 10: 바뀐 확장 코드는 textContent 만 쓰고, preventDefault 는 우리 버튼(표현 [☆])에서만, chrome.storage 는 들이지 않는다', () => {
+test('계약 10: 바뀐 확장 코드는 textContent 만 쓰고, preventDefault 는 우리 버튼·메모 입력칸에서만, chrome.storage 는 들이지 않는다', () => {
   for (const f of ['selection.js', 'paragraph.js', 'panel-words.js', 'content.js', 'selection-core.js', 'background.js']) {
     assert.doesNotMatch(read(f), /\.innerHTML\s*=/, `${f}: innerHTML 금지`);
   }
-  for (const f of ['paragraph.js', 'panel-words.js', 'content.js', 'selection-core.js']) {
+  for (const f of ['paragraph.js', 'content.js', 'selection-core.js']) {
     assert.doesNotMatch(read(f), /\.preventDefault\(/, `${f}: 페이지 기본 동작을 막지 않는다`);
   }
+  // 정밀 예외(T19): panel-words.js 의 메모 입력칸 Enter 저장에서만(줄바꿈은 Shift+Enter). 페이지 클릭·링크는 막지 않는다.
+  const pw = read('panel-words.js');
+  assert.equal((pw.match(/\.preventDefault\(/g) ?? []).length, 1, 'panel-words.js 의 preventDefault 는 메모 입력칸 Enter 한 곳뿐');
   // 정밀 예외(T18): selection.js 의 표현 [☆]/[★] 버튼 click 한 곳에서만 링크 이동을 막는다. 페이지의 다른 요소·링크 클릭은 막지 않는다.
   const sel = read('selection.js');
   assert.equal((sel.match(/\.preventDefault\(/g) ?? []).length, 1, 'preventDefault 는 표현 버튼 click 한 곳뿐');

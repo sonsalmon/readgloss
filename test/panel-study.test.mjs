@@ -49,7 +49,12 @@ test('chips / periodTotal: 오늘 요약은 종류 순서 고정, 0건도 자리
   assert.deepEqual(c.map((x) => x.label), ['찾은 단어', '드래그 번역', '문맥 번역', 'AI 문맥 뜻', '문단 번역', '저장', '알아요', '내 사전']);
   assert.deepEqual(c.map((x) => x.n), [5, 2, 0, 0, 0, 1, 0, 0]);
   assert.equal(S.periodTotal(f), 13);
-  assert.deepEqual(S.chips(undefined).map((x) => x.n), [0, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(S.chips(undefined).map((x) => x.n), [0, 0, 0, 0, 0, 0, 0]); // mt 는 0이면 숨긴다
+});
+
+test('chips: mt(드래그 번역) 칸은 0이면 숨기고, 옛 기록이 있으면 그대로 보여 준다(T19)', () => {
+  assert.deepEqual(S.chips({ counts: { dict: 1, mt: 0 } }).map((c) => c.id).includes('mt'), false);
+  assert.deepEqual(S.chips({ counts: { dict: 1, mt: 3 } }).filter((c) => c.id === 'mt').map((c) => c.n), [3]);
 });
 
 test('listDays: 기록 있는 날만 최신 날부터, 첫 날만 펼침. 날짜 제목은 월 일 (요일)', () => {

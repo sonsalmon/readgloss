@@ -73,15 +73,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // --- 문단 번역(T2): 위 lookup 과 같은 흐름. content script 의 'translate' 요청을 다리 /translate 로 전달한다. ---
-async function translate({ text, force, host, domains, page }, retried = false) {
+async function translate({ text, force, bulk, host, domains, page }, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
   const res = await bridgeFetch('/translate', {
     method: 'POST',
     headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, force: force === true, host, domains, page }),
+    body: JSON.stringify({ text, force: force === true, bulk: bulk === true, host, domains, page }),
   });
-  if (res.status === 401 && !retried) return translate({ text, force, host, domains, page }, true);
+  if (res.status === 401 && !retried) return translate({ text, force, bulk, host, domains, page }, true);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return { error: data.error || `http-${res.status}` };
   return { translation: data.translation, expressions: data.expressions, cached: data.cached }; // expressions: 기억할 표현(T17, 없을 수 있다)
@@ -139,8 +139,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function words(msg, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
-  const { op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, page } = msg; // 구·문장(save-phrase·unsave-phrase) 필드는 T14, kind('expression'|'sentence')는 T17
-  const init = op === 'get' ? { headers: { 'X-Bridge-Token': token } } : { method: 'POST', headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, page }) };
+  const { op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page } = msg; // 구·문장(save-phrase·unsave-phrase) 필드는 T14, kind('expression'|'sentence')는 T17, memo 는 T19
+  const init = op === 'get' ? { headers: { 'X-Bridge-Token': token } } : { method: 'POST', headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page }) };
   const res = await bridgeFetch('/words', init);
   if (res.status === 401 && !retried) return words(msg, true);
   const data = await res.json().catch(() => ({}));

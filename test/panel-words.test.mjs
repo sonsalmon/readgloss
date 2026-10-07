@@ -227,3 +227,19 @@ test('lookupDetail: 저장 문장을 문맥·문장으로, 저장 주소·제목
   assert.equal(none.context.title, '');
   assert.equal(W.lookupDetail({ word: 'a', sentence: 'x'.repeat(1500), rect }).sentence.length, 1000);
 });
+
+// ---- T19: 메모 ----
+test('memoMessage: 단어는 lemma, 구는 id 로 memo 를 싣는다(빈 문자열도 그대로)', () => {
+  assert.deepEqual(W.memoMessage('mitigation', '모듈 290'), { type: 'words', op: 'memo', lemma: 'mitigation', memo: '모듈 290' });
+  assert.deepEqual(W.memoMessage('abcdefabcdef', '', true), { type: 'words', op: 'memo', id: 'abcdefabcdef', memo: '' });
+});
+
+test('rowsFor: 단어장 줄은 memo 를 그대로 싣는다', () => {
+  const st = { known: {}, saved: { mitigation: { word: 'mitigation', gloss: '완화', sentence: '', url: '', memo: '모듈 290', ts: 1 } }, history: [] };
+  assert.deepEqual(W.rowsFor(st, 'saved').map((r) => [r.lemma, r.memo]), [['mitigation', '모듈 290']]);
+});
+
+test('phraseRows: 메모가 있으면 줄에 실리고 없으면 빈 문자열', () => {
+  const rows = W.phraseRows({ aaa111: { text: 'x y', translation: '뜻', memo: '구 메모', ts: 5 }, bbb222: { text: 'p q', translation: '뜻', ts: 6 } });
+  assert.deepEqual(Object.fromEntries(rows.map((r) => [r.id, r.memo])), { bbb222: '', aaa111: '구 메모' });
+});

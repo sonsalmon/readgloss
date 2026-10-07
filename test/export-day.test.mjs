@@ -90,6 +90,26 @@ test('문장은 200자에서 자르고 말줄임', () => {
   assert.ok(!md.includes('x'.repeat(201)));
 });
 
+// ---- T19: 메모 ----
+test('메모가 있으면 단어·표현·구 줄에 " / 메모: <한 줄 정리>" 를 붙이고, 없으면 안 붙인다', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'export-day-'));
+  writeFileSync(join(dir, 'words.json'), JSON.stringify({
+    saved: {
+      mitigate: { word: 'mitigated', gloss: '완화하다', sentence: 'We mitigated the risk.', memo: '  모듈  290 용어 ', ts: T(6) },
+      plain: { word: 'plain', gloss: '평범', memo: '', ts: T(6, 1) },
+    },
+    phrases: {
+      aaaaaaaaaaaa: { text: 'in the wild', translation: '실제 환경에서', memo: '관용 표현', ts: T(6, 2) },
+      cccccccccccc: { text: 'delve into', translation: '파고들다', kind: 'expression', sentence: 'Delve into it.', memo: 'x'.repeat(300), ts: T(6, 3) },
+    },
+  }));
+  const md = exportDay('2026-10-06', dir);
+  assert.match(md, /^- \*\*mitigate\*\* \(mitigated\) — 완화하다 \/ "We mitigated the risk\." \/ 메모: 모듈 290 용어$/m); // 공백은 한 줄로 정리
+  assert.doesNotMatch(md, /^- \*\*plain\*\*.*메모/m); // 빈 메모는 안 붙는다
+  assert.match(md, /^- "in the wild" — 실제 환경에서 \/ 메모: 관용 표현$/m);
+  assert.ok(md.includes(`- **delve into** — 파고들다 / "Delve into it." / 메모: ${'x'.repeat(200)}…`)); // clip 규칙(200자+…)
+});
+
 test('CLI: 날짜와 --data 를 받아 표준 출력으로 찍는다', () => {
   const out = execFileSync('node', [SCRIPT, '2026-10-06', '--data', fake()], { encoding: 'utf8' });
   assert.match(out, /mitigated/);

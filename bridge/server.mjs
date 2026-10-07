@@ -149,7 +149,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     const { terms, mineKey } = termsFor(norm, active);
     try {
       const r = await translate({ text: norm, force: force === true, domainsKey: [glossary.keyOf(active), mineKey && `mine:${mineKey}`].filter(Boolean).join('|'), terms });
-      log('paragraph', norm.slice(0, 200), r.translation, value);
+      if (value.bulk !== true) log('paragraph', norm.slice(0, 200), r.translation, value); // T19: 전체 번역(bulk)은 문단마다 기록하지 않는다
       send(res, 200, r, cors);
     } catch (e) {
       sendAiError(res, e, cors);
@@ -197,7 +197,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       } catch (e) {
         if (!mine) throw e;
       }
-      log('mt', text, mine?.ko ?? translation, value);
+      // T19: /mt 는 공부 기록을 남기지 않는다(맥 번역은 복사하려는 드래그에도 불리므로).
       send(res, 200, { translation: translation ?? mine.ko, engine: translation === null ? 'mydict' : 'apple', ...(term ? { term } : {}), ...(mine ? { mine } : {}) }, cors);
     } catch (e) {
       if (e instanceof MtUnavailableError) send(res, 503, { error: 'mt-unavailable' }, cors);
@@ -257,6 +257,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     const op = parseWordsOp(value);
     if (!op) return send(res, 400, { error: 'bad-request' }, cors);
     const out = words.apply(op);
+    if (!out) return send(res, 404, { error: 'not-found' }, cors); // memo 대상(saved·phrases)이 없다
     if (op.op === 'save') log('save', op.word, op.gloss, value, op.url);
     else if (op.op === 'save-phrase') log('save', op.text, op.translation, value, op.url);
     else if (op.op === 'known') log('known', op.lemma, undefined, value);

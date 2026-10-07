@@ -16,6 +16,8 @@ const clip = (s) => {
   const t = String(s ?? '').replace(/\s+/g, ' ').trim();
   return t.length > CLIP ? `${t.slice(0, CLIP)}…` : t;
 };
+// T19: 메모가 있으면 줄 끝에 " / 메모: ..." 로 붙인다(한 줄 정리는 clip 규칙 그대로)
+const memo = (v) => (typeof v?.memo === 'string' && v.memo.trim() ? ` / 메모: ${clip(v.memo)}` : '');
 const readText = (file) => {
   try {
     return readFileSync(file, 'utf8');
@@ -66,19 +68,19 @@ export function exportDay(date, dataDir) {
     // 원형(키)을 굵게, 저장 때 본 굴절형(word)이 원형과 다르면 괄호로 덧붙인다
     for (const [lemma, w] of saved) {
       const form = clip(w.word);
-      out.push(`- **${lemma}**${form && form.toLowerCase() !== lemma ? ` (${form})` : ''} — ${clip(w.gloss)}${w.sentence ? ` / "${clip(w.sentence)}"` : ''}`);
+      out.push(`- **${lemma}**${form && form.toLowerCase() !== lemma ? ` (${form})` : ''} — ${clip(w.gloss)}${w.sentence ? ` / "${clip(w.sentence)}"` : ''}${memo(w)}`);
     }
     out.push('');
   }
   if (expressions.length) {
     out.push('### 표현', '');
-    for (const p of expressions) out.push(`- **${clip(p.text)}** — ${clip(tr(p))}${p.sentence ? ` / "${clip(p.sentence)}"` : ''}`);
+    for (const p of expressions) out.push(`- **${clip(p.text)}** — ${clip(tr(p))}${p.sentence ? ` / "${clip(p.sentence)}"` : ''}${memo(p)}`);
     out.push('');
   }
   if (phrases.length) {
     out.push('### 구·문장', '');
     for (const p of phrases) {
-      out.push(`- "${clip(p.text)}" — ${clip(tr(p))}`);
+      out.push(`- "${clip(p.text)}" — ${clip(tr(p))}${memo(p)}`);
       if (p.context?.note) out.push(`  - note: ${clip(p.context.note)}`);
     }
     out.push('');

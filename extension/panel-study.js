@@ -52,8 +52,8 @@
     });
   }
 
-  // 오늘 요약 칩: 종류 순서 고정, 0건도 그대로(자리가 흔들리지 않게)
-  const chips = (day) => KINDS.map((k) => ({ id: k.id, label: k.label, n: Number(day?.counts?.[k.id]) || 0 }));
+  // 오늘 요약 칩: 종류 순서 고정, 0건도 그대로(자리가 흔들리지 않게). 단 'mt'(드래그 번역)는 T19부터 새로 늘지 않으므로 0이면 숨긴다.
+  const chips = (day) => KINDS.map((k) => ({ id: k.id, label: k.label, n: Number(day?.counts?.[k.id]) || 0 })).filter((c) => !(c.id === 'mt' && c.n === 0));
   const periodTotal = (filled) => filled.reduce((n, d) => n + d.total, 0);
 
   const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
