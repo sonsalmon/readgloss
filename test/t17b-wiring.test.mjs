@@ -67,7 +67,7 @@ test('계약 10: 바뀐 확장 코드는 textContent 만 쓰고, preventDefault 
   for (const f of ['selection.js', 'paragraph.js', 'panel-words.js', 'content.js', 'selection-core.js', 'background.js']) {
     assert.doesNotMatch(read(f), /\.innerHTML\s*=/, `${f}: innerHTML 금지`);
   }
-  for (const f of ['paragraph.js', 'content.js', 'selection-core.js']) {
+  for (const f of ['paragraph.js', 'selection-core.js']) {
     assert.doesNotMatch(read(f), /\.preventDefault\(/, `${f}: 페이지 기본 동작을 막지 않는다`);
   }
   // 정밀 예외(T19): panel-words.js 의 메모 입력칸 Enter 저장에서만(줄바꿈은 Shift+Enter). 페이지 클릭·링크는 막지 않는다.
@@ -76,6 +76,10 @@ test('계약 10: 바뀐 확장 코드는 textContent 만 쓰고, preventDefault 
   // 정밀 예외(T18): selection.js 의 표현 [☆]/[★] 버튼 click 한 곳에서만 링크 이동을 막는다. 페이지의 다른 요소·링크 클릭은 막지 않는다.
   const sel = read('selection.js');
   assert.equal((sel.match(/\.preventDefault\(/g) ?? []).length, 1, 'preventDefault 는 표현 버튼 click 한 곳뿐');
+  // 정밀 예외(T20): content.js 의 확인 메시지 메모 입력칸에서만 Enter 저장·Esc 취소의 기본 동작을 막는다(우리 textarea 안).
+  const content = read('content.js');
+  assert.equal((content.match(/\.preventDefault\(/g) ?? []).length, 2, 'preventDefault 는 메모 입력칸(Enter 저장·Esc 취소)뿐');
+  assert.match(content, /globalThis\.readglossWords\.memoKey\(e\)/, '메모 입력칸 판정은 순수 함수 memoKey 가 한다');
   for (const f of ['selection.js', 'paragraph.js', 'panel-words.js', 'content.js', 'selection-core.js']) {
     assert.doesNotMatch(read(f), /chrome\.storage/, `${f}: storage 를 새로 쓰지 않는다`);
   }

@@ -316,6 +316,14 @@
         it.row.id = saved ? null : (r.id ?? core.findPhrase(r.phrases, it.row.en));
         if (r.phrases) knownPhrases = r.phrases;
         refreshLists();
+        // 새로 저장했을 때만 확인 메시지(+메모). 카드·선택은 그대로 둔다(한 카드에서 여러 개를 고르니까).
+        if (!saved && it.row.id != null) {
+          const id = it.row.id;
+          globalThis.readglossToast?.show({
+            text: '단어장에 추가됐어요!',
+            onMemo: (memo) => send({ type: 'words', op: 'memo', id, memo }),
+          });
+        }
       } else {
         err.hidden = false;
         err.textContent = errText(r);
@@ -495,8 +503,19 @@
     if (my !== seq) return;
     ui.saveBtn.removeAttribute('aria-disabled');
     if (r && !r.error) {
-      current.phraseId = saved ? null : (r.id ?? core.findPhrase(r.phrases, current.text));
+      const id = saved ? null : (r.id ?? core.findPhrase(r.phrases, current.text));
+      current.phraseId = id;
       if (r.phrases) knownPhrases = r.phrases;
+      // 새로 저장했을 때만: 확인 메시지(+메모) -> 선택 해제 -> 카드 닫기. 빼기는 그대로.
+      if (!saved) {
+        globalThis.readglossToast?.show({
+          text: '단어장에 추가됐어요!',
+          onMemo: (memo) => send({ type: 'words', op: 'memo', id, memo }),
+        });
+        getSelection().removeAllRanges();
+        close();
+        return;
+      }
     }
     else notify(errText(r));
     paintSaveBtn();
@@ -597,6 +616,6 @@
     },
     true,
   );
-  document.addEventListener('mousedown', (e) => host && !e.composedPath().includes(host) && close(), true);
+  document.addEventListener('mousedown', (e) => host && !e.composedPath().includes(host) && !e.composedPath().some((n) => n.localName === 'readgloss-toast') && close(), true); // 확인 메시지(메모)를 누를 땐 카드를 닫지 않는다
   document.addEventListener('keydown', (e) => e.key === 'Escape' && host && close(), true);
 })();

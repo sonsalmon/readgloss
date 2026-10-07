@@ -69,9 +69,177 @@
       glossary = s.glossary;
       glossarySites = s.glossarySites;
       if (host) applyTheme();
+      toastTheme();
     });
   } catch { /* 설정을 못 읽으면 자동 */ }
   const applyTheme = () => (theme === 'auto' ? host.removeAttribute('data-theme') : host.setAttribute('data-theme', theme));
+
+  // ---- 확인 메시지(토스트): 단어장 저장을 알리고 [메모] 를 받는다. 카드와 별개의 shadow host(카드가 곧 닫히므로). ----
+  const TOAST_DARK = `--rg-bg: rgba(30,33,39,.85); --rg-fg: #e6e8eb; --rg-muted: #9aa3ad; --rg-border: #343a44; --rg-accent: #6b9bff;
+    --rg-accent-soft: rgba(107,155,255,.14); --rg-shadow: 0 8px 28px rgba(0,0,0,.45);`;
+  const TOAST_CSS = `
+    .pill { --rg-bg: rgba(255,255,255,.85); --rg-fg: #1f2328; --rg-muted: #656d76; --rg-border: #e3e6ea; --rg-accent: #2f6feb;
+      --rg-accent-soft: rgba(47,111,235,.10); --rg-shadow: 0 8px 28px rgba(15,23,42,.14), 0 1px 3px rgba(15,23,42,.08);
+      box-sizing: border-box; pointer-events: auto; display: flex; flex-direction: column; gap: 6px; max-width: calc(100vw - 32px);
+      padding: 7px 12px; border-radius: 999px; background: var(--rg-bg); color: var(--rg-fg); border: 1px solid var(--rg-border);
+      box-shadow: var(--rg-shadow); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+      font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif; animation: rg-toast-in .18s ease-out both; }
+    @media (prefers-color-scheme: dark) { :host(:not([data-theme="light"])) .pill { ${TOAST_DARK} } }
+    :host([data-theme="dark"]) .pill { ${TOAST_DARK} }
+    @keyframes rg-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @keyframes rg-toast-fade { from { opacity: 0; } to { opacity: 1; } }
+    .pill.out { opacity: 0; transform: translateY(4px); transition: opacity .2s ease, transform .2s ease; }
+    @media (prefers-reduced-motion: reduce) { .pill { animation: rg-toast-fade .18s ease-out both; } .pill.out { transform: none; } }
+    .row { display: flex; align-items: center; gap: 8px; }
+    .text { min-width: 0; word-break: keep-all; overflow-wrap: anywhere; }
+    .memoBtn { all: unset; flex: none; cursor: pointer; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--rg-border);
+      color: var(--rg-accent); font-size: 12px; font-weight: 600; }
+    .memoBtn:hover { background: var(--rg-accent-soft); border-color: var(--rg-accent); }
+    .memoBtn:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: 2px; }
+    .pill.memo { border-radius: 12px; }
+    .memobox { display: grid; gap: 4px; }
+    .memobox[hidden] { display: none; }
+    .memo { box-sizing: border-box; width: min(320px, calc(100vw - 56px)); min-height: 44px; resize: vertical; padding: 5px 8px;
+      border-radius: 8px; border: 1px solid var(--rg-border); background: var(--rg-bg); color: var(--rg-fg); font: inherit; font-size: 13px; }
+    .memo:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: 1px; }
+    .memo[aria-disabled="true"] { opacity: .7; }
+    .err { color: #d1242f; font-size: 12px; }
+    .err[hidden] { display: none; }
+    @media (prefers-color-scheme: dark) { :host(:not([data-theme="light"])) .err { color: #ff7b72; } }
+    :host([data-theme="dark"]) .err { color: #ff7b72; }
+  `;
+  const TOAST_MS = 3500; // 마우스를 올리거나 메모 창이 없을 때 사라지기까지
+  let toastHost = null;
+  let toastPill = null;
+  let toastTimer = 0;
+  let toastHover = false; // 마우스를 올린 동안은 사라지지 않는다
+  let toastMemo = false; // 메모 창이 열린 동안은 사라지지 않는다
+  let toastGen = 0; // 늦게 온 메모 응답을 버린다
+
+  const toastTheme = () => toastHost && (theme === 'auto' ? toastHost.removeAttribute('data-theme') : toastHost.setAttribute('data-theme', theme));
+
+  function scheduleToast(delay = TOAST_MS) {
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      if (toastHover || toastMemo) return; // 멈춤이 풀리면 다시 예약된다
+      hideToast();
+    }, delay);
+  }
+
+  function hideToast() {
+    clearTimeout(toastTimer);
+    const h = toastHost;
+    const pill = toastPill;
+    toastHost = toastPill = null;
+    toastHover = toastMemo = false;
+    if (!h) return;
+    pill?.classList.add('out'); // 페이드 아웃 뒤 제거
+    setTimeout(() => h.remove(), 220);
+  }
+
+  // text: 확인 문구. onMemo: [메모] 버튼을 눌렀을 때. 메모 저장 성공은 error 칸 없는 응답, 실패는 { error }.
+  function showToast({ text = '', onMemo } = {}) {
+    clearTimeout(toastTimer);
+    toastHost?.remove(); // 다시 show 하면 이전 메시지를 대체한다
+    toastHost = toastPill = null;
+    toastHover = toastMemo = false;
+    const gen = ++toastGen;
+
+    const h = document.createElement('readgloss-toast');
+    h.style.cssText = 'all: initial; position: fixed; inset: auto 0 24px 0; z-index: 2147483647; display: flex; justify-content: center; pointer-events: none;';
+    toastHost = h;
+    toastTheme();
+    const shadow = h.attachShadow({ mode: 'closed' });
+    const style = el('style');
+    style.textContent = TOAST_CSS;
+    const pill = el('div', 'pill');
+    pill.setAttribute('role', 'status');
+    pill.setAttribute('aria-live', 'polite');
+    toastPill = pill;
+    const row = el('div', 'row');
+    const textEl = el('span', 'text', text);
+    row.append(textEl);
+    const box = el('div', 'memobox');
+    box.hidden = true;
+    const ta = el('textarea', 'memo');
+    ta.maxLength = 1000;
+    ta.rows = 2;
+    ta.placeholder = '메모 (Enter 저장 · Shift+Enter 줄바꿈)';
+    ta.setAttribute('aria-label', '메모');
+    const err = el('div', 'err');
+    err.hidden = true;
+    err.setAttribute('role', 'status');
+    box.append(ta, err);
+    pill.append(row, box);
+    let memoBtn = null;
+    if (typeof onMemo === 'function') {
+      memoBtn = el('button', 'memoBtn', '메모');
+      memoBtn.type = 'button';
+      memoBtn.setAttribute('aria-label', '메모 남기기');
+      memoBtn.addEventListener('click', (e) => { e.stopPropagation(); openMemo(); });
+      row.append(memoBtn);
+    }
+    pill.addEventListener('mouseenter', () => { toastHover = true; clearTimeout(toastTimer); });
+    pill.addEventListener('mouseleave', () => { toastHover = false; if (!toastMemo) scheduleToast(); });
+
+    function failMemo(t) {
+      err.hidden = false;
+      err.textContent = t;
+      ta.focus();
+    }
+    function openMemo() {
+      toastMemo = true;
+      clearTimeout(toastTimer);
+      box.hidden = false;
+      pill.classList.add('memo');
+      if (memoBtn) memoBtn.hidden = true;
+      ta.focus(); // 이때만 포커스를 가져간다(처음 뜰 때는 안 가져간다)
+    }
+    function cancelMemo() {
+      toastMemo = false;
+      box.hidden = true;
+      err.hidden = true;
+      ta.value = '';
+      ta.blur();
+      pill.classList.remove('memo');
+      if (memoBtn) memoBtn.hidden = false;
+      scheduleToast();
+    }
+    async function saveMemo() {
+      const W = globalThis.readglossWords;
+      ta.setAttribute('aria-disabled', 'true');
+      let r;
+      try {
+        r = await onMemo(ta.value);
+      } catch {
+        r = { error: 'memo-failed' };
+      }
+      if (gen !== toastGen || toastHost !== h) return; // 그 사이 닫혔거나 새 메시지로 대체됨
+      if (!W.memoOk(r)) {
+        ta.removeAttribute('aria-disabled');
+        return failMemo(W.memoErrorText(r)); // 실패면 창을 그대로 두고 짧은 오류 문구
+      }
+      toastMemo = false;
+      box.remove();
+      if (memoBtn) memoBtn.remove();
+      pill.classList.remove('memo');
+      textEl.textContent = '메모했어요'; // 잠깐 보이고 사라진다
+      scheduleToast(1400);
+    }
+    ta.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // 페이지 단축키로 새지 않게
+      const k = globalThis.readglossWords.memoKey(e);
+      if (k === 'save') { e.preventDefault(); saveMemo(); }
+      else if (k === 'newline') { /* Shift+Enter: 기본 줄바꿈 */ }
+      else if (e.key === 'Escape') { e.preventDefault(); cancelMemo(); }
+    });
+    for (const t of ['keypress', 'keyup']) ta.addEventListener(t, (e) => e.stopPropagation());
+
+    shadow.append(style, pill);
+    document.documentElement.append(h);
+    scheduleToast();
+  }
+  globalThis.readglossToast = { show: showToast };
 
   let host = null;
   let ui = null; // { card, scroll, ai, aiBtn, saveBtn, knownBtn }
@@ -233,13 +401,24 @@
     const W = globalThis.readglossWords;
     const my = seq;
     const op = W.buttonModel({ saved: !!current.state.saved[current.lemma], known: !!current.state.known[current.lemma] })[key].op;
+    const lemma = current.lemma;
     ui[`${key}Btn`].setAttribute('aria-disabled', 'true');
-    const r = await send(W.messageFor(op, { lemma: current.lemma, word: current.word, gloss: current.gloss, sentence: current.sentence, url: sourceUrl() }));
+    const r = await send(W.messageFor(op, { lemma, word: current.word, gloss: current.gloss, sentence: current.sentence, url: sourceUrl() }));
     if (my !== seq) return;
     if (r?.known && r.saved) {
       current.state = r;
       const detail = W.wordEventDetail(op, current.lemma); // 저장·빼기까지 패널이 숫자·목록을 다시 읽게 알린다
       if (detail) window.dispatchEvent(new CustomEvent('readgloss:words', { detail })); // 이 페이지의 주석을 바로 걷거나 되살린다
+      // 새로 저장했을 때만: 확인 메시지(+메모) -> 선택 해제 -> 카드 닫기. 빼기·알아요는 카드를 그대로 둔다.
+      if (op === 'save') {
+        globalThis.readglossToast?.show({
+          text: '단어장에 추가됐어요!',
+          onMemo: (memo) => send({ type: 'words', op: 'memo', lemma, memo }),
+        });
+        getSelection().removeAllRanges();
+        close();
+        return;
+      }
     } else {
       ui.ai.hidden = false;
       ui.ai.className = 'ai err';
@@ -395,7 +574,7 @@
 
   function onDblClick(e) {
     if (host && e.composedPath().includes(host)) return; // 카드 안
-    if (e.composedPath().some((n) => n.localName === 'readgloss-ui')) return; // 떠 있는 버튼·패널 안
+    if (e.composedPath().some((n) => n.localName === 'readgloss-ui' || n.localName === 'readgloss-toast')) return; // 떠 있는 버튼·패널·확인 메시지 안
     const sel = getSelection();
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
     const range = sel.getRangeAt(0);
@@ -442,6 +621,6 @@
     },
     true,
   );
-  document.addEventListener('mousedown', (e) => host && !e.composedPath().includes(host) && close(), true);
+  document.addEventListener('mousedown', (e) => host && !e.composedPath().includes(host) && !e.composedPath().some((n) => n.localName === 'readgloss-toast') && close(), true); // 확인 메시지(메모)를 누를 땐 카드를 닫지 않는다
   document.addEventListener('keydown', (e) => e.key === 'Escape' && host && ((e.readglossCardClosed = true), close()), true); // 표시: 패널(panel.js)이 같은 Escape 로 같이 닫히지 않게
 })();
