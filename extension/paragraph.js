@@ -189,7 +189,7 @@
     nodes.set(block, n);
   }
 
-  async function translateBlock(block, { bulk = false } = {}) {
+  async function translateBlock(block, { bulk = false, stale } = {}) {
     if (!block || !block.isConnected) return { ok: false, error: 'disconnected' };
     if (nodeOf(block)) return { ok: true };
     if (requests.get(block)?.status === 'loading') return { ok: false, error: 'loading' };
@@ -218,6 +218,10 @@
       r = { error: 'ext-reloaded' }; // 확장이 다시 로드되면 이 페이지의 연결이 끊긴다
     }
 
+    if (stale?.()) {
+      requests.delete(block); // 걷혔거나 새 실행이 시작됐으면 늦게 온 답을 버린다(번역문이 되살아나지 않게)
+      return { ok: false, error: 'aborted' };
+    }
     if (r?.translation && block.isConnected) {
       requests.delete(block);
       insert(block, r.translation, r.expressions, text.slice(0, MAX_SENTENCE));
@@ -251,26 +255,52 @@
   }
 
   // ---- 전체 번역 (T21) ----
-  const FATAL_ERRORS = new Set(['bridge-off', 'unauthorized', 'pair-failed', 'ext-reloaded']);
-  let bulkState = {
+  const BLOCKED_MS = 2000; // 이 페이지가 꺼져 있을 때 안내 문구를 보여 주는 시간
+  // 상태 객체는 하나를 두고 그 자리에서 고친다(새 객체로 바꾸면 돌고 있는 루프가 옛 객체를 못 보고 안 멈춘다).
+  const bulkState = {
     running: false,
     abort: false,
     done: 0,
     total: 0,
     failed: 0,
+    consecutive: 0,
+    started: false, // 전체 번역을 한 번이라도 시작했고 아직 걷지 않음(메뉴 문구 판단)
+    blocked: false,
+    reason: '',
   };
+  let bulkGen = 0; // start·clear 마다 올려서 늦게 온 옛 결과를 버린다
+  let blockedTimer = 0;
+  const statusListeners = new Set();
+
+  function resetBulk() {
+    bulkState.running = false;
+    bulkState.abort = false;
+    bulkState.done = 0;
+    bulkState.total = 0;
+    bulkState.failed = 0;
+    bulkState.consecutive = 0;
+    bulkState.started = false;
+    bulkState.blocked = false;
+    bulkState.reason = '';
+  }
 
   function emitStatus() {
-    window.dispatchEvent(
-      new CustomEvent('readgloss:pagetranslate-status', {
-        detail: {
-          running: bulkState.running,
-          done: bulkState.done,
-          total: bulkState.total,
-          failed: bulkState.failed,
-        },
-      }),
-    );
+    const detail = {
+      running: bulkState.running,
+      done: bulkState.done,
+      total: bulkState.total,
+      failed: bulkState.failed,
+      started: bulkState.started,
+      blocked: bulkState.blocked,
+      reason: bulkState.reason,
+    };
+    for (const cb of statusListeners) {
+      try {
+        cb(detail);
+      } catch {
+        // 구독 하나가 망가져도 나머지는 이어서
+      }
+    }
   }
 
   function isVisibleBlock(el) {
@@ -284,31 +314,40 @@
     return [...blocks.slice(firstIdx), ...blocks.slice(0, firstIdx)];
   }
 
+  // 이 페이지·사이트가 꺼져 있어서 시작할 수 없을 때: 상태에 blocked 를 내고 잠깐 뒤 원래 문구로 돌린다.
+  function showBlocked() {
+    bulkState.blocked = true;
+    emitStatus();
+    clearTimeout(blockedTimer);
+    blockedTimer = setTimeout(() => {
+      bulkState.blocked = false;
+      emitStatus();
+    }, BLOCKED_MS);
+  }
+
   async function startPageTranslate() {
-    if (!allowed() || pageOff || bulkState.running) return;
+    if (bulkState.running) return;
+    if (!allowed() || pageOff) return showBlocked();
     const root = document.body;
     if (!root) return;
 
     const raw = (collectBlocks ?? core.collectBlocks)?.(root, { isHidden }) ?? [];
-    const blocks = raw.filter((b) => !nodeOf(b));
-    if (blocks.length === 0) {
-      bulkState = { running: false, abort: false, done: 0, total: 0, failed: 0 };
-      emitStatus();
-      return;
-    }
-
-    const queue = orderFromVisible(blocks);
-    bulkState = {
-      running: true,
-      abort: false,
-      done: 0,
-      total: queue.length,
-      failed: 0,
-    };
+    const blocks = raw.filter((b) => !nodeOf(b)); // 이미 번역된 문단은 건너뛴다(손으로 번역한 것 포함)
+    const gen = ++bulkGen;
+    bulkState.running = true;
+    bulkState.abort = false;
+    bulkState.done = 0;
+    bulkState.total = blocks.length;
+    bulkState.failed = 0;
+    bulkState.consecutive = 0;
+    bulkState.started = true;
+    bulkState.blocked = false;
+    bulkState.reason = '';
     emitStatus();
 
+    const queue = orderFromVisible(blocks);
     for (const b of queue) {
-      if (bulkState.abort) break;
+      if (bulkState.abort || gen !== bulkGen) break;
       if (!b.isConnected) {
         bulkState.failed++;
         emitStatus();
@@ -319,19 +358,13 @@
         emitStatus();
         continue;
       }
+      if (requests.get(b)?.status === 'loading') continue; // 사용자가 손으로 번역 중이면 실패로 세지 않고 건너뛴다
 
-      const res = await translateBlock(b, { bulk: true });
-      if (bulkState.abort) break;
-
-      if (res?.ok) {
-        bulkState.done++;
-      } else {
-        bulkState.failed++;
-        if (FATAL_ERRORS.has(res?.error)) {
-          break; // 치명적 오류면 전체 멈춤
-        }
-      }
+      const res = await translateBlock(b, { bulk: true, stale: () => gen !== bulkGen });
+      if (bulkState.abort || gen !== bulkGen) break;
+      const step = core.bulkStep(bulkState, res);
       emitStatus();
+      if (step === 'stop') break; // 치명 오류 또는 연달아 BULK_MAX_CONSECUTIVE 번 실패
     }
 
     bulkState.running = false;
@@ -345,29 +378,30 @@
   }
 
   function clearPageTranslate() {
-    if (bulkState.running) {
-      bulkState.abort = true;
-    }
+    bulkGen++; // 진행 중이던 번역 결과가 걷은 뒤 되살아나지 않게
+    bulkState.abort = true;
     const all = document.querySelectorAll(TRANSLATION_TAG);
     for (const el of all) el.remove();
     if (current) {
       refresh();
       place();
     }
-    bulkState = { running: false, abort: false, done: 0, total: 0, failed: 0 };
+    resetBulk();
     emitStatus();
   }
 
-  window.addEventListener('readgloss:pagetranslate', (e) => {
-    const action = e.detail?.action;
-    if (action === 'start') {
-      startPageTranslate().catch(() => {});
-    } else if (action === 'stop') {
-      stopPageTranslate();
-    } else if (action === 'clear') {
-      clearPageTranslate();
-    }
-  });
+  // 페이지 스크립트가 부르지 못하게 window 이벤트 대신 전역 객체로만 내보낸다(panel.js 가 나중에 로드돼 호출 때 읽는다).
+  globalThis.readglossPageTranslate = {
+    start: () => startPageTranslate().catch(() => {}),
+    stop: stopPageTranslate,
+    clear: clearPageTranslate,
+    state: () => ({ ...bulkState }),
+    onStatus(cb) {
+      if (typeof cb !== 'function') return () => {};
+      statusListeners.add(cb);
+      return () => statusListeners.delete(cb);
+    },
+  };
 
   function onClick(e) {
     if (host && e.composedPath().includes(host)) return; // 번역 버튼 안

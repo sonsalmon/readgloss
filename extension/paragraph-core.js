@@ -93,6 +93,33 @@
     };
   }
 
+  // ---- 전체 번역(T21) 루프의 판단 ----
+  // 치명 오류(다리 꺼짐·인증·확장 재로드)면 바로 멈추고, 그 밖의 실패(ai-failed·timeout 등)는 연달아 BULK_MAX_CONSECUTIVE 번이면 멈춘다.
+  const BULK_FATAL = ['bridge-off', 'unauthorized', 'pair-failed', 'ext-reloaded'];
+  const BULK_MAX_CONSECUTIVE = 3;
+
+  // 결과 하나를 받아 상태를 그 자리에서 갱신하고 'continue'|'skip'|'stop' 을 돌려준다.
+  // 'skip' 은 사용자가 같은 문단을 손으로 번역 중(loading)이거나 걷힌 결과(aborted)라 실패로 세지 않는다.
+  function bulkStep(state, res) {
+    if (res?.ok) {
+      state.done++;
+      state.consecutive = 0;
+      return 'continue';
+    }
+    if (res?.error === 'loading' || res?.error === 'aborted') return 'skip';
+    state.failed++;
+    state.consecutive = (state.consecutive ?? 0) + 1;
+    if (BULK_FATAL.includes(res?.error)) {
+      state.reason = res.error;
+      return 'stop';
+    }
+    if (state.consecutive >= BULK_MAX_CONSECUTIVE) {
+      state.reason = 'failures';
+      return 'stop';
+    }
+    return 'continue';
+  }
+
   // root 아래에서 번역할 문단 블록 목록을 문서 순서로 돌려준다.
   // 중첩되면 가장 안쪽 블록 하나만(예: li 안의 p 는 p 만). nav/header/footer/aside 안은 뺀다.
   // 텍스트가 isTargetText 를 통과하고 MAX_TEXT 를 넘지 않는 것만.
@@ -141,6 +168,6 @@
   globalThis.readglossParagraph = {
     MAX_TEXT, MIN_TEXT, BUTTON_SIZE, TRANSLATION_TAG, TRANSLATION_STYLE,
     normalizeText, isTargetText, findBlock, insertPlacement, textOf, textExceeds, buttonPosition,
-    collectBlocks,
+    collectBlocks, BULK_FATAL, BULK_MAX_CONSECUTIVE, bulkStep,
   };
 })();

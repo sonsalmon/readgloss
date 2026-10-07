@@ -142,7 +142,8 @@
     const before = typeof c?.before === 'string' ? clip(c.before, MAX_SIDE) : '';
     const context = before ? { before, after: clip(c.after, MAX_SIDE), title: clip(c.title, MAX_TITLE), headings: [] } : undefined;
     const source = typeof s?.url === 'string' && /^https?:\/\//.test(s.url) ? { url: s.url.slice(0, 2000), title: clip(s.title, MAX_TITLE) } : undefined;
-    return { context, source };
+    // drag: 드래그로 연 카드(더블클릭 아님)는 공부 기록에 남기지 않는다. content.js 가 이 값을 dict 요청 nolog 로 싣는다.
+    return { context, source, nolog: d?.drag === true };
   }
 
   // ---- 약어 ----

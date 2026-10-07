@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 // extension/paragraph-core.js 는 text.js 와 같은 classic script. 전역 readglossParagraph 로 쓴다.
 await import('../extension/paragraph-core.js');
-const { MAX_TEXT, MIN_TEXT, TRANSLATION_TAG, TRANSLATION_STYLE, normalizeText, isTargetText, findBlock, insertPlacement, textOf, textExceeds, buttonPosition, collectBlocks } = globalThis.readglossParagraph;
+const { MAX_TEXT, MIN_TEXT, TRANSLATION_TAG, TRANSLATION_STYLE, normalizeText, isTargetText, findBlock, insertPlacement, textOf, textExceeds, buttonPosition, collectBlocks, BULK_FATAL, BULK_MAX_CONSECUTIVE, bulkStep } = globalThis.readglossParagraph;
 
 // 브라우저 없이 쓰는 가짜 DOM. el('p', {attrs}, ...children), 문자열 자식은 텍스트 노드.
 function el(tag, attrs = {}, ...kids) {
@@ -276,6 +276,34 @@ test('collectBlocks: 문서 순서대로 수집하며 대상 텍스트 조건과
 
   const blocks = collectBlocks(root, { isHidden: (n) => n === hiddenP });
   assert.deepEqual(blocks, [p1, p2]);
+});
+
+test('bulkStep: 성공은 done++, 사용자가 손으로 번역 중(loading)·걷힌 결과(aborted)는 실패로 세지 않고 건너뛴다', () => {
+  const s = { done: 0, failed: 0, consecutive: 0 };
+  assert.equal(bulkStep(s, { ok: true }), 'continue');
+  assert.deepEqual([s.done, s.failed, s.consecutive], [1, 0, 0]);
+  assert.equal(bulkStep(s, { ok: false, error: 'loading' }), 'skip');
+  assert.equal(bulkStep(s, { ok: false, error: 'aborted' }), 'skip');
+  assert.deepEqual([s.done, s.failed, s.consecutive], [1, 0, 0], 'skip 은 아무것도 세지 않는다');
+});
+
+test('bulkStep: 치명 오류는 바로, 그 밖의 실패는 연달아 3번이면 멈추고 이유를 남긴다', () => {
+  const s = { done: 0, failed: 0, consecutive: 0 };
+  assert.equal(bulkStep(s, { ok: false, error: 'bridge-off' }), 'stop');
+  assert.equal(s.reason, 'bridge-off');
+  const s2 = { done: 0, failed: 0, consecutive: 0 };
+  assert.equal(bulkStep(s2, { ok: false, error: 'ai-failed' }), 'continue');
+  assert.equal(bulkStep(s2, { ok: false, error: 'timeout' }), 'continue');
+  assert.equal(bulkStep(s2, { ok: false, error: 'ai-failed' }), 'stop');
+  assert.deepEqual([s2.failed, s2.consecutive, s2.reason], [3, 3, 'failures']);
+  // 중간에 성공하면 연속 실패가 끊긴다.
+  const s3 = { done: 0, failed: 0, consecutive: 0 };
+  bulkStep(s3, { ok: false, error: 'timeout' });
+  bulkStep(s3, { ok: false, error: 'timeout' });
+  bulkStep(s3, { ok: true });
+  assert.equal(bulkStep(s3, { ok: false, error: 'timeout' }), 'continue');
+  assert.equal(BULK_FATAL.includes('pair-failed'), true);
+  assert.equal(BULK_MAX_CONSECUTIVE, 3);
 });
 
 test('manifest: content script 목록에 paragraph-core.js, paragraph.js 가 이어서 있다(ES 모듈 import 없음)', () => {

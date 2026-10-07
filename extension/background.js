@@ -52,15 +52,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // 더블클릭 사전 카드: 맥 영한사전 조회(/dict). 구독 호출이 아니라 즉시·무료.
-async function dict({ word, host, domains, page }, retried = false) {
+async function dict({ word, host, domains, nolog, page }, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
   const res = await bridgeFetch('/dict', {
     method: 'POST',
     headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ word, host, domains, page }), // 용어집 힌트는 있으면 그대로 넘긴다(없으면 JSON 에서 빠진다)
+    body: JSON.stringify({ word, host, domains, ...(nolog === true ? { nolog: true } : {}), page }), // 용어집 힌트·nolog 는 있으면 그대로 넘긴다(없으면 JSON 에서 빠진다)
   });
-  if (res.status === 401 && !retried) return dict({ word, host, domains, page }, true);
+  if (res.status === 401 && !retried) return dict({ word, host, domains, nolog, page }, true);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return { error: data.error || `http-${res.status}` };
   return data;

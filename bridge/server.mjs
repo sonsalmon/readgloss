@@ -225,7 +225,8 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       const mine = m && { ko: m.ko, ...(m.exp && { exp: m.exp }), ...(m.note && { note: m.note }) };
       const ac = ACRONYM_RE.test(word) ? glossary.acronym(lower) : null;
       const acronym = ac && { exp: ac.exp, ko: ac.ko };
-      if (r.found || mine || t || acronym) log('dict', word, mine?.ko || t?.ko || sense?.ko || (e && shortGloss(e.senses?.[0]?.text)) || acronym?.ko, value);
+      // nolog: 드래그로 연 카드는 공부 기록에 남기지 않는다(요청이 그렇게 실어 보낸다).
+      if (value.nolog !== true && (r.found || mine || t || acronym)) log('dict', word, mine?.ko || t?.ko || sense?.ko || (e && shortGloss(e.senses?.[0]?.text)) || acronym?.ko, value);
       send(res, 200, { ...r, lemma, ...(e ? { gloss: shortGloss(e.senses?.[0]?.text) } : {}), ...(t ? { term: { ko: t.ko, domain: t.domain } } : {}), ...(sense ? { sense } : {}), ...(mine ? { mine } : {}), ...(acronym ? { acronym } : {}) }, cors);
     } catch (e) {
       if (e instanceof DictUnavailableError) send(res, 503, { error: 'dict-unavailable' }, cors);

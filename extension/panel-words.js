@@ -432,8 +432,10 @@
           memoEdit = null;
           memoErr = '';
           draw();
-        } else if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault(); // Enter 로 저장한다(줄바꿈은 Shift+Enter). 이 입력칸 안에서만 막는다.
+          return;
+        }
+        if (W.memoKey(e) === 'save') {
+          e.preventDefault(); // Enter 로 저장한다(줄바꿈은 Shift+Enter, 한글 조합 중 Enter 는 무시). 이 입력칸 안에서만 막는다.
           saveMemo(kind, key);
         }
       });

@@ -224,6 +224,8 @@
       if (memoBtn) memoBtn.remove();
       pill.classList.remove('memo');
       textEl.textContent = '메모했어요'; // 잠깐 보이고 사라진다
+      // 열린 패널이 목록을 다시 읽게 알린다. known·unknown 은 비워 주석(annotate.js)이 반응하지 않게 한다.
+      window.dispatchEvent(new CustomEvent('readgloss:words', { detail: { known: [], unknown: [] } }));
       scheduleToast(1400);
     }
     ta.addEventListener('keydown', (e) => {
@@ -457,7 +459,8 @@
   async function askDict() {
     const my = ++seq;
     showMessage('찾는 중…');
-    const r = await send({ type: 'dict', word: current.word, ...(globalThis.readglossGlossary?.hint({ glossary, glossarySites }, document, location.hostname) ?? {}) });
+    // nolog: 드래그로 연 카드(selection.js 가 detail.nolog 로 표시)는 공부 기록에 남기지 않는다. 더블클릭 카드는 남긴다.
+    const r = await send({ type: 'dict', word: current.word, ...(current.nolog === true ? { nolog: true } : {}), ...(globalThis.readglossGlossary?.hint({ glossary, glossarySites }, document, location.hostname) ?? {}) });
     if (my !== seq) return;
     const line = (globalThis.readglossGlossary?.termLine(r?.term) ?? '') || (r?.sense?.ko ? `분야 뜻: ${r.sense.ko} · ${r.sense.tag}` : ''); // 용어가 없을 때만 다리가 준 분야 표시 뜻(sense)
     ui.term.textContent = line;

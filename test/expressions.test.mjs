@@ -51,8 +51,10 @@ test('expressionToggle: 안 담았으면 save-phrase(kind expression·sentence),
 
 test('lookupExtras: readgloss:lookup 의 context·source 는 모양이 맞을 때만(http/https 주소, 문자열)', () => {
   const ok = S.lookupExtras({ context: { before: 'Stored sentence.', after: '', title: 'T', headings: [] }, source: { url: 'https://a.test/x', title: 'A' } });
-  assert.deepEqual(ok, { context: { before: 'Stored sentence.', after: '', title: 'T', headings: [] }, source: { url: 'https://a.test/x', title: 'A' } });
-  assert.deepEqual(S.lookupExtras({}), { context: undefined, source: undefined });
+  assert.deepEqual(ok, { context: { before: 'Stored sentence.', after: '', title: 'T', headings: [] }, source: { url: 'https://a.test/x', title: 'A' }, nolog: false });
+  assert.deepEqual(S.lookupExtras({}), { context: undefined, source: undefined, nolog: false });
+  assert.equal(S.lookupExtras({ drag: true }).nolog, true, '드래그로 연 카드는 nolog');
+  assert.equal(S.lookupExtras({ drag: false }).nolog, false);
   assert.equal(S.lookupExtras({ source: { url: 'javascript:alert(1)' } }).source, undefined);
   assert.equal(S.lookupExtras({ source: { url: 42 } }).source, undefined);
   assert.equal(S.lookupExtras({ context: { before: 5 } }).context, undefined);

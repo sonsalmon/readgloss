@@ -100,14 +100,32 @@
     return out;
   }
 
-  // 패널 위에 뜬 사전 카드(content.js 의 readgloss-card, 저장된 문장에서 더블클릭해 연 것)를 눌러도 패널은 닫지 않는다.
+  // 패널 위에 뜬 사전 카드(content.js 의 readgloss-card, 저장된 문장에서 더블클릭해 연 것)나 확인 메시지(readgloss-toast)를 눌러도 패널은 닫지 않는다.
   const isCardPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-card');
+  const isToastPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-toast');
+
+  // 전체 번역 퀵 메뉴 문구. 전체 번역의 상태만 보고 정한다(손으로 번역한 문단은 메뉴 상태에 영향을 주지 않는다).
+  // running -> 진행 중·멈추기, 한 번 돌리고 아직 안 걷음(started) -> 걷기, 그 밖 -> 시작. blocked 면 잠깐 안내.
+  function pageTranslateMenu(s) {
+    s = s ?? {};
+    const failed = Number(s.failed) || 0;
+    const failText = failed > 0 ? ` (실패 ${failed})` : '';
+    if (s.blocked === true) return { text: '이 페이지에서는 꺼져 있어요', busy: false, title: '' };
+    if (s.running === true) return { text: `전체 번역 중 ${Number(s.done) || 0}/${Number(s.total) || 0} · 멈추기${failText}`, busy: true, title: '' };
+    return {
+      text: (s.started === true ? '전체 번역 걷기' : '페이지 전체 번역') + failText,
+      busy: false,
+      title: s.reason === 'failures' ? '실패가 이어져 멈췄어요' : '',
+    };
+  }
+  const pageTranslateAction = (s) => (s?.running === true ? 'stop' : s?.started === true ? 'clear' : 'start');
 
   const themeAttr = (theme) => (theme === 'light' || theme === 'dark' ? theme : null); // auto 는 속성 없음(prefers-color-scheme)
 
   globalThis.readglossPanelCore = {
     getPath, patchFor, sortTabs, mountPane, levelIndex, levelAt, RANGES, CHOICES, TOGGLES, sliderPatch, sliderValue,
-    cleanSite, addSite, removeSite, resetPatch, clampTop, dragTop, mergePatch, themeAttr, isCardPath, MAX_SITES,
+    cleanSite, addSite, removeSite, resetPatch, clampTop, dragTop, mergePatch, themeAttr, isCardPath, isToastPath,
+    pageTranslateMenu, pageTranslateAction, MAX_SITES,
   };
 
   if (typeof document === 'undefined' || globalThis.readglossPanelLoaded) return; // node 시험·중복 주입: 여기까지
@@ -283,46 +301,55 @@
   const fab = h('button', { class: 'fab', type: 'button', 'aria-expanded': 'false' }, svgIcon());
   const pageOffItem = h('button', { class: 'mitem', type: 'button', onclick: () => setPageOff(!pageOff) });
 
-  let ptState = { running: false, done: 0, total: 0, failed: 0 };
+  let ptState = { running: false, done: 0, total: 0, failed: 0, started: false, blocked: false, reason: '' };
   const pageTranslateItem = h('button', { class: 'mitem', type: 'button', onclick: onPageTranslateClick });
+  const ptApi = () => globalThis.readglossPageTranslate; // paragraph.js 가 나중에 로드되므로 호출 때 읽는다
+
+  function applyPtState(d) {
+    ptState = {
+      running: d?.running === true,
+      done: Number(d?.done) || 0,
+      total: Number(d?.total) || 0,
+      failed: Number(d?.failed) || 0,
+      started: d?.started === true,
+      blocked: d?.blocked === true,
+      reason: typeof d?.reason === 'string' ? d.reason : '',
+    };
+    updatePageTranslateUI();
+  }
 
   function updatePageTranslateUI() {
-    const failText = ptState.failed > 0 ? ` (실패 ${ptState.failed})` : '';
-    if (ptState.running) {
-      pageTranslateItem.textContent = `전체 번역 중 ${ptState.done}/${ptState.total} · 멈추기${failText}`;
-      pageTranslateItem.setAttribute('aria-busy', 'true');
-    } else {
-      pageTranslateItem.removeAttribute('aria-busy');
-      const hasTr = Boolean(document.querySelector('readgloss-translation')) || ptState.done > 0;
-      pageTranslateItem.textContent = hasTr ? `전체 번역 걷기${failText}` : `페이지 전체 번역${failText}`;
-    }
+    const m = C.pageTranslateMenu(ptState);
+    pageTranslateItem.textContent = m.text;
+    if (m.busy) pageTranslateItem.setAttribute('aria-busy', 'true');
+    else pageTranslateItem.removeAttribute('aria-busy');
+    if (m.title) pageTranslateItem.title = m.title;
+    else pageTranslateItem.removeAttribute('title');
   }
 
   function onPageTranslateClick() {
-    if (ptState.running) {
-      window.dispatchEvent(new CustomEvent('readgloss:pagetranslate', { detail: { action: 'stop' } }));
-    } else {
-      const hasTr = Boolean(document.querySelector('readgloss-translation')) || ptState.done > 0;
-      if (hasTr) {
-        window.dispatchEvent(new CustomEvent('readgloss:pagetranslate', { detail: { action: 'clear' } }));
-      } else {
-        window.dispatchEvent(new CustomEvent('readgloss:pagetranslate', { detail: { action: 'start' } }));
-      }
-    }
+    const api = ptApi();
+    if (!api) return;
+    const action = C.pageTranslateAction(ptState);
+    if (action === 'stop') api.stop();
+    else if (action === 'clear') api.clear();
+    else api.start();
   }
 
-  window.addEventListener('readgloss:pagetranslate-status', (e) => {
-    const d = e.detail;
-    if (!d) return;
-    ptState = {
-      running: d.running === true,
-      done: Number(d.done) || 0,
-      total: Number(d.total) || 0,
-      failed: Number(d.failed) || 0,
-    };
-    updatePageTranslateUI();
-  });
-  updatePageTranslateUI();
+  // 메뉴를 열 때(마우스 올림·포커스)에도 문구를 다시 계산한다.
+  function syncPageTranslate() {
+    const api = ptApi();
+    if (!api) return;
+    applyPtState(api.state?.() ?? {});
+  }
+
+  function bindPageTranslate() {
+    const api = ptApi();
+    if (!api) return;
+    applyPtState(api.state?.() ?? {});
+    api.onStatus?.(applyPtState);
+  }
+  bindPageTranslate();
 
   const menu = h('div', { class: 'menu' },
     h('div', { class: 'menu-card', role: 'group', 'aria-label': '빠른 메뉴' },
@@ -332,6 +359,8 @@
       h('button', { class: 'mitem', type: 'button', text: '내 단어', onclick: () => openPanel('words') }),
       h('button', { class: 'mitem', type: 'button', text: '버튼 숨기기', onclick: () => setSettings({ floatingButton: { show: false } }) })));
   const dock = h('div', { class: 'dock' }, menu, fab);
+  dock.addEventListener('mouseenter', syncPageTranslate); // 메뉴를 열 때 문구를 다시 계산
+  dock.addEventListener('focusin', syncPageTranslate);
   dock.hidden = true; // 저장된 위치를 읽기 전에는 숨겨 둔다(깜빡임 방지)
 
   // 패널
@@ -498,10 +527,10 @@
 
   document.addEventListener('mousedown', (e) => {
     const path = e.composedPath();
-    if (isOpen && !path.includes(host) && !C.isCardPath(path)) closePanel({ restoreFocus: false });
+    if (isOpen && !path.includes(host) && !C.isCardPath(path) && !C.isToastPath(path)) closePanel({ restoreFocus: false });
   }, true);
-  // 사전 카드가 이 Escape 로 닫혔으면(content.js 가 표시를 남긴다) 패널은 그대로 둔다
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && isOpen && !e.readglossCardClosed && closePanel(), true);
+  // 사전 카드가 이 Escape 로 닫혔으면(content.js 가 표시를 남긴다) 패널은 그대로 둔다. 확인 메시지(메모) 안에서 누른 Escape 도 무시한다.
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && isOpen && !e.readglossCardClosed && !C.isToastPath(e.composedPath()) && closePanel(), true);
   window.addEventListener('readgloss:open-panel', (e) => openPanel(e.detail?.tab));
   try {
     chrome.runtime.onMessage.addListener((msg, sender) => {

@@ -588,7 +588,8 @@
       const { text: plain, offset } = plainTextAt(block, range.startContainer, range.startOffset);
       const at = plain.indexOf(cls.word, offset);
       const sentence = extractSentence(plain, at < 0 ? offset : at, cls.word.length);
-      window.dispatchEvent(new CustomEvent('readgloss:lookup', { detail: { word: cls.word, sentence, rect: { left: r.left, top: r.top, bottom: r.bottom }, range: range.cloneRange() } }));
+      // drag:true -> content.js 가 이 카드의 사전 조회에 nolog 를 실어 공부 기록에 남기지 않는다(더블클릭은 남긴다).
+      window.dispatchEvent(new CustomEvent('readgloss:lookup', { detail: { word: cls.word, sentence, rect: { left: r.left, top: r.top, bottom: r.bottom }, range: range.cloneRange(), drag: true } }));
       return;
     }
     if (host) close();
@@ -617,5 +618,5 @@
     true,
   );
   document.addEventListener('mousedown', (e) => host && !e.composedPath().includes(host) && !e.composedPath().some((n) => n.localName === 'readgloss-toast') && close(), true); // 확인 메시지(메모)를 누를 땐 카드를 닫지 않는다
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && host && close(), true);
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && host && !e.composedPath().some((n) => n.localName === 'readgloss-toast') && close(), true); // 확인 메시지(메모) 안 Escape 는 카드를 닫지 않는다
 })();

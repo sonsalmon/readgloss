@@ -190,3 +190,32 @@ test('isCardPath: 클릭 경로에 사전 카드(readgloss-card) 호스트가 �
   assert.equal(C.isCardPath([]), false);
   assert.equal(C.isCardPath(undefined), false);
 });
+
+test('isToastPath: 확인 메시지(readgloss-toast) 안을 눌러도 패널의 바깥 클릭이 아니다(T20·T22)', () => {
+  const n = (localName) => ({ localName });
+  assert.equal(C.isToastPath([n('div'), n('readgloss-toast'), n('html')]), true);
+  assert.equal(C.isToastPath([n('div'), n('readgloss-card'), n('html')]), false);
+  assert.equal(C.isToastPath([]), false);
+  assert.equal(C.isToastPath(undefined), false);
+});
+
+test('pageTranslateMenu: 전체 번역 상태만으로 문구를 정한다(손으로 번역한 문단은 영향 없음)', () => {
+  assert.equal(C.pageTranslateMenu({}).text, '페이지 전체 번역');
+  assert.equal(C.pageTranslateMenu({ running: true, done: 2, total: 5 }).text, '전체 번역 중 2/5 · 멈추기');
+  assert.equal(C.pageTranslateMenu({ running: true, done: 2, total: 5 }).busy, true);
+  assert.equal(C.pageTranslateMenu({ started: true, done: 5, total: 5 }).text, '전체 번역 걷기', '끝나고 아직 안 걷음');
+  assert.equal(C.pageTranslateMenu({ started: true, done: 1, total: 5, failed: 2 }).text, '전체 번역 걷기 (실패 2)', '멈췄고 아직 안 걷음');
+  assert.equal(C.pageTranslateMenu({ started: true, failed: 3, reason: 'failures' }).title, '실패가 이어져 멈췄어요');
+  assert.equal(C.pageTranslateMenu({ blocked: true }).text, '이 페이지에서는 꺼져 있어요');
+  assert.equal(C.pageTranslateMenu({ blocked: true }).busy, false);
+  // 걷은 뒤(done·failed 가 0 이어도)에는 처음 상태로 돌아온다.
+  assert.equal(C.pageTranslateMenu({ started: false, done: 0, failed: 0 }).text, '페이지 전체 번역');
+});
+
+test('pageTranslateAction: 진행 중=stop, 돌렸고 안 걷음=clear, 그 밖=start', () => {
+  assert.equal(C.pageTranslateAction({ running: true }), 'stop');
+  assert.equal(C.pageTranslateAction({ started: true }), 'clear');
+  assert.equal(C.pageTranslateAction({ started: true, running: true }), 'stop');
+  assert.equal(C.pageTranslateAction({}), 'start');
+  assert.equal(C.pageTranslateAction(null), 'start');
+});
