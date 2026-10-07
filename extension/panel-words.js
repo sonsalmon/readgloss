@@ -174,9 +174,21 @@
   const mydictEventDetail = (op, key) => (op === 'delete' ? { set: [], delete: [key] } : { set: [key], delete: [] });
   const unsavePhraseMessage = (id) => ({ type: 'words', op: 'unsave-phrase', id });
 
+  // ---- 확인 메시지의 [메모] 판단(T20) ----
+  // 메모 입력칸 keydown: Enter = 저장, Shift+Enter = 줄바꿈, 그 밖에는 null. 한글 조합 중(e.isComposing) Enter 는 저장하지 않는다.
+  function memoKey({ key, shiftKey = false, isComposing = false } = {}) {
+    if (key !== 'Enter' || isComposing) return null;
+    return shiftKey ? 'newline' : 'save';
+  }
+  // 메모 응답 계약(다리): 성공이면 error 칸이 없는 객체, 실패면 { error }. 404 'not-found' 도 실패로 본다.
+  const memoOk = (r) => !!r && typeof r === 'object' && !r.error;
+  // 저장 실패 문구. 404(단어장에 없음)는 구분해서 알린다.
+  const memoErrorText = (r) => (r?.error === 'not-found' ? '단어장에서 찾지 못했어요' : '메모를 저장하지 못했어요');
+
   globalThis.readglossWords = {
     LISTS, SUBS, formatDate, counts, countsAll, actionsFor, rowsFor, buttonModel, eventDetail, wordEventDetail, messageFor,
     clip, PHRASE_FILTERS, phraseCounts, phrasePrimary, phraseRows, pickWord, lookupDetail, mydictRows, checkMydict, mydictMessage, mydictEventDetail, unsavePhraseMessage,
+    memoKey, memoOk, memoErrorText,
   };
 
   // ---- 그리기 ----
