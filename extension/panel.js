@@ -327,7 +327,8 @@
     else pageTranslateItem.removeAttribute('title');
   }
 
-  function onPageTranslateClick() {
+  function onPageTranslateClick(e) {
+    if (e && e.isTrusted === false) return; // 페이지 스크립트가 .click() 으로 열린 shadow 의 버튼을 눌러 AI 한도를 쓰지 못하게
     const api = ptApi();
     if (!api) return;
     const action = C.pageTranslateAction(ptState);

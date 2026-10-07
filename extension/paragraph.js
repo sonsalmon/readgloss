@@ -189,7 +189,7 @@
     nodes.set(block, n);
   }
 
-  async function translateBlock(block, { bulk = false, stale } = {}) {
+  async function translateBlock(block, { bulk = false, stale, gen = null } = {}) {
     if (!block || !block.isConnected) return { ok: false, error: 'disconnected' };
     if (nodeOf(block)) return { ok: true };
     if (requests.get(block)?.status === 'loading') return { ok: false, error: 'loading' };
@@ -201,7 +201,8 @@
       return { ok: false, error: 'too-large' };
     }
 
-    requests.set(block, { status: 'loading' });
+    const req = { status: 'loading', gen }; // 어느 실행(세대)의 요청인지 표시: 걷기 직후 옛 요청을 구분한다
+    requests.set(block, req);
     if (current === block) refresh();
 
     const payload = {
@@ -219,7 +220,8 @@
     }
 
     if (stale?.()) {
-      requests.delete(block); // 걷혔거나 새 실행이 시작됐으면 늦게 온 답을 버린다(번역문이 되살아나지 않게)
+      if (requests.get(block) === req) requests.delete(block); // 새 실행이 이미 새 요청을 걸었으면 그 표시는 지우지 않는다
+      if (current === block) refresh(); // 늦게 온 옛 답을 버릴 때 로딩 표시가 남지 않게
       return { ok: false, error: 'aborted' };
     }
     if (r?.translation && block.isConnected) {
@@ -346,29 +348,35 @@
     emitStatus();
 
     const queue = orderFromVisible(blocks);
-    for (const b of queue) {
-      if (bulkState.abort || gen !== bulkGen) break;
-      if (!b.isConnected) {
-        bulkState.failed++;
-        emitStatus();
-        continue;
-      }
-      if (nodeOf(b)) {
-        bulkState.done++;
-        emitStatus();
-        continue;
-      }
-      if (requests.get(b)?.status === 'loading') continue; // 사용자가 손으로 번역 중이면 실패로 세지 않고 건너뛴다
+    try {
+      for (const b of queue) {
+        if (bulkState.abort || gen !== bulkGen) break;
+        if (!b.isConnected) {
+          bulkState.failed++;
+          emitStatus();
+          continue;
+        }
+        if (nodeOf(b)) {
+          bulkState.done++;
+          emitStatus();
+          continue;
+        }
+        const rq = requests.get(b);
+        if (rq?.status === 'loading' && (rq.gen == null || rq.gen === gen)) continue; // 사용자가 손으로 번역 중이면 실패로 세지 않고 건너뛴다
+        if (rq?.status === 'loading') requests.delete(b); // 걷기가 남긴 옛 전체 번역 요청: 늦게 온 답은 버려지므로 다시 보낸다
 
-      const res = await translateBlock(b, { bulk: true, stale: () => gen !== bulkGen });
-      if (bulkState.abort || gen !== bulkGen) break;
-      const step = core.bulkStep(bulkState, res);
-      emitStatus();
-      if (step === 'stop') break; // 치명 오류 또는 연달아 BULK_MAX_CONSECUTIVE 번 실패
+        const res = await translateBlock(b, { bulk: true, stale: () => gen !== bulkGen, gen });
+        if (bulkState.abort || gen !== bulkGen) break;
+        const step = core.bulkStep(bulkState, res);
+        emitStatus();
+        if (step === 'stop') break; // 치명 오류 또는 연달아 BULK_MAX_CONSECUTIVE 번 실패
+      }
+    } finally {
+      if (gen === bulkGen) { // 걷기·재시작으로 세대가 바뀌었으면 새 실행의 상태를 덮지 않는다
+        bulkState.running = false;
+        emitStatus();
+      }
     }
-
-    bulkState.running = false;
-    emitStatus();
   }
 
   function stopPageTranslate() {

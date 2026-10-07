@@ -47,7 +47,7 @@ test('T22-4·5·6 paragraph.js: bulkStep 으로 실패 3연속을 멈추고, loa
   const src = read('paragraph.js');
   assert.match(src, /const step = core\.bulkStep\(bulkState, res\)/);
   assert.match(src, /if \(step === 'stop'\) break/);
-  assert.match(src, /if \(requests\.get\(b\)\?\.status === 'loading'\) continue/);
+  assert.match(src, /rq\?\.status === 'loading' && \(rq\.gen == null \|\| rq\.gen === gen\)\) continue/, '손 번역 중(옛 실행 아님)이면 건너뛴다');
   assert.match(src, /function showBlocked\(\)/);
   assert.match(src, /const BLOCKED_MS = 2000/);
   assert.match(src, /blocked: bulkState\.blocked/);

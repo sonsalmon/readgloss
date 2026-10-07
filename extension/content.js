@@ -625,5 +625,5 @@
     true,
   );
   document.addEventListener('mousedown', (e) => host && !e.composedPath().includes(host) && !e.composedPath().some((n) => n.localName === 'readgloss-toast') && close(), true); // 확인 메시지(메모)를 누를 땐 카드를 닫지 않는다
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && host && ((e.readglossCardClosed = true), close()), true); // 표시: 패널(panel.js)이 같은 Escape 로 같이 닫히지 않게
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && host && !e.composedPath().some((n) => n.localName === 'readgloss-toast') && ((e.readglossCardClosed = true), close()), true); // 표시: 패널(panel.js)이 같은 Escape 로 같이 닫히지 않게. 확인 메시지(메모) 안 Escape 는 무시
 })();
