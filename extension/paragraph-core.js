@@ -15,6 +15,7 @@
   const BLOCK = new Set(['P', 'LI', 'BLOCKQUOTE', 'DD', 'DT', 'TD', 'TH', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'FIGCAPTION']);
   // 이 요소 안(또는 위)을 클릭한 건 대상이 아니다. 링크·버튼 같은 원래 동작은 건드리지 않는다.
   const IGNORE = new Set(['A', 'BUTTON', 'LABEL', 'SELECT', 'INPUT', 'TEXTAREA', 'PRE', 'CODE']);
+  const SECTION_EXCLUDE = new Set(['NAV', 'HEADER', 'FOOTER', 'ASIDE']); // 본문이 아닌 영역은 전체 번역에서 뺀다
   const INSIDE_END = new Set(['LI', 'TD', 'TH']); // 이 블록은 번역을 안쪽 끝에 넣는다(안 그러면 목록·표 구조가 깨진다)
   const SKIP_TEXT = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']);
   // 이 태그의 경계에서는 글자가 붙지 않게 공백을 둔다(innerText 가 줄을 바꾸는 곳)
@@ -92,8 +93,54 @@
     };
   }
 
+  // root 아래에서 번역할 문단 블록 목록을 문서 순서로 돌려준다.
+  // 중첩되면 가장 안쪽 블록 하나만(예: li 안의 p 는 p 만). nav/header/footer/aside 안은 뺀다.
+  // 텍스트가 isTargetText 를 통과하고 MAX_TEXT 를 넘지 않는 것만.
+  function collectBlocks(root, { isHidden } = {}) {
+    const blocks = [];
+    if (!root || root.nodeType !== 1) return blocks;
+
+    const skip = (n) =>
+      n.nodeType !== 1 ||
+      isExcluded(n) ||
+      SKIP_TEXT.has(n.tagName) ||
+      IGNORE.has(n.tagName) ||
+      SECTION_EXCLUDE.has(n.tagName) ||
+      n.isContentEditable === true ||
+      isHidden?.(n) === true;
+
+    function hasChildBlock(node) {
+      for (const c of node.childNodes ?? []) {
+        if (skip(c)) continue;
+        if (BLOCK.has(c.tagName)) return true;
+        if (hasChildBlock(c)) return true;
+      }
+      return false;
+    }
+
+    function walk(node) {
+      if (skip(node)) return;
+      if (BLOCK.has(node.tagName)) {
+        if (!hasChildBlock(node)) {
+          const text = textOf(node, { isHidden });
+          if (isTargetText(text) && text.length <= MAX_TEXT) {
+            blocks.push(node);
+          }
+          return;
+        }
+      }
+      for (const c of node.childNodes ?? []) {
+        walk(c);
+      }
+    }
+
+    walk(root);
+    return blocks;
+  }
+
   globalThis.readglossParagraph = {
     MAX_TEXT, MIN_TEXT, BUTTON_SIZE, TRANSLATION_TAG, TRANSLATION_STYLE,
     normalizeText, isTargetText, findBlock, insertPlacement, textOf, textExceeds, buttonPosition,
+    collectBlocks,
   };
 })();

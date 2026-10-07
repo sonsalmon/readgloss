@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 // extension/paragraph-core.js 는 text.js 와 같은 classic script. 전역 readglossParagraph 로 쓴다.
 await import('../extension/paragraph-core.js');
-const { MAX_TEXT, MIN_TEXT, TRANSLATION_TAG, TRANSLATION_STYLE, normalizeText, isTargetText, findBlock, insertPlacement, textOf, textExceeds, buttonPosition } = globalThis.readglossParagraph;
+const { MAX_TEXT, MIN_TEXT, TRANSLATION_TAG, TRANSLATION_STYLE, normalizeText, isTargetText, findBlock, insertPlacement, textOf, textExceeds, buttonPosition, collectBlocks } = globalThis.readglossParagraph;
 
 // 브라우저 없이 쓰는 가짜 DOM. el('p', {attrs}, ...children), 문자열 자식은 텍스트 노드.
 function el(tag, attrs = {}, ...kids) {
@@ -205,6 +205,77 @@ test('buttonPosition: 목록(li) 문단은 글머리표 자리만큼 더 왼쪽�
 
 test('buttonPosition: 첫 줄 정보가 없으면 블록 맨 위를 쓴다', () => {
   assert.deepEqual(buttonPosition({ blockRect: { left: 100, top: 50 } }), { left: 72, top: 50, inside: false });
+});
+
+test('collectBlocks: 중첩 블록은 가장 안쪽 블록 하나만 수집한다 (li > p 는 p 만)', () => {
+  const p = el('p', {}, 'English paragraph inside list item that exceeds twenty characters.');
+  const li = el('li', {}, p);
+  const ul = el('ul', {}, li);
+  const root = el('div', {}, ul);
+
+  const blocks = collectBlocks(root);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0], p);
+});
+
+test('collectBlocks: 하위 블록이 없는 블록은 블록 자신이 수집된다', () => {
+  const li = el('li', {}, 'This is an independent list item with enough English text.');
+  const ul = el('ul', {}, li);
+  const root = el('div', {}, ul);
+
+  const blocks = collectBlocks(root);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0], li);
+});
+
+test('collectBlocks: 코드 블록(pre, code) 안은 수집 대상에서 제외한다', () => {
+  const pInCode = el('p', {}, 'English paragraph inside code tag with sufficient length.');
+  const code = el('code', {}, pInCode);
+  const pre = el('pre', {}, code);
+  const normalP = el('p', {}, 'Normal English paragraph outside pre code that has enough words.');
+  const root = el('div', {}, pre, normalP);
+
+  const blocks = collectBlocks(root);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0], normalP);
+});
+
+test('collectBlocks: nav, header, footer, aside 안은 수집 대상에서 제외한다', () => {
+  const navP = el('p', {}, 'English navigation item paragraph that is long enough.');
+  const nav = el('nav', {}, navP);
+  const headerP = el('p', {}, 'English header item paragraph that is long enough to translate.');
+  const header = el('header', {}, headerP);
+  const footerP = el('p', {}, 'English footer item paragraph that is long enough to translate.');
+  const footer = el('footer', {}, footerP);
+  const asideP = el('p', {}, 'English aside item paragraph that is long enough to translate.');
+  const aside = el('aside', {}, asideP);
+  const bodyP = el('p', {}, 'Main content paragraph in English with more than twenty characters.');
+  const root = el('div', {}, nav, header, footer, aside, bodyP);
+
+  const blocks = collectBlocks(root);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0], bodyP);
+});
+
+test('collectBlocks: 이미 번역된 블록 표시(번역 노드) 자체는 수집 대상에서 제외된다', () => {
+  const p = el('p', {}, 'Original English text that meets all target criteria and is long enough.');
+  const translation = tr('한국어 번역 결과문이 여기에 표시됩니다');
+  const root = el('div', {}, p, translation);
+
+  const blocks = collectBlocks(root);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0], p);
+});
+
+test('collectBlocks: 문서 순서대로 수집하며 대상 텍스트 조건과 숨김 요소를 반영한다', () => {
+  const p1 = el('p', {}, 'First English paragraph that meets the criteria easily.');
+  const shortP = el('p', {}, 'Short text.');
+  const hiddenP = el('p', {}, 'This paragraph is hidden and should be ignored completely.');
+  const p2 = el('p', {}, 'Second English paragraph that also meets the criteria easily.');
+  const root = el('div', {}, p1, shortP, hiddenP, p2);
+
+  const blocks = collectBlocks(root, { isHidden: (n) => n === hiddenP });
+  assert.deepEqual(blocks, [p1, p2]);
 });
 
 test('manifest: content script 목록에 paragraph-core.js, paragraph.js 가 이어서 있다(ES 모듈 import 없음)', () => {

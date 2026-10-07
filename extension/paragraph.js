@@ -4,7 +4,7 @@
   if (!core) return;
   // 켜짐 범위 판정(계약 D)은 자동 주석과 같은 함수를 쓴다. 없으면(로드 순서가 어긋난 경우) 막지 않는다.
   const enabledHere = globalThis.readglossAnnotate?.enabledHere ?? (() => true);
-  const { MAX_TEXT, BUTTON_SIZE, TRANSLATION_TAG, TRANSLATION_STYLE, isTargetText, findBlock, insertPlacement, textOf, textExceeds, buttonPosition } = core;
+  const { MAX_TEXT, BUTTON_SIZE, TRANSLATION_TAG, TRANSLATION_STYLE, isTargetText, findBlock, insertPlacement, textOf, textExceeds, buttonPosition, collectBlocks } = core;
 
   const MAX_SENTENCE = 1000; // 표현을 담을 때 함께 저장하는 문단 원문의 상한(다리의 sentence 상한)
 
@@ -189,6 +189,51 @@
     nodes.set(block, n);
   }
 
+  async function translateBlock(block, { bulk = false } = {}) {
+    if (!block || !block.isConnected) return { ok: false, error: 'disconnected' };
+    if (nodeOf(block)) return { ok: true };
+    if (requests.get(block)?.status === 'loading') return { ok: false, error: 'loading' };
+
+    const text = textOf(block, { isHidden });
+    if (text.length > MAX_TEXT) {
+      requests.set(block, { status: 'error', error: 'too-large' });
+      if (current === block) refresh();
+      return { ok: false, error: 'too-large' };
+    }
+
+    requests.set(block, { status: 'loading' });
+    if (current === block) refresh();
+
+    const payload = {
+      type: 'translate',
+      text,
+      ...(bulk ? { bulk: true } : {}),
+      ...(globalThis.readglossGlossary?.hint(settings, document, location.hostname) ?? {}),
+    };
+
+    let r;
+    try {
+      r = await chrome.runtime.sendMessage(payload);
+    } catch {
+      r = { error: 'ext-reloaded' }; // 확장이 다시 로드되면 이 페이지의 연결이 끊긴다
+    }
+
+    if (r?.translation && block.isConnected) {
+      requests.delete(block);
+      insert(block, r.translation, r.expressions, text.slice(0, MAX_SENTENCE));
+      if (current === block) {
+        refresh();
+        place();
+      }
+      return { ok: true, translation: r.translation };
+    } else {
+      const error = r?.error ?? 'no-response';
+      requests.set(block, { status: 'error', error });
+      if (current === block) refresh();
+      return { ok: false, error };
+    }
+  }
+
   async function onButton() {
     const block = current;
     if (!block) return;
@@ -197,31 +242,132 @@
       shown.remove(); // 다시 누르면 걷는다
       nodes.delete(block);
     } else if (requests.get(block)?.status !== 'loading') {
-      const text = textOf(block, { isHidden });
-      if (text.length > MAX_TEXT) {
-        requests.set(block, { status: 'error', error: 'too-large' });
-      } else {
-        requests.set(block, { status: 'loading' });
-        refresh();
-        let r;
-        try {
-          r = await chrome.runtime.sendMessage({ type: 'translate', text, ...(globalThis.readglossGlossary?.hint(settings, document, location.hostname) ?? {}) });
-        } catch {
-          r = { error: 'ext-reloaded' }; // 확장이 다시 로드되면 이 페이지의 연결이 끊긴다
-        }
-        if (r?.translation && block.isConnected) {
-          requests.delete(block);
-          insert(block, r.translation, r.expressions, text.slice(0, MAX_SENTENCE));
-        } else {
-          requests.set(block, { status: 'error', error: r?.error ?? 'no-response' });
-        }
-      }
+      await translateBlock(block, { bulk: false });
     }
     if (current === block) {
       refresh();
       place();
     }
   }
+
+  // ---- 전체 번역 (T21) ----
+  const FATAL_ERRORS = new Set(['bridge-off', 'unauthorized', 'pair-failed', 'ext-reloaded']);
+  let bulkState = {
+    running: false,
+    abort: false,
+    done: 0,
+    total: 0,
+    failed: 0,
+  };
+
+  function emitStatus() {
+    window.dispatchEvent(
+      new CustomEvent('readgloss:pagetranslate-status', {
+        detail: {
+          running: bulkState.running,
+          done: bulkState.done,
+          total: bulkState.total,
+          failed: bulkState.failed,
+        },
+      }),
+    );
+  }
+
+  function isVisibleBlock(el) {
+    const r = el.getBoundingClientRect();
+    return r.bottom > 0 && r.top < innerHeight && (r.width > 0 || r.height > 0);
+  }
+
+  function orderFromVisible(blocks) {
+    const firstIdx = blocks.findIndex(isVisibleBlock);
+    if (firstIdx <= 0) return blocks;
+    return [...blocks.slice(firstIdx), ...blocks.slice(0, firstIdx)];
+  }
+
+  async function startPageTranslate() {
+    if (!allowed() || pageOff || bulkState.running) return;
+    const root = document.body;
+    if (!root) return;
+
+    const raw = (collectBlocks ?? core.collectBlocks)?.(root, { isHidden }) ?? [];
+    const blocks = raw.filter((b) => !nodeOf(b));
+    if (blocks.length === 0) {
+      bulkState = { running: false, abort: false, done: 0, total: 0, failed: 0 };
+      emitStatus();
+      return;
+    }
+
+    const queue = orderFromVisible(blocks);
+    bulkState = {
+      running: true,
+      abort: false,
+      done: 0,
+      total: queue.length,
+      failed: 0,
+    };
+    emitStatus();
+
+    for (const b of queue) {
+      if (bulkState.abort) break;
+      if (!b.isConnected) {
+        bulkState.failed++;
+        emitStatus();
+        continue;
+      }
+      if (nodeOf(b)) {
+        bulkState.done++;
+        emitStatus();
+        continue;
+      }
+
+      const res = await translateBlock(b, { bulk: true });
+      if (bulkState.abort) break;
+
+      if (res?.ok) {
+        bulkState.done++;
+      } else {
+        bulkState.failed++;
+        if (FATAL_ERRORS.has(res?.error)) {
+          break; // 치명적 오류면 전체 멈춤
+        }
+      }
+      emitStatus();
+    }
+
+    bulkState.running = false;
+    emitStatus();
+  }
+
+  function stopPageTranslate() {
+    if (bulkState.running) {
+      bulkState.abort = true;
+    }
+  }
+
+  function clearPageTranslate() {
+    if (bulkState.running) {
+      bulkState.abort = true;
+    }
+    const all = document.querySelectorAll(TRANSLATION_TAG);
+    for (const el of all) el.remove();
+    if (current) {
+      refresh();
+      place();
+    }
+    bulkState = { running: false, abort: false, done: 0, total: 0, failed: 0 };
+    emitStatus();
+  }
+
+  window.addEventListener('readgloss:pagetranslate', (e) => {
+    const action = e.detail?.action;
+    if (action === 'start') {
+      startPageTranslate().catch(() => {});
+    } else if (action === 'stop') {
+      stopPageTranslate();
+    } else if (action === 'clear') {
+      clearPageTranslate();
+    }
+  });
 
   function onClick(e) {
     if (host && e.composedPath().includes(host)) return; // 번역 버튼 안
@@ -249,11 +395,14 @@
   // 설정·이 페이지 끄기가 바뀌어 꺼지면 떠 있던 버튼을 거둔다(이미 끼워 넣은 번역문은 그대로 둔다)
   addEventListener('readgloss:pageoff', (e) => {
     pageOff = typeof e.detail?.off === 'boolean' ? e.detail.off : globalThis.readglossPageOff === true;
-    if (!allowed()) hide();
+    if (!allowed()) {
+      hide();
+      stopPageTranslate();
+    }
   });
   try {
-    globalThis.readglossSettings?.load().then((s) => ((settings = s), applyTheme(), allowed() || hide()), () => {});
-    globalThis.readglossSettings?.onChange((s) => ((settings = s), applyTheme(), allowed() || hide()));
+    globalThis.readglossSettings?.load().then((s) => ((settings = s), applyTheme(), allowed() || (hide(), stopPageTranslate())), () => {});
+    globalThis.readglossSettings?.onChange((s) => ((settings = s), applyTheme(), allowed() || (hide(), stopPageTranslate())));
   } catch {
     // 확장이 다시 로드된 뒤의 낡은 페이지: 기본값으로 둔다
   }

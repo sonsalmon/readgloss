@@ -282,9 +282,52 @@
   // 떠 있는 버튼 + 퀵 메뉴
   const fab = h('button', { class: 'fab', type: 'button', 'aria-expanded': 'false' }, svgIcon());
   const pageOffItem = h('button', { class: 'mitem', type: 'button', onclick: () => setPageOff(!pageOff) });
+
+  let ptState = { running: false, done: 0, total: 0, failed: 0 };
+  const pageTranslateItem = h('button', { class: 'mitem', type: 'button', onclick: onPageTranslateClick });
+
+  function updatePageTranslateUI() {
+    const failText = ptState.failed > 0 ? ` (실패 ${ptState.failed})` : '';
+    if (ptState.running) {
+      pageTranslateItem.textContent = `전체 번역 중 ${ptState.done}/${ptState.total} · 멈추기${failText}`;
+      pageTranslateItem.setAttribute('aria-busy', 'true');
+    } else {
+      pageTranslateItem.removeAttribute('aria-busy');
+      const hasTr = Boolean(document.querySelector('readgloss-translation')) || ptState.done > 0;
+      pageTranslateItem.textContent = hasTr ? `전체 번역 걷기${failText}` : `페이지 전체 번역${failText}`;
+    }
+  }
+
+  function onPageTranslateClick() {
+    if (ptState.running) {
+      window.dispatchEvent(new CustomEvent('readgloss:pagetranslate', { detail: { action: 'stop' } }));
+    } else {
+      const hasTr = Boolean(document.querySelector('readgloss-translation')) || ptState.done > 0;
+      if (hasTr) {
+        window.dispatchEvent(new CustomEvent('readgloss:pagetranslate', { detail: { action: 'clear' } }));
+      } else {
+        window.dispatchEvent(new CustomEvent('readgloss:pagetranslate', { detail: { action: 'start' } }));
+      }
+    }
+  }
+
+  window.addEventListener('readgloss:pagetranslate-status', (e) => {
+    const d = e.detail;
+    if (!d) return;
+    ptState = {
+      running: d.running === true,
+      done: Number(d.done) || 0,
+      total: Number(d.total) || 0,
+      failed: Number(d.failed) || 0,
+    };
+    updatePageTranslateUI();
+  });
+  updatePageTranslateUI();
+
   const menu = h('div', { class: 'menu' },
     h('div', { class: 'menu-card', role: 'group', 'aria-label': '빠른 메뉴' },
       pageOffItem,
+      pageTranslateItem,
       h('button', { class: 'mitem', type: 'button', text: '설정', onclick: () => openPanel('settings') }),
       h('button', { class: 'mitem', type: 'button', text: '내 단어', onclick: () => openPanel('words') }),
       h('button', { class: 'mitem', type: 'button', text: '버튼 숨기기', onclick: () => setSettings({ floatingButton: { show: false } }) })));
