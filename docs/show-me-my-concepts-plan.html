@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>내 개념 구현 계획</title>
+<style>
+:root{--bg:#fbfaf7;--fg:#222;--mut:#666;--card:#fff;--bd:#e3e0d8}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1b1a;--fg:#eee;--mut:#aaa;--card:#252524;--bd:#3a3936}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Apple SD Gothic Neo",sans-serif}
+main{max-width:900px;margin:auto;padding:16px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:16px 0;overflow-x:auto}
+h1{font-size:22px}h2{font-size:18px;margin:0 0 8px}.mut{color:var(--mut);font-size:14px}
+table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-top:1px solid var(--bd);padding:6px;text-align:left;vertical-align:top}
+</style></head><body><main>
+<h1>내 개념 표시 — 구현 계획</h1>
+<p class="mut">정본: docs/superpowers/plans/2026-10-08-my-concepts.md · 설계서 변경 기록 11</p>
+
+<section><h2>1. 작업 순서</h2>
+<pre class="mermaid">
+flowchart LR
+  W1["작업 1<br/>db 열기 · 한 번 옮기기"] --> W2["작업 2<br/>단어·내 사전·스크랩<br/>속을 db 로"]
+  W2 --> W3["작업 3<br/>개념 저장 · /concepts<br/>개념 문서"]
+  W3 --> W4["작업 4<br/>확장: 칸 · 회색 · 개념 탭"]
+  W4 --> W5["작업 5<br/>합치기 · 정범 5분 확인"]
+</pre>
+<p>작업마다 Gemini가 코드를 쓴다. Haiku가 시험을 돌리고 커밋한다. 검증자가 확인한다. 그다음 작업으로 간다.</p></section>
+
+<section><h2>2. 작업별로 바뀌는 파일</h2>
+<pre class="mermaid">
+flowchart TB
+  subgraph 다리
+    db["db.mjs (새)"]
+    w["words.mjs"]
+    m["mydict.mjs"]
+    s["scraps.mjs"]
+    c["concepts.mjs (새)"]
+  end
+  subgraph 스크립트
+    ds["data-source.mjs (새)"]
+    ex["export-day · pending · scraps"]
+    ec["export-concepts.mjs (새)"]
+  end
+  subgraph 확장
+    cc["concept-core.js (새)"]
+    cp["concept.js (새)"]
+    pc["panel-concepts.js (새)"]
+    sel["selection · content · panel-scraps<br/>(버튼 하나씩)"]
+  end
+  db --> w & m & s & c
+  ds --> ex
+  c --> ec
+  c --> cp --> pc
+  cc --> cp
+</pre></section>
+
+<section><h2>3. 사람이 부딪힐 것 (시험으로 묶음)</h2>
+<table>
+<tr><th>상황</th><th>기대 동작</th><th>작업</th></tr>
+<tr><td>옮기는 중 다리가 꺼진다</td><td>다음 시작 때 다시 옮긴다. JSON은 남는다.</td><td>1</td></tr>
+<tr><td>같은 이름 개념을 다시 만든다</td><td>새로 안 만든다. 그 개념을 연다.</td><td>3</td></tr>
+<tr><td>개념을 지운다</td><td>연결선도 모두 지운다.</td><td>3</td></tr>
+<tr><td>개념어가 링크 안에 있다</td><td>칠한다. 클릭은 링크로 간다. ⌥+클릭만 상세를 연다.</td><td>4</td></tr>
+<tr><td>개념이 300개다</td><td>페이지 표시가 0.2초 안에 끝난다.</td><td>4</td></tr>
+</table></section>
+
+<section><h2>4. 설계서와 달라진 한 가지</h2>
+<p>설계서: 개념어를 누르면 상세가 열린다.</p>
+<p>계획: 개념어가 <b>링크 안</b>에 있으면, 클릭은 링크로 간다. 이때는 ⌥+클릭으로 상세를 연다. 링크 밖은 그냥 클릭으로 연다.</p>
+<p class="mut">이유: 링크를 누를 때마다 상세가 열리면 페이지 이동이 막힌다.</p></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'default'});</script>
+</body></html>
