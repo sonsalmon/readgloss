@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>스크랩 고리 설계</title>
+<style>
+:root{--bg:#fbfaf7;--fg:#222;--mut:#666;--card:#fff;--bd:#e3e0d8}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1b1a;--fg:#eee;--mut:#aaa;--card:#252524;--bd:#3a3936}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,"Apple SD Gothic Neo",sans-serif}
+main{max-width:900px;margin:auto;padding:16px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:16px 0;overflow-x:auto}
+h1{font-size:22px}h2{font-size:18px;margin:0 0 4px}p{color:var(--mut);margin:0 0 8px}
+</style></head><body><main>
+<h1>스크랩 고리 설계 (변경 기록 10)</h1>
+
+<section><h2>1. 전체 구조</h2><p>정본은 맥의 scraps.json 하나. 학습 폴더는 읽기만.</p>
+<pre class="mermaid">
+flowchart LR
+  subgraph B["Aside 브라우저 (확장)"]
+    Card["드래그 카드<br/>[스크랩] ⌥S · 할 일 줄"]
+    Hl["형광펜"]
+    Book["패널 스크랩북"]
+    Bar["넘김 막대 ← →"]
+  end
+  subgraph M["맥 다리"]
+    API["/scraps"]
+    Data[("scraps.json")]
+    Guess["할 일 짐작"]
+  end
+  subgraph L["학습 폴더 (읽기만)"]
+    Road["roadmap.json"]
+    Notes["NOTES 다음 한 걸음"]
+  end
+  Card -->|저장| API --> Data
+  API --> Guess
+  Guess -.-> Road
+  Guess -.-> Notes
+  Data -->|페이지 열 때| Hl
+  Data --> Book --> Bar
+</pre></section>
+
+<section><h2>2. 스크랩 한 번</h2>
+<pre class="mermaid">
+sequenceDiagram
+  actor 정범
+  participant 카드
+  participant 다리
+  participant 페이지
+  정범->>카드: 문장 드래그
+  카드->>다리: guess(주소)
+  다리-->>카드: 할 일 = 접근 통제 랩
+  alt 커리큘럼 밖 페이지
+    카드->>정범: 넣을까요? [넣기][인박스]
+  end
+  정범->>카드: [스크랩] / ⌥S
+  카드->>다리: save(문장+앞뒤, 소제목, 할 일)
+  카드->>페이지: 노란 형광펜
+  카드->>정범: 스크랩했어요 [메모]
+</pre></section>
+
+<section><h2>3. 할 일 짐작 (승인 때와 달라진 곳)</h2><p>주소에 맞는 할 일을 먼저 추리고, 그 안에서 최근 순서로 고름.</p>
+<pre class="mermaid">
+flowchart TD
+  S["페이지 주소"] --> M{"주소에 맞는 할 일 있나?"}
+  M -->|있음| A{"오늘 마지막 할 일이 그 안에?"}
+  A -->|예| T1["그 할 일"]
+  A -->|아니오| B{"다음 한 걸음이 그 안에?"}
+  B -->|예| T2["그 할 일"]
+  B -->|아니오| T3["가장 길게 맞는 것 (PortSwigger→S1-04)"]
+  M -->|없음| C{"후보 있나?"}
+  C -->|있음| Q["질문: 넣을까요?"]
+  C -->|없음| I["인박스"]
+</pre></section>
+
+<section><h2>4. 학습 폴더로 옮기기 — 밀린 날 따라잡기</h2><p>세션을 안 끝내고 꺼도 데이터는 안전. 다음 세션에 한꺼번에 채움.</p>
+<pre class="mermaid">
+flowchart LR
+  O["세션 열기/끝내기"] --> P["export:pending"]
+  P --> R["learning-records/날짜.md"]
+  O --> G["export:scraps"]
+  G --> F["scraps/S1-04.md<br/>scraps/S1-04/페이지.md"]
+  R --> C["커밋"]
+  F --> C
+  C --> K["export:mark"]
+</pre></section>
+
+<section><h2>5. 만드는 순서</h2>
+<pre class="mermaid">
+flowchart LR
+  T23["T23 다리"] --> Mn["메인 세션: 절차·첫 따라잡기"]
+  T23 --> T24["T24 페이지: 형광펜 시험·스크랩"]
+  T24 --> T25["T25 스크랩북·← →"]
+  T25 --> U["정범 10분 확인"]
+</pre></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'default'});</script>
+</body></html>
