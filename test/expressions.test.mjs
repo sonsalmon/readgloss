@@ -69,8 +69,8 @@ test('배선: 번역 응답의 expressions 와 save-phrase 의 kind 를 backgrou
   assert.match(bg, /JSON\.stringify\(\{ op,[^}]*\bkind\b/, 'kind 를 다리로 보낸다');
 });
 
-test('배선: 내용 스크립트 순서는 그대로(manifest 변경 없음), 새 파일 없음', () => {
+test('배선: 내용 스크립트 순서(T24 스크랩 파일 3개 포함)', () => {
   const m = JSON.parse(read('manifest.json'));
-  assert.deepEqual(m.content_scripts[0].js, ['text.js', 'settings-core.js', 'glossary-core.js', 'paragraph-core.js', 'annotate-core.js', 'content.js', 'paragraph.js', 'annotate.js', 'panel.js', 'panel-words.js', 'panel-study.js', 'selection-core.js', 'selection.js']);
+  assert.deepEqual(m.content_scripts[0].js, ['text.js', 'settings-core.js', 'glossary-core.js', 'paragraph-core.js', 'annotate-core.js', 'content.js', 'paragraph.js', 'annotate.js', 'panel.js', 'panel-words.js', 'panel-study.js', 'vendor/approx-string-match.js', 'scrap-core.js', 'scrap.js', 'selection-core.js', 'selection.js']);
   assert.deepEqual(m.permissions, ['storage']);
 });

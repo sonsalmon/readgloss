@@ -92,6 +92,19 @@
     .btn[hidden] { display: none; }
     .notice { margin-top: 8px; }
     .notice[hidden] { display: none; }
+    .task-row { display: flex; align-items: baseline; gap: 4px; padding: 6px 12px 10px; border-top: 1px solid var(--rg-border); font-size: 11.5px; color: var(--rg-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .task-btn { all: unset; cursor: pointer; color: var(--rg-accent); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; flex-shrink: 0; }
+    .task-btn:hover { opacity: .8; }
+    .task-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
+    .task-picker { display: flex; flex-direction: column; gap: 2px; padding: 6px 12px 8px; border-top: 1px solid var(--rg-border); background: var(--rg-bg); max-height: 120px; overflow-y: auto; }
+    .task-picker[hidden] { display: none; }
+    .task-item { all: unset; cursor: pointer; padding: 3px 6px; border-radius: 5px; font-size: 12px; color: var(--rg-fg); }
+    .task-item:hover { background: var(--rg-accent-soft); color: var(--rg-accent); }
+    .task-item.on { font-weight: 700; color: var(--rg-accent); }
+    .ask-box { padding: 8px 12px; border-top: 1px solid var(--rg-border); background: var(--rg-accent-soft); font-size: 12px; }
+    .ask-box[hidden] { display: none; }
+    .ask-text { font-weight: 600; color: var(--rg-fg); margin-bottom: 6px; word-break: keep-all; }
+    .ask-btns { display: flex; gap: 6px; }
     ${MD_CSS}
     ${EXPR_CSS}
   `;
@@ -406,9 +419,10 @@
       ui.ctxBtn = button('', '', () => askContext(core.stageButton('ctx', stage()).wide));
       ui.saveBtn = button('', '', () => togglePhrase());
       ui.saveBtn.setAttribute('aria-disabled', 'true'); // 단어장 상태를 받으면 켠다
+      ui.scrapBtn = button('', '', () => toggleScrap());
       ui.copyBtn = button('복사', '번역문 복사', () => copy());
       const foot = el('div', 'foot');
-      foot.append(ui.ctxBtn, ui.saveBtn);
+      foot.append(ui.ctxBtn, ui.saveBtn, ui.scrapBtn);
       const key = core.mydictKey(text); // 키 규칙에 안 맞는 선택(너무 길거나 허용 밖 글자)은 [내 사전에 추가] 를 숨긴다
       if (key) {
         ui.md = createMydict({
@@ -421,9 +435,38 @@
       }
       foot.append(ui.copyBtn);
       if (ui.md) foot.append(ui.md.form);
-      card.append(scroll, foot);
+
+      // 밖 페이지 질문 상자: "지금 하는 '<제목>'에 넣을까요?" [넣기] [인박스]
+      ui.askBox = el('div', 'ask-box');
+      ui.askBox.hidden = true;
+      ui.askText = el('div', 'ask-text');
+      ui.askPutBtn = button('넣기', '지금 할 일에 넣기', () => answerAsk(true));
+      ui.askInboxBtn = button('인박스', '인박스에 넣기', () => answerAsk(false));
+      const askBtns = el('div', 'ask-btns');
+      askBtns.append(ui.askPutBtn, ui.askInboxBtn);
+      ui.askBox.append(ui.askText, askBtns);
+
+      // 할 일 줄: → <할 일 제목> › <페이지 제목> › <가장 가까운 소제목>
+      ui.taskRow = el('div', 'task-row');
+      const arrow = el('span', 'task-arrow', '→ ');
+      ui.taskBtn = el('button', 'task-btn', '짐작 중…');
+      ui.taskBtn.type = 'button';
+      ui.taskBtn.setAttribute('aria-label', '할 일 바꾸기');
+      ui.taskBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleTaskPicker();
+      });
+      ui.taskPath = el('span', 'task-path');
+      ui.taskRow.append(arrow, ui.taskBtn, ui.taskPath);
+
+      ui.taskPicker = el('div', 'task-picker');
+      ui.taskPicker.hidden = true;
+
+      card.append(scroll, foot, ui.askBox, ui.taskRow, ui.taskPicker);
       paintCtxBtn();
       paintSaveBtn();
+      paintScrapBtn();
+      paintTaskRow();
     }
     shadow.append(style, card);
     document.documentElement.append(host);
@@ -522,6 +565,175 @@
     place();
   }
 
+  function paintScrapBtn() {
+    if (!ui?.scrapBtn) return;
+    const saved = current?.scrapId != null;
+    ui.scrapBtn.textContent = saved ? '스크랩됨' : '스크랩';
+    ui.scrapBtn.setAttribute('aria-label', saved ? '스크랩됨, 누르면 빼기' : '스크랩');
+    ui.scrapBtn.classList.toggle('on', saved);
+  }
+
+  function paintTaskRow() {
+    if (!ui?.taskBtn || !ui?.taskPath) return;
+    ui.taskBtn.textContent = current?.taskTitle || (current?.task ? current.task : '인박스');
+    const nearHeading = current?.range ? (headingsAbove(current.range.startContainer).at(-1) || '') : '';
+    const pageTitle = document.title || '페이지';
+    ui.taskPath.textContent = ` › ${pageTitle}${nearHeading ? ` › ${nearHeading}` : ''}`;
+  }
+
+  function toggleTaskPicker() {
+    if (!ui?.taskPicker) return;
+    ui.taskPicker.hidden = !ui.taskPicker.hidden;
+    place();
+  }
+
+  function renderTaskPicker(candidates) {
+    if (!ui?.taskPicker) return;
+    ui.taskPicker.replaceChildren();
+    const list = [...(candidates || [])];
+    if (!list.some((c) => c.id === null)) {
+      list.push({ id: null, title: '인박스' });
+    }
+    for (const item of list) {
+      const b = el('button', 'task-item', item.title || item.id || '인박스');
+      b.type = 'button';
+      if (item.id === current?.task) b.classList.add('on');
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        chooseTask(item.id, item.title || item.id || '인박스');
+      });
+      ui.taskPicker.append(b);
+    }
+  }
+
+  function chooseTask(id, title) {
+    if (!current) return;
+    current.task = id;
+    current.taskTitle = title;
+    current.taskChosen = true;
+    if (ui?.taskPicker) ui.taskPicker.hidden = true;
+    paintTaskRow();
+    place();
+  }
+
+  async function guessTask() {
+    const my = seq;
+    const r = await send({ type: 'scraps', op: 'guess', url: location.href });
+    if (my !== seq || !r || !current) return;
+    current.guess = r;
+    if (!current.taskChosen) {
+      current.task = r.task ?? null;
+      const matched = r.candidates?.find((c) => c.id === r.task);
+      current.taskTitle = matched ? matched.title : (r.task ?? '인박스');
+    }
+    paintTaskRow();
+    renderTaskPicker(r.candidates);
+  }
+
+  const getStorage = () => globalThis.chrome?.['storage']?.local;
+
+  async function toggleScrap() {
+    if (!ui?.scrapBtn || ui.scrapBtn.getAttribute('aria-disabled') === 'true' || !current) return;
+    const my = seq;
+    const saved = current.scrapId != null;
+
+    if (saved) {
+      ui.scrapBtn.setAttribute('aria-disabled', 'true');
+      notify('');
+      const r = await send({ type: 'scraps', op: 'remove', id: current.scrapId });
+      if (my !== seq) return;
+      ui.scrapBtn.removeAttribute('aria-disabled');
+      if (r && !r.error) {
+        globalThis.readglossScrapPage?.unpaint(current.scrapId);
+        current.scrapId = null;
+        paintScrapBtn();
+      } else {
+        notify(errText(r));
+      }
+      return;
+    }
+
+    // 밖 페이지 질문: ask:true 이고 아직 직접 고르지 않았으며 후보 할 일이 있을 때
+    if (!current.taskChosen && current.guess?.ask === true && current.task) {
+      const dateStr = core.localDateStr();
+      const askKey = core.scrapAskKey(dateStr, location.href);
+      const storage = getStorage();
+      if (storage) {
+        try {
+          const stored = await storage.get(askKey);
+          const answer = stored?.[askKey];
+          if (answer === 'inbox') {
+            current.task = null;
+            return saveScrap();
+          } else if (answer) {
+            return saveScrap();
+          }
+        } catch {
+          // 조회 실패는 묻기로 진행
+        }
+      }
+      ui.askText.textContent = `지금 하는 '${current.taskTitle || current.task}'에 넣을까요?`;
+      ui.askBox.hidden = false;
+      place();
+      return;
+    }
+
+    saveScrap();
+  }
+
+  async function answerAsk(put) {
+    if (!current) return;
+    ui.askBox.hidden = true;
+    place();
+    const dateStr = core.localDateStr();
+    const askKey = core.scrapAskKey(dateStr, location.href);
+    const storage = getStorage();
+    if (storage) {
+      storage.set({ [askKey]: put ? 'task' : 'inbox' }).catch(() => {});
+    }
+    if (!put) current.task = null;
+    saveScrap();
+  }
+
+  async function saveScrap() {
+    if (!ui?.scrapBtn || ui.scrapBtn.getAttribute('aria-disabled') === 'true' || !current) return;
+    const my = seq;
+    ui.scrapBtn.setAttribute('aria-disabled', 'true');
+    notify('');
+    const headings = headingsAbove(current.range.startContainer);
+    const translation = current.wide ?? current.ctx ?? current.mt ?? '';
+    const message = core.scrapMessage({
+      url: location.href,
+      title: document.title,
+      headings,
+      quote: current.quote,
+      pos: current.pos,
+      translation,
+      task: current.task,
+    });
+    const r = await send(message);
+    if (my !== seq) return;
+    ui.scrapBtn.removeAttribute('aria-disabled');
+    if (r && !r.error) {
+      const list = Array.isArray(r.scraps) ? r.scraps : [];
+      const normUrl = core.normalizeUrl(location.href);
+      const saved = list.find((s) => s.url === normUrl && s.quote?.exact === current.quote?.exact) || list.at(-1);
+      const id = saved?.id;
+      current.scrapId = id;
+      globalThis.readglossScrapPage?.paint(list);
+      globalThis.readglossToast?.show({
+        text: '스크랩했어요',
+        onMemo: (memo) => send({ type: 'scraps', op: 'memo', id, memo }),
+      });
+      getSelection().removeAllRanges();
+      close();
+      return;
+    }
+    notify(errText(r));
+    paintScrapBtn();
+    place();
+  }
+
   // wide: [더 넓게 보기] 단계. 앞 결과(문맥 번역)는 남기고 "넓은 문맥 번역" 구역에 보탠다.
   async function askContext(wide) {
     if (ui.ctxBtn.getAttribute('aria-disabled') === 'true') return;
@@ -593,12 +805,29 @@
       return;
     }
     if (host) close();
-    current = { text: cls.text, range: range.cloneRange(), anchor: { left: r.left + scrollX, top: r.top + scrollY, bottom: r.bottom + scrollY } };
+    const scrapPage = globalThis.readglossScrapPage;
+    const qInfo = scrapPage?.quoteForRange ? scrapPage.quoteForRange(range) : null;
+    const quote = qInfo?.quote ?? { exact: cls.text, prefix: '', suffix: '' };
+    const pos = qInfo?.pos ?? 0;
+    const existingScrap = scrapPage?.findExisting ? scrapPage.findExisting(cls.text) : null;
+    current = {
+      text: cls.text,
+      range: range.cloneRange(),
+      anchor: { left: r.left + scrollX, top: r.top + scrollY, bottom: r.bottom + scrollY },
+      quote,
+      pos,
+      scrapId: existingScrap ? existingScrap.id : null,
+      task: null,
+      taskTitle: '',
+      taskChosen: false,
+      guess: null,
+    };
     build(cls.text, cls.kind === 'long');
     place();
     if (cls.kind === 'phrase') {
       askMt().catch(close);
       loadPhraseState().catch(() => {});
+      guessTask().catch(() => {});
     }
   }
 
@@ -618,5 +847,15 @@
     true,
   );
   document.addEventListener('mousedown', (e) => host && !e.composedPath().includes(host) && !e.composedPath().some((n) => n.localName === 'readgloss-toast') && close(), true); // 확인 메시지(메모)를 누를 땐 카드를 닫지 않는다
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && host && !e.composedPath().some((n) => n.localName === 'readgloss-toast') && close(), true); // 확인 메시지(메모) 안 Escape 는 카드를 닫지 않는다
+  document.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.key === 'Escape' && host && !e.composedPath().some((n) => n.localName === 'readgloss-toast')) close();
+      if (host && e.code === 'KeyS' && e.altKey) {
+        e['preventDefault']?.();
+        toggleScrap();
+      }
+    },
+    true,
+  );
 })();

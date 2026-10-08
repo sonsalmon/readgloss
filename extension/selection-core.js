@@ -179,8 +179,72 @@
   // 카드 맨 위 약어 줄: "PCA = principal component analysis · 주성분 분석 (이 페이지)". 풀이가 없으면 ''.
   const acronymLine = ({ word, exp, ko, page }) => (exp ? `${word} = ${exp}${ko ? ` · ${ko}` : ''}${page ? ' (이 페이지)' : ''}` : '');
 
+  // ---- 스크랩(T24) 순수 함수 ----
+  // 주소 정규화: # 뒤를 버리고, utm_* 쿼리만 지우고, 끝 /를 뗀다.
+  function normalizeUrl(input) {
+    if (typeof input !== 'string') return '';
+    const u = input.trim();
+    try {
+      const parsed = new URL(u);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+      const withoutHash = u.split('#')[0];
+      const qIndex = withoutHash.indexOf('?');
+      const queryPart = qIndex === -1 ? '' : withoutHash.slice(qIndex + 1);
+
+      const pathname = parsed.pathname.replace(/\/+$/, '');
+      const base = `${parsed.protocol}//${parsed.host}${pathname}`;
+
+      const kept = queryPart
+        .split('&')
+        .filter((part) => part.length > 0 && !part.startsWith('utm_'));
+      const query = kept.length > 0 ? `?${kept.join('&')}` : '';
+      return `${base}${query}`;
+    } catch {
+      return '';
+    }
+  }
+
+  // 밖 페이지 질문 기억 키: 그날(서울 날짜) 동안 다시 안 물음
+  function scrapAskKey(dateStr, url) {
+    return `scrapAsk:${dateStr}:${normalizeUrl(url)}`;
+  }
+
+  // 맥 로컬 날짜 문자열 YYYY-MM-DD (scripts/export-day.mjs 의 dateOf 와 같은 계산)
+  function localDateStr(ts = Date.now()) {
+    const d = new Date(Number(ts));
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  const TASK_RE = /^S\d-\d{2}$/;
+  // 다리 /scraps 'save' 요청 모양 생성. headings 최대 3개(가까운 쪽 끝), 각 200자, quote.exact 1000자, prefix/suffix 64자, translation 2000자, title 300자.
+  function scrapMessage({ url = '', title = '', headings = [], quote = {}, pos = 0, translation = '', task = null }) {
+    const normUrl = normalizeUrl(url);
+    const t = typeof task === 'string' && TASK_RE.test(task) ? task : null;
+    const hList = (Array.isArray(headings) ? headings : [])
+      .map((h) => clip(h, 200))
+      .filter(Boolean)
+      .slice(-3);
+    const exact = typeof quote?.exact === 'string' ? quote.exact.slice(0, 1000) : '';
+    const prefix = typeof quote?.prefix === 'string' ? quote.prefix.slice(-64) : '';
+    const suffix = typeof quote?.suffix === 'string' ? quote.suffix.slice(0, 64) : '';
+    const p = typeof pos === 'number' && Number.isFinite(pos) ? Math.max(0, Math.floor(pos)) : 0;
+    return {
+      type: 'scraps',
+      op: 'save',
+      url: normUrl,
+      title: clip(title, 300),
+      headings: hList,
+      quote: { exact, prefix, suffix },
+      pos: p,
+      translation: clip(translation, 2000),
+      task: t,
+    };
+  }
+
   globalThis.readglossSelection = {
     MAX_TEXT, MAX_SIDE, MAX_TITLE, MAX_HEADINGS, WIDE_SIDE, WIDE_HEADINGS,
     classify, around, buildContext, pickHeadings, stageButton, mydictKey, firstMeaning, bestMeaning, mydictMessage, phraseMessage, findPhrase, MAX_EXPRESSIONS, expressionRows, noteText, expressionButton, expressionToggle, lookupExtras, isAcronym, expandAcronym, acronymLine,
+    normalizeUrl, scrapAskKey, localDateStr, scrapMessage,
   };
 })();
