@@ -3,6 +3,10 @@
 (() => {
   const CONTEXT_LEN = 32; // 앞뒤 문맥 길이(Hypothesis 기본값과 같음)
   const MAX_ERRORS_RATIO = 0.1; // 최대 허용 오차 비율(10%)
+  const APPROX_MIN_LEN = 20; // 이보다 짧은 인용은 근사 검색 안 함(짧은 말은 엉뚱한 곳에 잘 맞음)
+  const APPROX_MAX_TEXT = 300000; // 본문이 이보다 길면 근사 검색 안 함(시간 상한)
+  const APPROX_MAX_EXACT = 1000; // 인용이 이보다 길면 근사 검색 안 함(시간 상한)
+  const APPROX_MAX_REPEAT = 20; // 같은 글자가 이만큼 연속이면 근사 검색 안 함(반복 문자 때문에 느려짐)
 
   // 선택 문장의 앞뒤 문맥(최대 32자)과 인용 추출.
   function quoteOf(fullText, start, end) {
@@ -48,18 +52,44 @@
     return len;
   }
 
-  // Hypothesis match-quote.ts (BSD-2-Clause)의 앵커링 점수 계산 방식을 따름.
-  // 후보마다 prefix 끝부분·suffix 앞부분 맞춤 글자 수 + posHint 거리(가까울수록 높음, 작은 가중치)
+  // 문맥 점수: prefix 끝부분·suffix 앞부분이 맞는 글자 수
+  function contextScore(c, fullText, prefix, suffix) {
+    return matchPrefixLength(fullText, prefix, c.start) + matchSuffixLength(fullText, suffix, c.end);
+  }
+
+  // 최종 점수: 문맥 점수 + posHint 거리(가까울수록 높음, 작은 가중치)
+  // 정확 일치 → 근사 일치(approx-string-match) 후 앞뒤 문맥 일치 글자 수 + 위치 힌트로 고름.
+  // (Hypothesis match-quote.ts 의 앵커링 아이디어를 참고했으나 같은 코드는 아님)
   function scoreCandidate(c, fullText, prefix, suffix, posHint) {
-    const pScore = matchPrefixLength(fullText, prefix, c.start);
-    const sScore = matchSuffixLength(fullText, suffix, c.end);
     let posScore = 0;
     if (typeof posHint === 'number' && Number.isFinite(posHint)) {
       const dist = Math.abs(c.start - posHint);
       // 가까울수록 높게, 작은 가중치(문맥 글자 수 1점 미만으로 유지하여 동점 시 타이브레이커)
       posScore = (1 / (1 + dist)) * 0.1;
     }
-    return pScore + sScore + posScore;
+    return contextScore(c, fullText, prefix, suffix) + posScore;
+  }
+
+  // 지정 구간을 같은 길이의 가림 문자로 바꿈(글자 위치는 그대로)
+  function maskRanges(fullText, ranges) {
+    if (ranges.length === 0) return fullText;
+    const parts = [];
+    let pos = 0;
+    for (const r of ranges) {
+      parts.push(fullText.slice(pos, r.start), '\uFFFF'.repeat(r.end - r.start));
+      pos = r.end;
+    }
+    parts.push(fullText.slice(pos));
+    return parts.join('');
+  }
+
+  // 근사 검색을 해도 되는 인용인지(짧음·긴 본문·같은 글자 반복이면 안 함)
+  function canApprox(fullText, exact) {
+    if (exact.length < APPROX_MIN_LEN) return false;
+    if (exact.length > APPROX_MAX_EXACT) return false;
+    if (fullText.length > APPROX_MAX_TEXT) return false;
+    if (new RegExp('(.)\\1{' + (APPROX_MAX_REPEAT - 1) + ',}', 's').test(exact)) return false;
+    return true;
   }
 
   // fullText 에서 quote 를 찾아 { start, end } 돌려줌. 없으면 null.
@@ -74,31 +104,36 @@
     const suffix = typeof quote.suffix === 'string' ? quote.suffix : '';
 
     // 1. 정확 일치 후보 전부
-    const exactMatches = [];
+    const candidates = [];
     let idx = fullText.indexOf(exact);
     while (idx !== -1) {
-      exactMatches.push({ start: idx, end: idx + exact.length, errors: 0 });
+      candidates.push({ start: idx, end: idx + exact.length, errors: 0 });
       idx = fullText.indexOf(exact, idx + 1);
     }
 
-    let candidates = exactMatches;
-
-    // 2. 정확 일치 후보가 없으면 approx-string-match 로 근사 검색
-    if (candidates.length === 0) {
-      const maxErrors = Math.floor(exact.length * MAX_ERRORS_RATIO);
+    // 2. 근사 검색은 (a) 정확 일치가 없거나, (b) 문맥(prefix/suffix)이 있는데 정확 후보들의 문맥 점수가 모두 0일 때만 한다.
+    const hasContext = prefix.length > 0 || suffix.length > 0;
+    const exactHasContext = candidates.some((c) => contextScore(c, fullText, prefix, suffix) > 0);
+    const needApprox = candidates.length === 0 || (hasContext && !exactHasContext);
+    if (needApprox && canApprox(fullText, exact)) {
       const approx = globalThis.readglossApprox;
       if (!approx || typeof approx.search !== 'function') {
-        return null;
-      }
-      const approxMatches = approx.search(fullText, exact, maxErrors);
-      if (!approxMatches || approxMatches.length === 0) {
-        return null;
-      }
-      candidates = approxMatches.filter((m) => m.errors <= maxErrors);
-      if (candidates.length === 0) {
-        return null;
+        if (candidates.length === 0) return null;
+      } else {
+        const maxErrors = Math.floor(exact.length * MAX_ERRORS_RATIO);
+        // approx.search 는 오차가 가장 적은 것만 돌려주므로, 이미 잡은 정확 일치 자리는 가려서 다음 후보가 나오게 함
+        const approxMatches = approx.search(maskRanges(fullText, candidates), exact, maxErrors) || [];
+        const seen = new Set(candidates.map((c) => c.start + ':' + c.end));
+        for (const m of approxMatches) {
+          if (m.errors > maxErrors) continue;
+          const key = m.start + ':' + m.end;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          candidates.push({ start: m.start, end: m.end, errors: m.errors });
+        }
       }
     }
+    if (candidates.length === 0) return null;
 
     // 3. 최고 점수 후보 하나 선택
     let best = null;

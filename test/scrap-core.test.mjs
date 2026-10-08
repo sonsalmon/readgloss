@@ -114,3 +114,52 @@ test('posHint가 가까운 후보를 고른다(문맥 점수 같을 때)', () =>
   const matchFirst = findQuote(fullText, q, firstPos);
   assert.deepEqual(matchFirst, { start: firstPos, end: firstPos + item.length });
 });
+
+test('짧은 인용(20자 미만)은 근사 검색 안 함: 정확 일치만', () => {
+  // 'queries'(7자) 를 'quaries' 로 바꿔 둠. 근사였다면 maxErrors=0 이라도 찾을 수 있는 자리가 아니므로 정확 일치만 본다.
+  const fullText = 'Use safe quaries here.';
+  assert.equal(findQuote(fullText, { exact: 'queries', prefix: 'safe ', suffix: ' here.' }), null);
+});
+
+test('짧은 인용: 정확 일치는 그대로 찾음', () => {
+  const fullText = 'Use safe queries here.';
+  assert.deepEqual(findQuote(fullText, { exact: 'queries', prefix: 'safe ', suffix: ' here.' }), { start: 9, end: 16 });
+});
+
+test('정확 후보가 있어도 문맥 0이면 근사 후보의 문맥을 본다(바뀐 쪽 선택)', () => {
+  const sentence = 'Access control is essential for protecting web applications from unauthorized users.';
+  const changed = 'Access control is essential for protecting modern web applications from unauthorized users.';
+  // 첫 번째: 정확 일치지만 앞뒤 문맥이 전혀 안 맞음. 두 번째: 저장한 문맥은 맞고 본문 문장에 'modern ' 이 끼어듦.
+  const fullText = `Note A:${sentence}! and more.\nNote B: ${changed} (end)\n`;
+  const secondStart = fullText.indexOf(changed);
+  const q = { exact: sentence, prefix: 'Note B: ', suffix: ' (end)' };
+  const match = findQuote(fullText, q);
+  assert.deepEqual(match, { start: secondStart, end: secondStart + changed.length });
+});
+
+test('정확 일치 문맥이 0이 아니면 근사 검색 결과로 바꾸지 않음', () => {
+  const sentence = 'Access control is essential for protecting web applications from unauthorized users.';
+  const changed = 'Access control is essential for protecting modern web applications from unauthorized users.';
+  const fullText = `Note B: ${sentence} (end)\nNote B: ${changed} (end)\n`;
+  const firstStart = fullText.indexOf(sentence);
+  const q = { exact: sentence, prefix: 'Note B: ', suffix: ' (end)' };
+  assert.deepEqual(findQuote(fullText, q), { start: firstStart, end: firstStart + sentence.length });
+});
+
+test('시간 상한: 같은 글자 20번 이상 연속이면 근사 검색 건너뜀 (1초 안에 null)', () => {
+  const fullText = ' '.repeat(200000);
+  const exact = ' '.repeat(995) + 'hello';
+  const t0 = Date.now();
+  const r = findQuote(fullText, { exact, prefix: '', suffix: '' });
+  const elapsed = Date.now() - t0;
+  assert.equal(r, null);
+  assert.ok(elapsed < 1000, `1초를 넘김: ${elapsed}ms`);
+});
+
+test('시간 상한: 본문 30만자 초과면 근사 검색 안 함', () => {
+  const sentence = 'Authentication verifies identity while authorization controls system access.';
+  const changed = 'Authentication verifies identity while authorization controls vital system access.';
+  const filler = 'x'.repeat(300001 - changed.length);
+  const fullText = changed + filler;
+  assert.equal(findQuote(fullText, { exact: sentence, prefix: '', suffix: '' }), null);
+});
