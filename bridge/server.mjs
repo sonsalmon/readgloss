@@ -18,6 +18,7 @@ import { LIMITS, parseContext, parseWide } from './context.mjs';
 import { createContextTranslate } from './translate-context.mjs';
 import { createMydict, parseMydictOp } from './mydict.mjs';
 import { createStudy, parseDays } from './study.mjs';
+import { createScraps, parseScrapOp } from './scraps.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
@@ -80,7 +81,7 @@ function sendAiError(res, e, cors) {
 }
 
 // ask({word, sentence, context?}) / askTranslate(문단, 용어 지정 목록) / askContext(프롬프트 문자열) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
-export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
+export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
   const token = loadOrCreateToken(tokenFile);
   const tokenBuf = Buffer.from(token);
   const lookup = createLookup({ cache: createCache(cacheFile), ask });
@@ -90,6 +91,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
   const glossary = createGlossary();
   const mydict = createMydict({ file: mydictFile, now });
   const study = createStudy({ file: studyFile, now });
+  const scraps = createScraps({ file: scrapsFile, now });
   const levels = loadWordLevels();
   const annotate = createAnnotate({ dict, levels, isKnown: words.isKnown, glossary, mydict });
   const mine = `chrome-extension://${extensionId}`;
@@ -284,6 +286,32 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     send(res, 200, study.report(days), cors);
   }
 
+  // 스크랩: GET -> { scraps, tasks }, GET ?url= -> { scraps }, POST { op, ... } -> { scraps }
+  async function handleScraps(req, res, cors) {
+    if (req.method === 'GET') {
+      const u = new URL(req.url, 'http://x').searchParams.get('url');
+      if (u !== null && u !== undefined) {
+        return send(res, 200, { scraps: scraps.forUrl(u) }, cors);
+      }
+      return send(res, 200, { scraps: scraps.all(), tasks: {} }, cors);
+    }
+    const { value, status } = await readJson(req, MAX_WORDS_BODY);
+    if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+    if (value?.op === 'guess') return send(res, 400, { error: 'bad-request' }, cors);
+    const op = parseScrapOp(value);
+    if (!op) return send(res, 400, { error: 'bad-request' }, cors);
+    const out = scraps.apply(op);
+    if (!out) return send(res, 404, { error: 'not-found' }, cors);
+    if (op.op === 'save') {
+      try {
+        study.record({ kind: 'scrap', text: op.quote.exact, url: op.url });
+      } catch {
+        // 기록 실패는 무시
+      }
+    }
+    send(res, 200, { scraps: out }, cors);
+  }
+
   async function handle(req, res) {
     // 1. Host 가 고정값이 아니면 거절. 2. Origin 이 있는데 내 확장이 아니면 거절(토큰 유무와 무관).
     if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, { error: 'forbidden' });
@@ -342,6 +370,10 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     if (path === '/study') {
       if (req.method !== 'GET') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleStudy(req, res, cors);
+    }
+    if (path === '/scraps') {
+      if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleScraps(req, res, cors);
     }
     if (path === '/translate') {
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);

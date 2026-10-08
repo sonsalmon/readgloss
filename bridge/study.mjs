@@ -2,7 +2,7 @@
 import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-export const KINDS = ['dict', 'mt', 'context', 'aigloss', 'paragraph', 'save', 'known', 'mydict'];
+export const KINDS = ['dict', 'mt', 'context', 'aigloss', 'paragraph', 'save', 'known', 'mydict', 'scrap'];
 export const RETENTION_DAYS = 90;
 export const MAX_DAYS = 60;
 export const DEFAULT_DAYS = 7;
