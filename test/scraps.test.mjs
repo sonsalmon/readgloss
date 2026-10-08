@@ -12,13 +12,14 @@ const clock = (start = 1000) => {
 };
 const fresh = (file = tmp(), c = clock()) => ({ file, clock: c, s: createScraps({ file, now: c }) });
 
-test('normalizeUrl: # 뒤 버림, utm_* 쿼리만 지움, 끝 / 뗌', () => {
+test('normalizeUrl: # 뒤 버림, utm_* 쿼리만 지움, 끝 / 뗌, 남는 쿼리 원문 유지', () => {
   assert.equal(normalizeUrl('https://a.com/x/?utm_source=t&q=1#h'), 'https://a.com/x?q=1');
   assert.equal(normalizeUrl('https://a.com/x/'), 'https://a.com/x');
   assert.equal(normalizeUrl('https://a.com/'), 'https://a.com');
   assert.equal(normalizeUrl('https://a.com'), 'https://a.com');
   assert.equal(normalizeUrl('https://a.com/x/?utm_source=a&utm_medium=b'), 'https://a.com/x');
   assert.equal(normalizeUrl('https://a.com/x/y?b=2&a=1'), 'https://a.com/x/y?b=2&a=1');
+  assert.equal(normalizeUrl('https://a.com/x?q=a%20b&flag&utm_source=t'), 'https://a.com/x?q=a%20b&flag');
   assert.equal(normalizeUrl('http://insecure.test/path/'), 'http://insecure.test/path');
   // http(s) 아니거나 문자열 아니면 빈 문자열
   assert.equal(normalizeUrl('javascript:alert(1)'), '');
@@ -27,9 +28,11 @@ test('normalizeUrl: # 뒤 버림, utm_* 쿼리만 지움, 끝 / 뗌', () => {
   assert.equal(normalizeUrl(''), '');
 });
 
-test('같은 문장 다른 페이지는 다른 id', () => {
+test('같은 문장 다른 페이지는 다른 id, 세 값 구분자로 겹침 방지', () => {
   assert.notEqual(scrapId('https://a/1', 's', 'p'), scrapId('https://a/2', 's', 'p'));
   assert.equal(scrapId('https://a/1', 's', 'p'), scrapId('https://a/1', 's', 'p'));
+  // 구분자 \u0000 으로 경계 겹침 방지 검증
+  assert.notEqual(scrapId('https://a.com/x', 'yz', ''), scrapId('https://a.com/xy', 'z', ''));
   // URL 정규화 처리 확인
   assert.equal(
     scrapId('https://a.com/x/?utm_source=test#frag', 'sentence', 'prefix'),

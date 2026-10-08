@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AiError, AiTimeoutError, createClaudeClient } from './claude-client.mjs';
@@ -18,7 +19,9 @@ import { LIMITS, parseContext, parseWide } from './context.mjs';
 import { createContextTranslate } from './translate-context.mjs';
 import { createMydict, parseMydictOp } from './mydict.mjs';
 import { createStudy, parseDays } from './study.mjs';
-import { createScraps, parseScrapOp } from './scraps.mjs';
+import { createScraps, normalizeUrl, parseScrapOp, scrapId } from './scraps.mjs';
+import { guessTask, lastTaskToday, loadLearning } from './task-guess.mjs';
+import { dateOf } from '../scripts/export-day.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
@@ -81,7 +84,7 @@ function sendAiError(res, e, cors) {
 }
 
 // ask({word, sentence, context?}) / askTranslate(문단, 용어 지정 목록) / askContext(프롬프트 문자열) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
-export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
+export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
   const token = loadOrCreateToken(tokenFile);
   const tokenBuf = Buffer.from(token);
   const lookup = createLookup({ cache: createCache(cacheFile), ask });
@@ -293,16 +296,50 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       if (u !== null && u !== undefined) {
         return send(res, 200, { scraps: scraps.forUrl(u) }, cors);
       }
-      return send(res, 200, { scraps: scraps.all(), tasks: {} }, cors);
+      const allScraps = scraps.all();
+      const learning = loadLearning(learningDir);
+      const tasks = {};
+      for (const s of allScraps) {
+        if (s.task && !tasks[s.task]) {
+          const node = learning.nodes.find((n) => n.id === s.task);
+          tasks[s.task] = node ? node.card_title : s.task;
+        }
+      }
+      return send(res, 200, { scraps: allScraps, tasks }, cors);
     }
     const { value, status } = await readJson(req, MAX_WORDS_BODY);
     if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
-    if (value?.op === 'guess') return send(res, 400, { error: 'bad-request' }, cors);
+    if (value?.op === 'guess') {
+      if (typeof value.url !== 'string' || value.url.length > 2000) return send(res, 400, { error: 'bad-request' }, cors);
+      const normUrl = normalizeUrl(value.url);
+      if (!normUrl) return send(res, 400, { error: 'bad-request' }, cors);
+      const learning = loadLearning(learningDir);
+      const allScraps = scraps.all();
+      const lastToday = lastTaskToday(allScraps, now);
+      const today = dateOf(typeof now === 'function' ? now() : now);
+      const todayTasks = Array.from(
+        new Set(
+          allScraps
+            .filter((s) => Number.isFinite(s?.ts) && dateOf(s.ts) === today)
+            .map((s) => s.task)
+            .filter(Boolean),
+        ),
+      );
+      const guessed = guessTask({
+        url: normUrl,
+        nodes: learning.nodes,
+        next: learning.next,
+        lastToday,
+        todayTasks,
+      });
+      return send(res, 200, guessed, cors);
+    }
     const op = parseScrapOp(value);
     if (!op) return send(res, 400, { error: 'bad-request' }, cors);
+    const isNew = op.op === 'save' && !scraps.has(scrapId(op.url, op.quote.exact, op.quote.prefix));
     const out = scraps.apply(op);
     if (!out) return send(res, 404, { error: 'not-found' }, cors);
-    if (op.op === 'save') {
+    if (op.op === 'save' && isNew) {
       try {
         study.record({ kind: 'scrap', text: op.quote.exact, url: op.url });
       } catch {

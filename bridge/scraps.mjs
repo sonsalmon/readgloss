@@ -18,31 +18,33 @@ const LIMIT = {
   memo: 1000,
 };
 
-// 주소 정규화: # 뒤를 버리고, utm_* 쿼리만 지우고, 끝 /를 뗀다. 나머지 쿼리는 남긴다.
+// 주소 정규화: # 뒤를 버리고, utm_* 쿼리만 지우고, 끝 /를 뗀다. 나머지 쿼리는 원문 조각을 유지한다.
 export function normalizeUrl(u) {
   if (typeof u !== 'string') return '';
   try {
-    const url = new URL(u);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
-    url.hash = '';
-    const toDelete = [];
-    for (const key of url.searchParams.keys()) {
-      if (key.startsWith('utm_')) toDelete.push(key);
-    }
-    for (const k of toDelete) url.searchParams.delete(k);
-    let pathname = url.pathname.replace(/\/+$/, '');
-    const search = url.searchParams.toString();
-    const query = search ? `?${search}` : '';
-    return `${url.protocol}//${url.host}${pathname}${query}`;
+    const parsed = new URL(u);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    const withoutHash = u.split('#')[0];
+    const qIndex = withoutHash.indexOf('?');
+    const queryPart = qIndex === -1 ? '' : withoutHash.slice(qIndex + 1);
+
+    const pathname = parsed.pathname.replace(/\/+$/, '');
+    const base = `${parsed.protocol}//${parsed.host}${pathname}`;
+
+    const kept = queryPart
+      .split('&')
+      .filter((part) => part.length > 0 && !part.startsWith('utm_'));
+    const query = kept.length > 0 ? `?${kept.join('&')}` : '';
+    return `${base}${query}`;
   } catch {
     return '';
   }
 }
 
-// 스크랩 id: 정규화 주소 + exact + prefix 의 sha1 앞 12자
+// 스크랩 id: 정규화 주소 + exact + prefix 를 \u0000 으로 구분해 sha1 앞 12자
 export function scrapId(url, exact, prefix = '') {
   const normUrl = normalizeUrl(url);
-  const text = `${normUrl}${exact ?? ''}${prefix ?? ''}`;
+  const text = `${normUrl}\u0000${exact ?? ''}\u0000${prefix ?? ''}`;
   return createHash('sha1').update(text).digest('hex').slice(0, 12);
 }
 
@@ -222,6 +224,9 @@ export function createScraps({ file, now = Date.now }) {
 
   return {
     all,
+    has(id) {
+      return scraps.has(id);
+    },
     forUrl(url) {
       const norm = normalizeUrl(url);
       return Array.from(scraps.values())

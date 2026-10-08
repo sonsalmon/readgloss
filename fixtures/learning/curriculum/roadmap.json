@@ -1,0 +1,42 @@
+{
+  "nodes": [
+    {
+      "id": "S1-03",
+      "card_title": "HTTP를 손으로: 파이썬 스크립트 2개",
+      "resources": [
+        { "url": "https://docs.python.org/3/library/socket.html" },
+        { "url": "https://docs.python.org/3/library/http.cookies.html" }
+      ]
+    },
+    {
+      "id": "S1-04",
+      "card_title": "웹 해킹 첫걸음: 접근 통제가 뚫리는 10가지 장면",
+      "resources": [
+        { "url": "https://portswigger.net/web-security" },
+        { "url": "https://portswigger.net/burp/communitydownload" }
+      ]
+    },
+    {
+      "id": "S1-11",
+      "card_title": "PortSwigger 웹 해킹 실습 20개 더 풀기",
+      "resources": [
+        { "url": "https://portswigger.net/web-security/all-labs" }
+      ]
+    },
+    {
+      "id": "S1-15",
+      "card_title": "저녁 HTB AI 경로 하루 2시간",
+      "resources": [
+        { "url": "https://academy.hackthebox.com/path/preview/ai-red-teamer" },
+        { "url": "https://portswigger.net/web-security/all-labs" }
+      ]
+    },
+    {
+      "id": "S1-18",
+      "card_title": "웹 해킹 책 6개 장을 퀴즈로 복습하기",
+      "resources": [
+        { "url": "https://portswigger.net/web-security" }
+      ]
+    }
+  ]
+}
