@@ -242,9 +242,32 @@
     };
   }
 
+  // ⌥S 등 단축키가 입력 중(입력칸·textarea·편집 영역, IME 조합 중)에서 눌렸는지. path 는 e.composedPath().
+  function isTypingPath(path, isComposing) {
+    if (isComposing) return true;
+    return (Array.isArray(path) ? path : []).some((n) => {
+      if (!n) return false;
+      if (n.localName === 'input' || n.localName === 'textarea') return true;
+      if (n.isContentEditable === true) return true;
+      const ce = typeof n.getAttribute === 'function' ? n.getAttribute('contenteditable') : null;
+      return ce != null && ce !== 'false';
+    });
+  }
+
+  // 프라미스를 최대 ms 만 기다린다. 늦으면 undefined(응답이 와도 호출부는 이미 넘어간다).
+  function waitUpTo(promise, ms) {
+    return new Promise((resolve) => {
+      const t = setTimeout(() => resolve(undefined), ms);
+      Promise.resolve(promise).then(
+        (v) => (clearTimeout(t), resolve(v)),
+        () => (clearTimeout(t), resolve(undefined)),
+      );
+    });
+  }
+
   globalThis.readglossSelection = {
     MAX_TEXT, MAX_SIDE, MAX_TITLE, MAX_HEADINGS, WIDE_SIDE, WIDE_HEADINGS,
     classify, around, buildContext, pickHeadings, stageButton, mydictKey, firstMeaning, bestMeaning, mydictMessage, phraseMessage, findPhrase, MAX_EXPRESSIONS, expressionRows, noteText, expressionButton, expressionToggle, lookupExtras, isAcronym, expandAcronym, acronymLine,
-    normalizeUrl, scrapAskKey, localDateStr, scrapMessage,
+    normalizeUrl, scrapAskKey, localDateStr, scrapMessage, isTypingPath, waitUpTo,
   };
 })();

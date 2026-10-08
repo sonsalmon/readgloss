@@ -337,7 +337,8 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     }
     const op = parseScrapOp(value);
     if (!op) return send(res, 400, { error: 'bad-request' }, cors);
-    const isNew = op.op === 'save' && !scraps.has(scrapId(op.url, op.quote.exact, op.quote.prefix));
+    const savedId = op.op === 'save' ? scrapId(op.url, op.quote.exact, op.quote.prefix) : null;
+    const isNew = op.op === 'save' && !scraps.has(savedId);
     const out = scraps.apply(op);
     if (!out) return send(res, 404, { error: 'not-found' }, cors);
     if (op.op === 'save' && isNew) {
@@ -347,6 +348,8 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
         // 기록 실패는 무시
       }
     }
+    // save 는 방금 저장한 한 건(scrap)을 id 로 찾아 같이 돌려준다. 호출부가 목록에서 짐작하지 않게 한다.
+    if (savedId) return send(res, 200, { scrap: out.find((s) => s.id === savedId) ?? null, scraps: out }, cors);
     send(res, 200, { scraps: out }, cors);
   }
 

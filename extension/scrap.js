@@ -4,8 +4,6 @@
   const HIGHLIGHT_NAME = 'readgloss-scrap';
   const FLASH_NAME = 'readgloss-scrap-flash';
   const STYLE_ID = 'readgloss-scrap-style';
-  // 건드리지 않는 곳: 코드(pre/code), 입력창, 편집 영역, 우리가 넣은 노드([data-readgloss])
-  const EXCLUDE = 'pre, code, kbd, samp, script, style, noscript, template, textarea, input, select, button, svg, [contenteditable]:not([contenteditable="false"]), [data-readgloss]';
 
   // 스타일 주입: ::highlight(readgloss-scrap){background-color:#FAEEDA}
   function ensureStyle() {
@@ -23,6 +21,17 @@
     (document.head || document.documentElement || document.body)?.append(style);
   }
 
+  // 글 한 조각이 색인에서 빠지는지: 바깥으로 올라가며 요소마다 skipsIndex 를 본다(규칙은 scrap-core.js)
+  function skippedText(p) {
+    const skips = globalThis.readglossScrap?.skipsIndex;
+    if (!skips) return false;
+    for (let n = p; n && n.nodeType === 1; n = n.parentElement) {
+      const ce = n.getAttribute('contenteditable');
+      if (skips({ localName: n.localName, readgloss: n.getAttribute('data-readgloss'), editable: ce != null && ce !== 'false' })) return true;
+    }
+    return false;
+  }
+
   // 본문 글을 TreeWalker 로 모아 텍스트 인덱스 구축
   function buildTextIndex(root = (typeof document !== 'undefined' ? (document.body || document.documentElement) : null)) {
     if (!root || typeof document === 'undefined') return { fullText: '', nodes: [] };
@@ -30,7 +39,7 @@
       acceptNode(node) {
         const p = node.parentElement;
         if (!p) return NodeFilter.FILTER_REJECT;
-        if (p.closest(EXCLUDE)) return NodeFilter.FILTER_REJECT;
+        if (skippedText(p)) return NodeFilter.FILTER_REJECT;
         return NodeFilter.FILTER_ACCEPT;
       },
     });
@@ -94,13 +103,8 @@
       }
     }
 
-    if (start === -1 || end === -1 || start >= end) {
-      const exact = range.toString().trim();
-      if (!exact) return null;
-      const idx = fullText.indexOf(exact);
-      start = idx >= 0 ? idx : 0;
-      end = start + exact.length;
-    }
+    // 시작·끝 자리를 색인에서 못 찾으면(건너뛴 요소 안 등) 추측하지 않고 null: 호출부가 스크랩을 거절한다
+    if (start === -1 || end === -1 || start >= end) return null;
 
     const core = globalThis.readglossScrap;
     const quote = core?.quoteOf ? core.quoteOf(fullText, start, end) : { exact: fullText.slice(start, end), prefix: '', suffix: '' };
@@ -123,10 +127,13 @@
     }
   }
 
-  // 스크랩 목록 형광펜 칠하기
+  // 이 페이지 주소(정규화). 칠하기·찾기는 이 주소의 스크랩만 다룬다.
+  const pageUrl = () => globalThis.readglossSelection?.normalizeUrl(location.href) ?? '';
+
+  // 스크랩 목록 형광펜 칠하기(이 페이지 것만)
   function paint(scraps) {
     if (scraps) {
-      const list = Array.isArray(scraps) ? scraps : [scraps];
+      const list = globalThis.readglossScrap.scrapsOnPage(Array.isArray(scraps) ? scraps : [scraps], pageUrl());
       for (const s of list) {
         if (s?.id) knownScraps.set(s.id, s);
       }
@@ -180,10 +187,11 @@
 
   // 선택 문장과 일치하는 기존 스크랩 찾기
   function findExisting(text) {
-    const exact = (text ?? '').trim();
+    const core = globalThis.readglossScrap;
+    const exact = core.normText(text);
     if (!exact) return null;
-    for (const s of knownScraps.values()) {
-      if (s.quote?.exact?.trim() === exact) return s;
+    for (const s of core.scrapsOnPage([...knownScraps.values()], pageUrl())) {
+      if (core.normText(s.quote?.exact) === exact) return s;
     }
     return null;
   }

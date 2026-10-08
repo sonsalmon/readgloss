@@ -102,6 +102,7 @@ test('/scraps: save -> GET ?url= 에 1건, GET tasks 는 스크랩에 나온 할
     assert.equal(saveRes.headers['access-control-allow-origin'], MINE);
     assert.equal(saveRes.json().scraps.length, 1);
     const scrap = saveRes.json().scraps[0];
+    assert.equal(saveRes.json().scrap.id, scrap.id, 'save 응답의 scrap 은 방금 저장한 한 건(id 일치)');
     assert.equal(scrap.task, 'S1-04');
     assert.equal(scrap.quote.exact, 'Broken access control is a common vulnerability.');
 

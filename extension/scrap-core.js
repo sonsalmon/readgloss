@@ -151,9 +151,33 @@
     return { start: best.start, end: best.end };
   }
 
+  // 글 색인에서 뺄 요소인지(el: { localName, readgloss, editable }). 자동 주석(ann)의 단어와 인라인 code 는 넣고,
+  // rt(읽기 글자)·pre 블록·뜻 글자(gloss)·번역 노드·입력칸·편집 영역은 뺀다. 우리가 넣은 노드는 ann 만 예외다.
+  const SKIP_TAGS = new Set(['pre', 'script', 'style', 'noscript', 'template', 'textarea', 'input', 'select', 'button', 'svg', 'kbd', 'samp', 'rt']);
+  function skipsIndex(el) {
+    if (!el) return false;
+    if (SKIP_TAGS.has(el.localName)) return true;
+    if (el.editable) return true;
+    return el.readgloss != null && el.readgloss !== 'ann';
+  }
+
+  // 공백을 하나로 줄인 글(스크랩됨 판정·같은 문장 비교용)
+  function normText(s) {
+    return String(s ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  // 이 페이지(pageUrl, 정규화 주소)의 스크랩만 고른다. 호출부가 무엇을 넘겨도 다른 페이지 스크랩이 섞이지 않게.
+  function scrapsOnPage(list, pageUrl) {
+    if (!Array.isArray(list)) return [];
+    return list.filter((s) => s && s.url === pageUrl);
+  }
+
   globalThis.readglossScrap = {
     quoteOf,
     findQuote,
     MAX_ERRORS_RATIO,
+    skipsIndex,
+    normText,
+    scrapsOnPage,
   };
 })();

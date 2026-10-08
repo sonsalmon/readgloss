@@ -636,6 +636,7 @@
     if (!ui?.scrapBtn || ui.scrapBtn.getAttribute('aria-disabled') === 'true' || !current) return;
     const my = seq;
     const saved = current.scrapId != null;
+    if (!saved && !current.quote) return notify('이 문장은 스크랩할 수 없어요');
 
     if (saved) {
       ui.scrapBtn.setAttribute('aria-disabled', 'true');
@@ -651,6 +652,13 @@
         notify(errText(r));
       }
       return;
+    }
+
+    // 응답을 아직 기다리는 중이면 최대 2초까지 기다린 뒤 진행한다(늦으면 할 일 묻기 없이 저장)
+    if (!current.guess && current.guessing) {
+      const cur = current;
+      await core.waitUpTo(current.guessing, 2000);
+      if (my !== seq || current !== cur) return;
     }
 
     // 밖 페이지 질문: ask:true 이고 아직 직접 고르지 않았으며 후보 할 일이 있을 때
@@ -715,12 +723,9 @@
     if (my !== seq) return;
     ui.scrapBtn.removeAttribute('aria-disabled');
     if (r && !r.error) {
-      const list = Array.isArray(r.scraps) ? r.scraps : [];
-      const normUrl = core.normalizeUrl(location.href);
-      const saved = list.find((s) => s.url === normUrl && s.quote?.exact === current.quote?.exact) || list.at(-1);
-      const id = saved?.id;
+      const id = r.scrap?.id ?? null; // 서버가 돌려준 방금 저장한 한 건(id 로 정확히)
       current.scrapId = id;
-      globalThis.readglossScrapPage?.paint(list);
+      globalThis.readglossScrapPage?.paint(Array.isArray(r.scraps) ? r.scraps : []);
       globalThis.readglossToast?.show({
         text: '스크랩했어요',
         onMemo: (memo) => send({ type: 'scraps', op: 'memo', id, memo }),
@@ -807,7 +812,7 @@
     if (host) close();
     const scrapPage = globalThis.readglossScrapPage;
     const qInfo = scrapPage?.quoteForRange ? scrapPage.quoteForRange(range) : null;
-    const quote = qInfo?.quote ?? { exact: cls.text, prefix: '', suffix: '' };
+    const quote = qInfo?.quote ?? null; // 색인에서 자리를 못 찾은 글은 스크랩하지 않는다(toggleScrap 이 거절 안내)
     const pos = qInfo?.pos ?? 0;
     const existingScrap = scrapPage?.findExisting ? scrapPage.findExisting(cls.text) : null;
     current = {
@@ -827,7 +832,7 @@
     if (cls.kind === 'phrase') {
       askMt().catch(close);
       loadPhraseState().catch(() => {});
-      guessTask().catch(() => {});
+      current.guessing = guessTask().catch(() => {}); // 스크랩 누름이 응답을 기다릴 수 있게 보관
     }
   }
 
@@ -852,6 +857,9 @@
     (e) => {
       if (e.key === 'Escape' && host && !e.composedPath().some((n) => n.localName === 'readgloss-toast')) close();
       if (host && e.code === 'KeyS' && e.altKey) {
+        // 입력 중(입력칸·textarea·편집 영역·IME 조합)이거나 카드·토스트 안에서 누른 것이면 가로채지 않는다
+        const path = e.composedPath();
+        if (core.isTypingPath(path, e.isComposing) || path.some((n) => n === host || n?.localName === 'readgloss-toast')) return;
         e['preventDefault']?.();
         toggleScrap();
       }
