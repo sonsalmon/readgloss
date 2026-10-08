@@ -151,14 +151,45 @@
     return { start: best.start, end: best.end };
   }
 
-  // 글 색인에서 뺄 요소인지(el: { localName, readgloss, editable }). 자동 주석(ann)의 단어와 인라인 code 는 넣고,
+  // 글 색인에서 뺄 요소인지(el: { localName, readgloss, editable }). 자동 주석(ann)의 단어와 인라인 code·kbd·samp 는 넣고,
   // rt(읽기 글자)·pre 블록·뜻 글자(gloss)·번역 노드·입력칸·편집 영역은 뺀다. 우리가 넣은 노드는 ann 만 예외다.
-  const SKIP_TAGS = new Set(['pre', 'script', 'style', 'noscript', 'template', 'textarea', 'input', 'select', 'button', 'svg', 'kbd', 'samp', 'rt']);
+  const SKIP_TAGS = new Set(['pre', 'script', 'style', 'noscript', 'template', 'textarea', 'input', 'select', 'button', 'svg', 'rt']);
   function skipsIndex(el) {
     if (!el) return false;
     if (SKIP_TAGS.has(el.localName)) return true;
     if (el.editable) return true;
     return el.readgloss != null && el.readgloss !== 'ann';
+  }
+
+  // 공백을 넣는 자리: <br> 과 블록 요소(선택 글 추출 paragraph-core.js textOf 의 BREAK 와 같은 규칙)
+  const BREAK_TAGS = new Set(['BR', 'P', 'DIV', 'LI', 'UL', 'OL', 'DL', 'DT', 'DD', 'TABLE', 'TR', 'TD', 'TH', 'BLOCKQUOTE', 'SECTION', 'ARTICLE', 'FIGURE', 'FIGCAPTION', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR']);
+
+  // 글 색인 만들기(순수 함수). root 아래 글 노드를 문서 순서로 모아 fullText 와 nodes([{node,start,end}])를 만든다.
+  // skip(el): 이 요소와 그 안을 통째로 건너뛰는 훅. 블록 경계와 <br> 에는 공백 한 칸을 넣되(fullText 에만, 노드 없음),
+  // 바로 앞이 이미 공백이면 또 넣지 않는다. 그래서 nodes 의 start/end 는 fullText 위치와 어긋나지 않는다.
+  function indexText(root, skip = () => false) {
+    let fullText = '';
+    const nodes = [];
+    const space = () => {
+      if (fullText && !fullText.endsWith(' ')) fullText += ' ';
+    };
+    const walk = (n) => {
+      if (n.nodeType === 3) {
+        const val = n.nodeValue;
+        if (!val) return;
+        const start = fullText.length;
+        fullText += val;
+        nodes.push({ node: n, start, end: fullText.length });
+        return;
+      }
+      if (n.nodeType !== 1 || skip(n)) return;
+      const brk = BREAK_TAGS.has(String(n.localName ?? n.tagName ?? '').toUpperCase());
+      if (brk) space();
+      for (const c of n.childNodes) walk(c);
+      if (brk) space();
+    };
+    if (root) for (const c of root.childNodes) walk(c);
+    return { fullText, nodes };
   }
 
   // 공백을 하나로 줄인 글(스크랩됨 판정·같은 문장 비교용)
@@ -208,6 +239,7 @@
     findQuote,
     MAX_ERRORS_RATIO,
     skipsIndex,
+    indexText,
     normText,
     scrapsOnPage,
     endpointIndex,

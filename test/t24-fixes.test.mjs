@@ -67,3 +67,31 @@ test('waitUpTo: 응답이 먼저 오면 값, 늦으면 undefined 로 끝낸다',
   assert.equal(await SEL.waitUpTo(never, 30), undefined);
   assert.ok(Date.now() - t0 < 1000);
 });
+
+// 4. 글 색인이 선택 글(paragraph-core textOf)과 같은 규칙: <br>·블록 경계에 공백, kbd 포함
+const dom = (localName, ...kids) => ({ nodeType: 1, localName, childNodes: kids, readgloss: null, editable: false });
+const dtxt = (v) => ({ nodeType: 3, nodeValue: v, childNodes: [] });
+const indexOfDom = (root) => SC.indexText(root, (n) => SC.skipsIndex(n));
+
+test('색인: <br> 자리에 공백 한 칸, 저장 exact 는 공백 정리 후 선택 글과 같다', () => {
+  const root = dom('body', dom('p', dtxt('First line goes here'), dom('br'), dtxt('second line goes there.')));
+  const { fullText, nodes } = indexOfDom(root);
+  const exact = SC.quoteOf(fullText, 0, fullText.length).exact;
+  assert.equal(SC.normText(exact), 'First line goes here second line goes there.');
+  // 노드 위치는 fullText 와 어긋나지 않는다
+  assert.equal(fullText.slice(nodes[1].start, nodes[1].end), 'second line goes there.');
+  // 다시 선택하면 같은 자리를 찾고, [스크랩됨] 판정(공백 정리 후 같음)이 참이다
+  const found = SC.findQuote(fullText, { exact, prefix: '', suffix: '' }, 0);
+  assert.ok(found);
+  assert.equal(SC.normText(exact), SC.normText('First line goes here\nsecond line goes there.'));
+});
+
+test('색인: kbd 는 건너뛰지 않는다(인라인 code 와 같다), 저장 exact 에 Ctrl 포함', () => {
+  const root = dom('body', dom('p', dtxt('Press '), dom('kbd', dtxt('Ctrl')), dtxt(' and the other key')));
+  const { fullText } = indexOfDom(root);
+  const exact = SC.quoteOf(fullText, 0, fullText.length).exact;
+  assert.ok(SC.normText(exact).includes('Ctrl'));
+  assert.equal(SC.normText(exact), 'Press Ctrl and the other key');
+  assert.ok(SC.findQuote(fullText, { exact, prefix: '', suffix: '' }, 0));
+  assert.equal(SC.normText(exact), SC.normText('Press Ctrl and the other key'));
+});

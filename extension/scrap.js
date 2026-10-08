@@ -21,39 +21,18 @@
     (document.head || document.documentElement || document.body)?.append(style);
   }
 
-  // 글 한 조각이 색인에서 빠지는지: 바깥으로 올라가며 요소마다 skipsIndex 를 본다(규칙은 scrap-core.js)
-  function skippedText(p) {
+  // 요소 하나가 색인에서 빠지는지(규칙은 scrap-core.js skipsIndex). 자식까지 통째로 건너뛴다.
+  function skipEl(n) {
     const skips = globalThis.readglossScrap?.skipsIndex;
     if (!skips) return false;
-    for (let n = p; n && n.nodeType === 1; n = n.parentElement) {
-      const ce = n.getAttribute('contenteditable');
-      if (skips({ localName: n.localName, readgloss: n.getAttribute('data-readgloss'), editable: ce != null && ce !== 'false' })) return true;
-    }
-    return false;
+    const ce = n.getAttribute('contenteditable');
+    return skips({ localName: n.localName, readgloss: n.getAttribute('data-readgloss'), editable: ce != null && ce !== 'false' });
   }
 
-  // 본문 글을 TreeWalker 로 모아 텍스트 인덱스 구축
+  // 본문 글 색인(fullText, nodes). 글 모으기 규칙은 scrap-core.js indexText 가 정한다(br·블록 경계에 공백, kbd·samp 포함).
   function buildTextIndex(root = (typeof document !== 'undefined' ? (document.body || document.documentElement) : null)) {
     if (!root || typeof document === 'undefined') return { fullText: '', nodes: [] };
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        const p = node.parentElement;
-        if (!p) return NodeFilter.FILTER_REJECT;
-        if (skippedText(p)) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    });
-    let fullText = '';
-    const nodes = [];
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-      const val = n.nodeValue;
-      if (!val) continue;
-      const start = fullText.length;
-      fullText += val;
-      const end = fullText.length;
-      nodes.push({ node: n, start, end });
-    }
-    return { fullText, nodes };
+    return globalThis.readglossScrap.indexText(root, skipEl);
   }
 
   // 글자 오프셋 [startOffset, endOffset] -> DOM Range
