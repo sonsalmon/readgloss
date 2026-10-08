@@ -136,7 +136,7 @@
   }
 
   let flashTimer = 0;
-  // 스크랩 위치로 스크롤하고 깜빡임 효과
+  // 스크랩 위치로 스크롤하고 깜빡임 효과 (1.2초)
   function scrollTo(id) {
     const range = scrapRanges.get(id);
     if (!range || !found.has(id)) return false;
@@ -148,7 +148,7 @@
       CSS.highlights.set(FLASH_NAME, new Highlight(range));
       flashTimer = setTimeout(() => {
         CSS.highlights.delete(FLASH_NAME);
-      }, 1500);
+      }, 1200);
     }
     return true;
   }
@@ -164,6 +164,212 @@
     return null;
   }
 
+  // --- 넘김 막대(Navigation Bar) ---
+  let barHost = null;
+  let barScraps = []; // 같은 할 일의 스크랩들 (orderInTask 순서)
+  let barIndex = 0; // 현재 스크랩 인덱스
+  let barTask = null;
+
+  function closeBar() {
+    if (barHost) {
+      barHost.remove();
+      barHost = null;
+    }
+    window.removeEventListener('keydown', onBarKeyDown, true);
+  }
+
+  function renderBarUI(shadow) {
+    const n = barIndex + 1;
+    const N = barScraps.length || 1;
+
+    const barEl = document.createElement('div');
+    barEl.className = 'rg-scrap-bar';
+
+    const label = document.createElement('span');
+    label.className = 'rg-bar-label';
+    label.textContent = `스크랩 ${n} / ${N}`;
+
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'rg-bar-btn';
+    prevBtn.type = 'button';
+    prevBtn.textContent = '←';
+    prevBtn.title = '이전 스크랩 (← 키)';
+    prevBtn.disabled = barIndex <= 0;
+    prevBtn.onclick = () => goToBarIndex(barIndex - 1);
+
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'rg-bar-btn';
+    nextBtn.type = 'button';
+    nextBtn.textContent = '→';
+    nextBtn.title = '다음 스크랩 (→ 키)';
+    nextBtn.disabled = barIndex >= barScraps.length - 1;
+    nextBtn.onclick = () => goToBarIndex(barIndex + 1);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'rg-bar-btn rg-bar-close';
+    closeBtn.type = 'button';
+    closeBtn.textContent = '✕';
+    closeBtn.title = '닫기';
+    closeBtn.onclick = closeBar;
+
+    barEl.append(label, prevBtn, nextBtn, closeBtn);
+    shadow.replaceChildren(barEl);
+
+    const style = document.createElement('style');
+    style.textContent = `
+      :host {
+        all: initial;
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 2147483645;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      .rg-scrap-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #ffffff;
+        color: #222222;
+        padding: 6px 14px;
+        border-radius: 20px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.08);
+        font-size: 13px;
+        user-select: none;
+      }
+      .rg-bar-label {
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .rg-bar-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 3px 7px;
+        border-radius: 4px;
+        font-size: 13px;
+        color: #444;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.1s;
+      }
+      .rg-bar-btn:hover:not(:disabled) {
+        background: #f0f0f0;
+        color: #000;
+      }
+      .rg-bar-btn:disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+      }
+      .rg-bar-close {
+        margin-left: 2px;
+        font-size: 12px;
+      }
+    `;
+    shadow.append(style);
+  }
+
+  function goToBarIndex(idx) {
+    if (idx < 0 || idx >= barScraps.length) return;
+    barIndex = idx;
+    if (barHost?.shadowRoot) {
+      renderBarUI(barHost.shadowRoot);
+    }
+    const target = barScraps[barIndex];
+    if (!target) return;
+
+    const cur = pageUrl();
+    const core = globalThis.readglossScrap;
+    const targetUrl = core?.normalizeUrl ? core.normalizeUrl(target.url) : target.url;
+
+    if (cur && targetUrl && cur === targetUrl) {
+      scrollTo(target.id);
+    } else {
+      // 다른 페이지면 scrap-jump 메시지 전송
+      chrome.runtime.sendMessage({
+        type: 'scrap-jump',
+        url: target.url,
+        id: target.id,
+        task: target.task,
+      });
+    }
+  }
+
+  function onBarKeyDown(e) {
+    if (!barHost) return;
+    if (e.key === 'Escape') {
+      closeBar();
+      return;
+    }
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+
+    // 막대가 있고 이벤트 경로에 입력칸·편집 영역이 없을 때만 키보드 ← →
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    const isTyping = globalThis.readglossSelection?.isTypingPath
+      ? globalThis.readglossSelection.isTypingPath(path, e.isComposing)
+      : false;
+    if (isTyping) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.key === 'ArrowLeft') {
+      goToBarIndex(barIndex - 1);
+    } else if (e.key === 'ArrowRight') {
+      goToBarIndex(barIndex + 1);
+    }
+  }
+
+  function openBar(id, task) {
+    if (typeof document === 'undefined') return;
+
+    // 다리에서 전체 스크랩을 가져와 같은 할 일 스크랩들을 orderInTask 순서로 구성
+    chrome.runtime.sendMessage({ type: 'scraps', op: 'get' }, (res) => {
+      const allScraps = Array.isArray(res?.scraps) ? res.scraps : [...knownScraps.values()];
+      const core = globalThis.readglossScrap;
+      const targetTask = task !== undefined ? task : (knownScraps.get(id)?.task ?? null);
+      const ordered = core?.orderInTask ? core.orderInTask(allScraps, targetTask) : allScraps;
+
+      barScraps = ordered.length > 0 ? ordered : (id && knownScraps.get(id) ? [knownScraps.get(id)] : []);
+      const idx = barScraps.findIndex((s) => s.id === id);
+      barIndex = idx >= 0 ? idx : 0;
+      barTask = targetTask;
+
+      if (!barHost) {
+        barHost = document.createElement('readgloss-scrap-bar');
+        barHost.attachShadow({ mode: 'open' });
+        document.documentElement.append(barHost);
+        window.addEventListener('keydown', onBarKeyDown, true);
+      }
+      renderBarUI(barHost.shadowRoot);
+    });
+  }
+
+  // 이 페이지 첫 스크랩부터 넘김 막대 열기
+  function openFirstBar() {
+    const list = globalThis.readglossScrap?.scrapsOnPage([...knownScraps.values()], pageUrl());
+    if (list && list.length > 0) {
+      const first = list[0];
+      scrollTo(first.id);
+      openBar(first.id, first.task);
+    }
+  }
+
+  // --- pendingScrap 대기 및 이동 ---
+  let pendingTarget = null; // { id, url, task }
+
+  function tryJumpPending() {
+    if (!pendingTarget) return;
+    if (found.has(pendingTarget.id)) {
+      const target = pendingTarget;
+      pendingTarget = null;
+      scrollTo(target.id);
+      openBar(target.id, target.task);
+    }
+  }
+
   globalThis.readglossScrapPage = {
     paint,
     unpaint,
@@ -176,6 +382,9 @@
     quoteForRange,
     buildTextIndex,
     offsetToRange,
+    openBar,
+    openFirstBar,
+    closeBar,
   };
 
   // --- 페이지 로드 시 GET /scraps?url= 및 10초 재시도 관찰자 ---
@@ -201,7 +410,8 @@
       clearTimeout(retryTimer);
       retryTimer = setTimeout(() => {
         paint();
-        if (knownScraps.size > 0 && found.size >= knownScraps.size) {
+        tryJumpPending();
+        if (knownScraps.size > 0 && found.size >= knownScraps.size && !pendingTarget) {
           stopRetryObserver();
         }
       }, 500);
@@ -214,16 +424,33 @@
     }, 10_000);
   }
 
+  // 새 페이지에서 background 에 대기 중인 점프를 묻는다(background 가 꺼내 주고 지움). 주소가 다르면 쓰지 않는다.
+  function checkPendingOnLoad() {
+    if (typeof location === 'undefined') return;
+    chrome.runtime.sendMessage({ type: 'scrap-pending' }, (res) => {
+      if (chrome.runtime.lastError || !res?.pending) return;
+      const core = globalThis.readglossScrap;
+      const valid = core?.checkPendingScrap ? core.checkPendingScrap(res.pending, location.href) : null;
+      if (!valid) return;
+      pendingTarget = valid;
+      tryJumpPending();
+    });
+  }
+
   function initPageScraps() {
     if (!globalThis.chrome?.runtime?.id || typeof location === 'undefined') return;
+
+    checkPendingOnLoad();
+
     chrome.runtime.sendMessage({ type: 'scraps', op: 'get', url: location.href }, (r) => {
       if (chrome.runtime.lastError || !r || r.error) return;
       const list = Array.isArray(r.scraps) ? r.scraps : [];
       if (!list.length) return;
       paint(list);
+      tryJumpPending();
 
-      // 아직 못 찾은 스크랩이 있으면 MutationObserver 로 10초까지 재시도(디바운스 500ms)
-      if (found.size < knownScraps.size) {
+      // 아직 못 찾은 스크랩이 있거나 pendingScrap 을 기다리는 중이면 MutationObserver 로 10초까지 재시도
+      if (found.size < knownScraps.size || pendingTarget) {
         startRetryObserver();
       }
     });

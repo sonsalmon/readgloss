@@ -234,6 +234,136 @@
     return found ? found.end : -1;
   }
 
+  // 주소 정규화는 selection-core.js 의 normalizeUrl 한 벌만 쓴다(같은 규칙을 두 곳에 두지 않는다). 호출할 때 찾는다.
+  const normalizeUrl = (input) => globalThis.readglossSelection.normalizeUrl(input);
+
+  // parentUrl 경로 아래에 childUrl 이 있는지 (디렉토리 경계 / 포함)
+  function isSubpath(parentUrl, childUrl) {
+    if (!parentUrl || !childUrl || parentUrl === childUrl) return false;
+    try {
+      const p = new URL(normalizeUrl(parentUrl));
+      const c = new URL(normalizeUrl(childUrl));
+      if (p.origin !== c.origin) return false;
+      const pPath = p.pathname.endsWith('/') ? p.pathname : p.pathname + '/';
+      return c.pathname.startsWith(pPath);
+    } catch {
+      return false;
+    }
+  }
+
+  // 같은 할 일 안에서 다른 페이지 경로 아래에 있는 깊이(다른 페이지 경로 아래면 +1)
+  function pageDepth(url, urlsInTask) {
+    if (!url || !Array.isArray(urlsInTask)) return 0;
+    const norm = normalizeUrl(url);
+    const unique = new Set(urlsInTask.map((u) => normalizeUrl(u)).filter(Boolean));
+    let depth = 0;
+    for (const u of unique) {
+      if (u !== norm && isSubpath(u, norm)) {
+        depth++;
+      }
+    }
+    return depth;
+  }
+
+  // 같은 할 일 안의 스크랩을 저장 순서(ts 오름차순)로 정렬
+  function orderInTask(scraps, task) {
+    if (!Array.isArray(scraps)) return [];
+    const targetTask = task ?? null;
+    const filtered = scraps.filter((s) => (s?.task ?? null) === targetTask);
+    return filtered.sort((a, b) => {
+      const ta = typeof a?.ts === 'number' ? a.ts : 0;
+      const tb = typeof b?.ts === 'number' ? b.ts : 0;
+      if (ta !== tb) return ta - tb;
+      return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+    });
+  }
+
+  // 스크랩 목록과 할 일 매핑 -> 트리 구조 생성
+  // [{ task, title, count, pages: [{ url, title, depth, sections: [{ headings, items }] }] }]
+  // 인박스(task: null)는 맨 마지막에 위치
+  function buildTree(scraps, tasks) {
+    if (!Array.isArray(scraps) || scraps.length === 0) return [];
+
+    const taskMap = new Map();
+    for (const s of scraps) {
+      if (!s) continue;
+      const t = s.task ?? null;
+      if (!taskMap.has(t)) taskMap.set(t, []);
+      taskMap.get(t).push(s);
+    }
+
+    const taskKeys = [...taskMap.keys()];
+    const namedTasks = taskKeys.filter((t) => t !== null).sort((a, b) => String(a).localeCompare(String(b)));
+    const hasInbox = taskKeys.includes(null);
+    const sortedTaskKeys = hasInbox ? [...namedTasks, null] : namedTasks;
+
+    const result = [];
+    for (const t of sortedTaskKeys) {
+      const list = taskMap.get(t) || [];
+      const title = t !== null ? (tasks?.[t] || t) : '인박스';
+      const urlsInThisTask = [...new Set(list.map((s) => normalizeUrl(s.url)).filter(Boolean))];
+
+      const pageMap = new Map();
+      for (const s of list) {
+        const u = normalizeUrl(s.url);
+        if (!pageMap.has(u)) pageMap.set(u, []);
+        pageMap.get(u).push(s);
+      }
+
+      const pages = [];
+      for (const [u, pageScraps] of pageMap.entries()) {
+        const firstTitle = pageScraps.find((s) => typeof s.title === 'string' && s.title.trim())?.title || u;
+        const depth = pageDepth(u, urlsInThisTask);
+
+        const sectionMap = new Map();
+        const sectionOrder = [];
+        for (const s of pageScraps) {
+          const h = Array.isArray(s.headings) ? s.headings : [];
+          const key = JSON.stringify(h);
+          if (!sectionMap.has(key)) {
+            sectionMap.set(key, { headings: h, items: [] });
+            sectionOrder.push(key);
+          }
+          sectionMap.get(key).items.push(s);
+        }
+
+        const sections = sectionOrder.map((key) => {
+          const sec = sectionMap.get(key);
+          sec.items.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+          return sec;
+        });
+
+        pages.push({
+          url: u,
+          title: firstTitle,
+          depth,
+          sections,
+        });
+      }
+
+      // 페이지 순서: 상위 경로 먼저 나타나도록 정렬
+      pages.sort((a, b) => a.url.localeCompare(b.url));
+
+      result.push({
+        task: t,
+        title,
+        count: list.length,
+        pages,
+      });
+    }
+
+    return result;
+  }
+
+  // pendingScrap 검사: 주소가 같을 때만 반환, 다르면 null
+  function checkPendingScrap(pending, currentUrl) {
+    if (!pending || !pending.id || !pending.url || !currentUrl) return null;
+    const pUrl = normalizeUrl(pending.url);
+    const cUrl = normalizeUrl(currentUrl);
+    if (!pUrl || !cUrl || pUrl !== cUrl) return null;
+    return pending;
+  }
+
   globalThis.readglossScrap = {
     quoteOf,
     findQuote,
@@ -243,5 +373,10 @@
     normText,
     scrapsOnPage,
     endpointIndex,
+    normalizeUrl,
+    pageDepth,
+    orderInTask,
+    buildTree,
+    checkPendingScrap,
   };
 })();

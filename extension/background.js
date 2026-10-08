@@ -184,6 +184,36 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true; // 비동기 응답
 });
 
+// --- 스크랩 점프(T25): 다른 페이지 스크랩으로 이동할 때 session storage 에 pendingScrap 저장 후 탭 주소 갱신 ---
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'scrap-jump') return;
+  const { url, id, task } = msg;
+  if (!url || sender.tab?.id == null) {
+    sendResponse({ error: 'invalid-jump' });
+    return;
+  }
+  const pendingScrap = { url, id, task: task ?? null };
+  const storage = chrome.storage.session ?? chrome.storage.local;
+  storage.set({ pendingScrap }).then(() => {
+    chrome.tabs.update(sender.tab.id, { url });
+    sendResponse({ ok: true });
+  }).catch((e) => {
+    sendResponse({ error: e?.message || 'storage-error' });
+  });
+  return true; // 비동기 응답
+});
+
+// --- 스크랩 점프 대기(T25): 새 페이지의 content script 가 'scrap-pending' 으로 묻는다. session 에서 꺼내 주고 지운다(주소 확인은 content script). ---
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'scrap-pending') return;
+  const storage = chrome.storage.session ?? chrome.storage.local;
+  storage.get('pendingScrap').then(async (data) => {
+    await storage.remove('pendingScrap');
+    sendResponse({ pending: data?.pendingScrap ?? null });
+  }).catch(() => sendResponse({ pending: null }));
+  return true; // 비동기 응답
+});
+
 // --- 내 사전·공부 기록(T14): 'mydict'(op:'get' 은 GET, 나머지 set·delete 는 POST /mydict)와 'study'(GET /study?days=N)를 다리로 전달한다. ---
 async function mydict(msg, retried = false) {
   const token = await getToken(retried);

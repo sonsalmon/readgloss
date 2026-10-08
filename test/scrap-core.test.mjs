@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 // vendor approx-string-match.js 와 scrap-core.js 는 classic script. import 후 globalThis 에서 꺼낸다.
 await import('../extension/vendor/approx-string-match.js');
+await import('../extension/selection-core.js'); // scrap-core 의 normalizeUrl 은 여기 것을 쓴다
 await import('../extension/scrap-core.js');
 const { quoteOf, findQuote, MAX_ERRORS_RATIO } = globalThis.readglossScrap;
 

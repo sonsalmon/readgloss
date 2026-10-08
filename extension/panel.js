@@ -352,16 +352,35 @@
   }
   bindPageTranslate();
 
+  const scrapViewItem = h('button', {
+    class: 'mitem',
+    type: 'button',
+    text: '스크랩 보기',
+    onclick: () => globalThis.readglossScrapPage?.openFirstBar?.(),
+  });
+  scrapViewItem.hidden = true;
+
+  function syncScrapView() {
+    const pageScraps = globalThis.readglossScrapPage?.scraps || [];
+    const core = globalThis.readglossScrap;
+    const curUrl = core?.normalizeUrl && typeof location !== 'undefined' ? core.normalizeUrl(location.href) : (typeof location !== 'undefined' ? location.href : '');
+    const hasScraps = pageScraps.some((s) => (core?.normalizeUrl ? core.normalizeUrl(s.url) : s.url) === curUrl);
+    scrapViewItem.hidden = !hasScraps;
+  }
+
   const menu = h('div', { class: 'menu' },
     h('div', { class: 'menu-card', role: 'group', 'aria-label': '빠른 메뉴' },
       pageOffItem,
       pageTranslateItem,
+      scrapViewItem,
       h('button', { class: 'mitem', type: 'button', text: '설정', onclick: () => openPanel('settings') }),
       h('button', { class: 'mitem', type: 'button', text: '내 단어', onclick: () => openPanel('words') }),
       h('button', { class: 'mitem', type: 'button', text: '버튼 숨기기', onclick: () => setSettings({ floatingButton: { show: false } }) })));
   const dock = h('div', { class: 'dock' }, menu, fab);
   dock.addEventListener('mouseenter', syncPageTranslate); // 메뉴를 열 때 문구를 다시 계산
   dock.addEventListener('focusin', syncPageTranslate);
+  dock.addEventListener('mouseenter', syncScrapView);
+  dock.addEventListener('focusin', syncScrapView);
   dock.hidden = true; // 저장된 위치를 읽기 전에는 숨겨 둔다(깜빡임 방지)
 
   // 패널
