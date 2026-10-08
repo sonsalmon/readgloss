@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>내 개념 표시 설계</title>
+<style>
+:root{--bg:#fbfaf7;--fg:#222;--mut:#666;--card:#fff;--bd:#e3e0d8;--acc:#534AB7}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1b1a;--fg:#eee;--mut:#aaa;--card:#252524;--bd:#3a3936;--acc:#AFA9EC}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Apple SD Gothic Neo",sans-serif}
+main{max-width:900px;margin:auto;padding:16px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:16px 0;overflow-x:auto}
+h1{font-size:22px;margin:8px 0}h2{font-size:18px;margin:0 0 8px}
+p,li{margin:4px 0}.mut{color:var(--mut);font-size:14px}
+ol,ul{padding-left:22px}
+table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-top:1px solid var(--bd);padding:6px;text-align:left;vertical-align:top}
+.tag{display:inline-block;border:1px solid var(--acc);color:var(--acc);border-radius:6px;padding:0 6px;font-size:13px}
+</style></head><body><main>
+<h1>내 개념 표시 + SQLite 이전</h1>
+<p class="mut">readgloss 설계서 변경 기록 11 · 2026-10-08 · 상태: 정범 검토 대기</p>
+
+<section><h2>1. 목표</h2>
+<ul>
+<li>정범이 개념을 정의한다.</li>
+<li>확장이 그 개념어를 웹 페이지에서 회색으로 표시한다.</li>
+<li>정범이 개념어에 마우스를 올리면, 확장이 정범의 정의를 보여 준다.</li>
+<li>정범이 개념어를 누르면, 확장이 개념 상세를 연다.</li>
+<li>개념 문서에서 정범은 그 개념이 나온 할 일과 문장을 본다.</li>
+</ul></section>
+
+<section><h2>2. 전체 그림</h2>
+<p class="mut">보라 = 이번에 새로 만든다. 회색 = 이미 있다.</p>
+<pre class="mermaid">
+flowchart LR
+  subgraph EXT["확장 (Aside)"]
+    Btn["[내 개념으로] 칸"]:::new
+    Gray["회색 표시 + 마우스 카드"]:::new
+    Tab["패널 '개념' 탭"]:::new
+    Scrap["스크랩 (있음)"]
+  end
+  subgraph BR["맥 다리"]
+    API["/concepts"]:::new
+    DB[("readgloss.db<br/>점 표 + 선 표")]:::new
+    Old["words · mydict · scraps<br/>(겉 모양 그대로)"]
+  end
+  subgraph LF["학습 폴더"]
+    CDoc["concepts/개념.md"]:::new
+    SDoc["scraps/할일/페이지.md (있음)"]
+  end
+  Btn --> API --> DB
+  Old --> DB
+  DB --> Gray
+  DB --> Tab
+  Scrap -. 선으로 이음 .-> DB
+  DB -->|세션 따라잡기| CDoc
+  CDoc -. 링크 .-> SDoc
+  classDef new fill:#EEEDFE,stroke:#534AB7,color:#26215C
+</pre></section>
+
+<section><h2>3. 데이터 모양 — 점과 선</h2>
+<p>모든 것은 점이다. 관계는 선이다.</p>
+<pre class="mermaid">
+flowchart LR
+  C1(["개념<br/>access control"]) -->|in_task| T(["할 일<br/>S1-04"])
+  C1 -->|from_scrap| S(["스크랩<br/>문장 1개"])
+  S -->|in_task| T
+  C1 <-->|related| C2(["개념<br/>privilege escalation"])
+</pre>
+<table>
+<tr><th>선 종류</th><th>뜻</th></tr>
+<tr><td>in_task</td><td>이 점은 이 할 일에 속한다.</td></tr>
+<tr><td>from_scrap</td><td>이 개념은 이 스크랩 문장에서 정의했다.</td></tr>
+<tr><td>related</td><td>두 개념은 관련이 있다. 양쪽에 한 줄씩 저장한다.</td></tr>
+</table></section>
+
+<section><h2>4. 개념 한 개를 만드는 흐름</h2>
+<pre class="mermaid">
+sequenceDiagram
+  actor 정범
+  participant 카드 as 드래그 카드
+  participant 다리 as 맥 다리
+  participant 페이지
+  정범->>카드: 글자 선택 → [내 개념으로]
+  카드->>정범: 이름 · 별칭 · 정의 · 관련 개념 칸
+  정범->>카드: [저장]
+  카드->>다리: save (할 일, 스크랩 id 함께)
+  alt 같은 이름이 있다
+    다리-->>카드: 409 + 그 개념 id
+    카드->>정범: 그 개념을 연다(고치기)
+  else 새 이름이다
+    다리-->>카드: 저장한 개념
+    카드->>페이지: 그 낱말에 회색 표시
+  end
+</pre></section>
+
+<section><h2>5. 화면 규칙</h2>
+<ol>
+<li><b>[내 개념으로]</b>: 드래그 카드, 사전 카드, 스크랩북 스크랩에 둔다.</li>
+<li><b>입력 칸</b>: 이름 1~80자. 별칭 0~5개. 정의 1~500자. 관련 개념 0~10개.</li>
+<li><b>회색 표시</b>: 이름과 별칭을 찾는다. 대소문자는 무시한다. 낱말 경계를 지킨다. 긴 이름을 먼저 찾는다.</li>
+<li><b>마우스 카드</b>: 0.3초 뒤에 연다. 이름, 정의, 관련 개념, 처음 나온 곳을 보여 준다.</li>
+<li><b>클릭</b>: 패널 "개념" 탭에서 그 개념 상세를 연다.</li>
+<li><b>개념 상세</b>: 정의를 고친다. 나온 곳을 누르면 그 스크랩 문장으로 간다.</li>
+</ol>
+<p class="mut">예: 개념 "control"은 "controller" 안에서 칠하지 않는다.</p></section>
+
+<section><h2>6. 데이터 옮기기 (한 번만)</h2>
+<pre class="mermaid">
+flowchart TD
+  A["다리 시작"] --> B{"readgloss.db 가 있나?"}
+  B -->|있다| Z["db 를 쓴다"]
+  B -->|없다| C["옛 JSON 3개를 db 로 옮긴다"]
+  C --> D{"옮기기 전후 개수가 같나?"}
+  D -->|같다| E["JSON 을 .migrated 로 이름 바꿔 보존한다"] --> Z
+  D -->|다르다| F["db 를 지운다<br/>JSON 으로 계속 쓴다<br/>로그에 오류 한 줄"]
+</pre>
+<p>데이터는 사라지지 않는다. 실패하면 지금 방식이 그대로 돈다.</p></section>
+
+<section><h2>7. 이번에 하지 않는 것</h2>
+<ul>
+<li>단어 ↔ 개념 연결. 어원 묶음. 격식 묶음. → 튜터 연결 조각에서 한다.</li>
+<li>AI 호출. 이번 조각은 0회다.</li>
+<li>개념 그래프 그림. 폰에서 개념 보기.</li>
+</ul></section>
+
+<section><h2>8. 만드는 순서와 완료 조건</h2>
+<pre class="mermaid">
+flowchart LR
+  T26["T26 다리 db<br/>표 · 옮기기 · 속 교체"] --> T27["T27 다리 개념<br/>/concepts · export"]
+  T27 --> T28["T28 확장<br/>칸 · 회색 · 개념 탭"]
+  T28 --> U["정범 5분 확인"]
+</pre>
+<ol>
+<li>자동 시험이 모두 통과한다. 기존 시험도 모두 통과한다.</li>
+<li>독립 검증자가 통과를 준다.</li>
+<li>정범이 PortSwigger에서 개념 2개를 만든다. 회색 표시, 마우스 카드, 클릭, 나온 곳 이동을 확인한다.</li>
+</ol></section>
+
+<section><h2>9. 용어</h2>
+<table>
+<tr><th>낱말</th><th>뜻</th></tr>
+<tr><td>개념</td><td>정범이 정의한 낱말 또는 구.</td></tr>
+<tr><td>정의</td><td>정범이 쓴 1~500자 설명.</td></tr>
+<tr><td>별칭</td><td>같은 개념을 가리키는 다른 이름.</td></tr>
+<tr><td>나온 곳</td><td>개념과 이은 스크랩 문장과 그 할 일.</td></tr>
+<tr><td>다리</td><td>맥에서 늘 도는 readgloss 프로그램(127.0.0.1:47831).</td></tr>
+</table></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'default'});</script>
+</body></html>
