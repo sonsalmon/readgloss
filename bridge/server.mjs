@@ -331,6 +331,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
         next: learning.next,
         lastToday,
         todayTasks,
+        roadmapOk: learning.roadmapOk,
       });
       return send(res, 200, guessed, cors);
     }

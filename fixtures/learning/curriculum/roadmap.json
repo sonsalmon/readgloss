@@ -28,6 +28,7 @@
       "card_title": "저녁 HTB AI 경로 하루 2시간",
       "resources": [
         { "url": "https://academy.hackthebox.com/path/preview/ai-red-teamer" },
+        { "url": "https://help.hackthebox.com/en/articles/13677074-academy-subscriptions" },
         { "url": "https://portswigger.net/web-security/all-labs" }
       ]
     },
@@ -35,7 +36,9 @@
       "id": "S1-18",
       "card_title": "웹 해킹 책 6개 장을 퀴즈로 복습하기",
       "resources": [
-        { "url": "https://portswigger.net/web-security" }
+        { "url": "https://portswigger.net/web-security" },
+        { "url": "https://www.yes24.com/Product/Goods/12345678" },
+        { "url": "https://notebooklm.google.com/" }
       ]
     }
   ]

@@ -185,6 +185,20 @@ test('/scraps POST guess op: 포트스위거 페이지 짐작 및 밖 페이지 
   }
 });
 
+test('/scraps guess: 학습 폴더가 없으면 오늘 스크랩이 있어도 인박스(task null)', async () => {
+  const missing = join(mkdtempSync(join(tmpdir(), 'rg-nolearn-')), 'missing');
+  const s = await start({ learningDir: missing });
+  try {
+    const url = 'https://portswigger.net/web-security/access-control';
+    await s.scraps({ op: 'save', task: 'S1-04', url, quote: { exact: 'Sample text.' } });
+    const g = await s.scraps({ op: 'guess', url });
+    assert.equal(g.status, 200);
+    assert.deepEqual(g.json(), { task: null, ask: false, candidates: [], matches: [] });
+  } finally {
+    await s.bridge.close();
+  }
+});
+
 test('/scraps: memo, move, remove op 및 없는 id 404', async () => {
   const s = await start();
   try {

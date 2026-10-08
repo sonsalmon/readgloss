@@ -19,8 +19,9 @@ const LIMIT = {
 };
 
 // 주소 정규화: # 뒤를 버리고, utm_* 쿼리만 지우고, 끝 /를 뗀다. 나머지 쿼리는 원문 조각을 유지한다.
-export function normalizeUrl(u) {
-  if (typeof u !== 'string') return '';
+export function normalizeUrl(input) {
+  if (typeof input !== 'string') return '';
+  const u = input.trim();
   try {
     const parsed = new URL(u);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';

@@ -26,6 +26,10 @@ test('normalizeUrl: # 뒤 버림, utm_* 쿼리만 지움, 끝 / 뗌, 남는 쿼�
   assert.equal(normalizeUrl('file:///etc/passwd'), '');
   assert.equal(normalizeUrl(null), '');
   assert.equal(normalizeUrl(''), '');
+  // 앞뒤 공백은 잘라낸 뒤 정규화한다
+  assert.equal(normalizeUrl('  https://a.com/x/?utm_source=t&q=1#h \n'), 'https://a.com/x?q=1');
+  assert.equal(normalizeUrl('\thttps://a.com/'), 'https://a.com');
+  assert.equal(normalizeUrl('   '), '');
 });
 
 test('같은 문장 다른 페이지는 다른 id, 세 값 구분자로 겹침 방지', () => {

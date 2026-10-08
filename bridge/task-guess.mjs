@@ -13,12 +13,12 @@ const COMMON_HOSTS = new Set([
   'claude.ai',
 ]);
 
-// 학습 폴더 읽기: roadmap.json 및 NOTES.md. 파일 없음·깨짐 시 { nodes: [], next: null } + console.error 한 줄.
+// 학습 폴더 읽기: roadmap.json 및 NOTES.md. 파일마다 없음·깨짐이면 console.error 한 줄.
+// roadmapOk:false 면 guessTask 가 인박스로 보낸다. NOTES 만 실패하면 next:null 로 계속 짐작한다.
 export function loadLearning(dir) {
   let nodes = [];
   let next = null;
-  let hasError = false;
-  let errMsg = '';
+  let roadmapOk = true;
 
   try {
     const roadmapPath = join(dir, 'curriculum', 'roadmap.json');
@@ -33,8 +33,9 @@ export function loadLearning(dir) {
         : [],
     }));
   } catch (e) {
-    hasError = true;
-    errMsg = e.message;
+    roadmapOk = false;
+    nodes = [];
+    console.error(`[task-guess] roadmap.json 읽기 실패 (${join(dir, 'curriculum', 'roadmap.json')}): ${e.message}`);
   }
 
   try {
@@ -47,15 +48,10 @@ export function loadLearning(dir) {
       if (mTask) next = mTask[0];
     }
   } catch (e) {
-    hasError = true;
-    errMsg = errMsg || e.message;
+    console.error(`[task-guess] NOTES.md 읽기 실패 (${join(dir, 'NOTES.md')}): ${e.message}`);
   }
 
-  if (hasError && nodes.length === 0 && !next) {
-    console.error(`[task-guess] 학습 자료 읽기 실패 (${dir}): ${errMsg}`);
-  }
-
-  return { nodes, next };
+  return { nodes, next, roadmapOk };
 }
 
 // 오늘(서울 날짜) 마지막 스크랩의 task. 없거나 인박스면 null.
@@ -72,7 +68,11 @@ export function lastTaskToday(scraps, now = Date.now) {
 }
 
 // 할 일 짐작 규칙 (설계서 10-3)
-export function guessTask({ url, nodes = [], next = null, lastToday = null, todayTasks = [] }) {
+export function guessTask({ url, nodes = [], next = null, lastToday = null, todayTasks = [], roadmapOk = true }) {
+  // roadmap 을 못 읽었으면 짐작하지 않고 인박스
+  if (!roadmapOk) {
+    return { task: null, ask: false, candidates: [], matches: [] };
+  }
   const normUrl = normalizeUrl(url);
   if (!normUrl) {
     return { task: null, ask: false, candidates: [], matches: [] };

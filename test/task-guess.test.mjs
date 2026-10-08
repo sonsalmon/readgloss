@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { guessTask, lastTaskToday, loadLearning } from '../bridge/task-guess.mjs';
@@ -22,20 +22,86 @@ test('NOTES 다음 한 걸음 절 첫 S\\d-\\d\\d 만 읽는다(다른 절 무�
   assert.equal(next, 'S1-03');
 });
 
-test('roadmap 없음/깨짐 → 인박스, 던지지 않음', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'rg-learning-broken-'));
-  // 파일이 아예 없을 때
-  const emptyRes = loadLearning(dir);
-  assert.deepEqual(emptyRes, { nodes: [], next: null });
+// console.error 를 잠시 가로채 찍힌 줄을 모은다
+function captureErrors(fn) {
+  const lines = [];
+  const orig = console.error;
+  console.error = (...a) => lines.push(a.join(' '));
+  try {
+    return { result: fn(), lines };
+  } finally {
+    console.error = orig;
+  }
+}
 
-  // roadmap.json 이 깨졌을 때
+test('roadmap 없음/깨짐 → 인박스, 던지지 않음, 파일마다 로그 한 줄', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rg-learning-broken-'));
+  // 파일이 아예 없을 때: roadmap 과 NOTES 각각 한 줄
+  const { result: emptyRes, lines: emptyLines } = captureErrors(() => loadLearning(dir));
+  assert.equal(emptyRes.roadmapOk, false);
+  assert.deepEqual(emptyRes.nodes, []);
+  assert.equal(emptyRes.next, null);
+  assert.equal(emptyLines.length, 2);
+  assert.ok(emptyLines.some((l) => l.includes('roadmap.json')));
+  assert.ok(emptyLines.some((l) => l.includes('NOTES.md')));
+
+  // roadmap.json 이 깨졌을 때: roadmap 로그 한 줄, NOTES 는 정상이라 next 는 읽는다
   const curDir = join(dir, 'curriculum');
   mkdirSync(curDir, { recursive: true });
   writeFileSync(join(curDir, 'roadmap.json'), '{ invalid json');
   writeFileSync(join(dir, 'NOTES.md'), '## 다음 한 걸음\n- S1-05');
-  const brokenRes = loadLearning(dir);
+  const { result: brokenRes, lines: brokenLines } = captureErrors(() => loadLearning(dir));
+  assert.equal(brokenRes.roadmapOk, false);
   assert.deepEqual(brokenRes.nodes, []);
   assert.equal(brokenRes.next, 'S1-05');
+  assert.equal(brokenLines.length, 1);
+  assert.ok(brokenLines[0].includes('roadmap.json'));
+
+  // 깨진 roadmap 이면 guessTask 는 조건과 무관하게 인박스
+  const r = guessTask({
+    url: 'https://portswigger.net/web-security/access-control',
+    nodes: brokenRes.nodes,
+    next: brokenRes.next,
+    lastToday: 'S1-18',
+    roadmapOk: brokenRes.roadmapOk,
+  });
+  assert.deepEqual(r, { task: null, ask: false, candidates: [], matches: [] });
+});
+
+test('NOTES.md 만 없으면 next:null 로 두고 roadmap 기반 짐작은 계속한다', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rg-learning-nonotes-'));
+  mkdirSync(join(dir, 'curriculum'), { recursive: true });
+  writeFileSync(
+    join(dir, 'curriculum', 'roadmap.json'),
+    readFileSync(join(FIXTURES_DIR, 'curriculum', 'roadmap.json'), 'utf8'),
+  );
+  const { result, lines } = captureErrors(() => loadLearning(dir));
+  assert.equal(result.roadmapOk, true);
+  assert.equal(result.nodes.length, 5);
+  assert.equal(result.next, null);
+  assert.equal(lines.length, 1);
+  assert.ok(lines[0].includes('NOTES.md'));
+
+  const r = guessTask({
+    url: 'https://portswigger.net/web-security/access-control',
+    nodes: result.nodes,
+    next: result.next,
+    lastToday: null,
+    roadmapOk: result.roadmapOk,
+  });
+  assert.equal(r.task, 'S1-04');
+  assert.equal(r.ask, false);
+});
+
+test('일반 호스트 yes24 페이지는 roadmap 의 yes24 자료와도 맞지 않는다', () => {
+  const { nodes } = loadLearning(FIXTURES_DIR);
+  const r = guessTask({
+    url: 'https://www.yes24.com/Product/Goods/12345678',
+    nodes,
+    next: 'S1-03',
+    lastToday: null,
+  });
+  assert.deepEqual(r.matches, []);
 });
 
 test('lastTaskToday: 오늘 마지막 스크랩의 task 반환', () => {
