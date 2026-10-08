@@ -100,7 +100,7 @@
 
 ### 10-9. 확인 안 함 (판가름 · 명령 · 다음 문안)
 
-1. Highlight API가 확장 격리 환경(content script)에서 칠해지는가 — 판가름: T24 첫 단계 시험 / 명령 한 줄로는 안 됨 → 대신 Aside에서 확장 새로고침 후 시험 페이지에 스크랩 1건 / 다음 문안: **"형광펜 방식 시험 결과 보여줘"**.
+1. **[확인됨 10-08, 정범 Aside 실사용: 칠해지고 새로고침 뒤 다시 칠해짐]** Highlight API가 확장 격리 환경(content script)에서 칠해지는가 — 판가름: T24 첫 단계 시험 / 명령 한 줄로는 안 됨 → 대신 Aside에서 확장 새로고침 후 시험 페이지에 스크랩 1건 / 다음 문안: **"형광펜 방식 시험 결과 보여줘"**.
 2. 다른 페이지를 연 뒤 문장을 찾아 스크롤하는 동안 페이지가 자기 스크롤을 덮어쓰는가(SPA, HTB 등) — 판가름: Aside 실사용 / 명령으로는 안 됨 → HTB 섹션 페이지 스크랩 2건으로 ← → 시험 / 다음 문안: **"HTB 페이지에서 넘김 막대 시험해 봐"**.
 3. 다리(launchd)가 `~/dev/learning`을 읽을 수 있는가 — 판가름: T23 뒤 `guess` 응답 / `curl -s -X POST -H "x-bridge-token: $(cat ~/dev/readgloss/data/token)" -H 'content-type: application/json' -d '{"op":"guess","url":"https://portswigger.net/web-security/access-control"}' http://127.0.0.1:47831/scraps` / 다음 문안: **"guess가 S1-04를 돌려주는지 확인해 줘"**.
 
