@@ -704,7 +704,7 @@
   }
 
   async function saveScrap() {
-    if (!ui?.scrapBtn || ui.scrapBtn.getAttribute('aria-disabled') === 'true' || !current) return;
+    if (!ui?.scrapBtn || ui.scrapBtn.getAttribute('aria-disabled') === 'true' || !current || !current.quote) return;
     const my = seq;
     ui.scrapBtn.setAttribute('aria-disabled', 'true');
     notify('');

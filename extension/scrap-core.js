@@ -172,6 +172,37 @@
     return list.filter((s) => s && s.url === pageUrl);
   }
 
+  // 노드의 부모 안 자리(index)를 따라간 경로. 문서 순서 비교용(DOM 의 compareDocumentPosition 대신 쓴다).
+  function pathOf(node) {
+    const path = [];
+    for (let n = node; n && n.parentNode; n = n.parentNode) {
+      path.unshift(n.parentNode.childNodes.indexOf(n));
+    }
+    return path;
+  }
+  function cmpPath(a, b) {
+    const len = Math.min(a.length, b.length);
+    for (let i = 0; i < len; i++) if (a[i] !== b[i]) return a[i] - b[i];
+    return a.length - b.length;
+  }
+
+  // 선택 끝점(container, offset)을 색인 글자 위치로 바꾼다.
+  // items: [{node, start, end}] 문서 순서. 글자 노드면 그대로 start+offset.
+  // 요소(또는 색인에서 빠진 글자)면 그 점 앞·뒤의 색인 글 끝·시작에 붙인다: 시작은 점 뒤 첫 글의 시작, 끝은 점 앞 마지막 글의 끝.
+  // 못 찾으면 -1.
+  function endpointIndex(items, container, offset, isStart) {
+    const direct = items.find((it) => it.node === container);
+    if (direct) return direct.start + offset;
+    const point = container.nodeType === 1 ? [...pathOf(container), offset] : pathOf(container);
+    if (isStart) {
+      const it = items.find((x) => cmpPath(pathOf(x.node), point) >= 0);
+      return it ? it.start : -1;
+    }
+    let found = null;
+    for (const x of items) if (cmpPath(pathOf(x.node), point) < 0) found = x;
+    return found ? found.end : -1;
+  }
+
   globalThis.readglossScrap = {
     quoteOf,
     findQuote,
@@ -179,5 +210,6 @@
     skipsIndex,
     normText,
     scrapsOnPage,
+    endpointIndex,
   };
 })();

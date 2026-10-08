@@ -90,20 +90,9 @@
   function quoteForRange(range) {
     if (!range) return null;
     const { fullText, nodes } = buildTextIndex();
-    let start = -1;
-    let end = -1;
-
-    for (const item of nodes) {
-      if (start === -1 && item.node === range.startContainer) {
-        start = item.start + range.startOffset;
-      }
-      if (item.node === range.endContainer) {
-        end = item.start + range.endOffset;
-        break;
-      }
-    }
-
     // 시작·끝 자리를 색인에서 못 찾으면(건너뛴 요소 안 등) 추측하지 않고 null: 호출부가 스크랩을 거절한다
+    const start = globalThis.readglossScrap.endpointIndex(nodes, range.startContainer, range.startOffset, true);
+    const end = globalThis.readglossScrap.endpointIndex(nodes, range.endContainer, range.endOffset, false);
     if (start === -1 || end === -1 || start >= end) return null;
 
     const core = globalThis.readglossScrap;
