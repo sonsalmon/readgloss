@@ -859,7 +859,7 @@
       if (host && e.code === 'KeyS' && e.altKey) {
         // 입력 중(입력칸·textarea·편집 영역·IME 조합)이거나 카드·토스트 안에서 누른 것이면 가로채지 않는다
         const path = e.composedPath();
-        if (core.isTypingPath(path, e.isComposing) || path.some((n) => n === host || n?.localName === 'readgloss-toast')) return;
+        if (core.isTypingPath(path, e.isComposing) || core.isOwnUiPath(path)) return;
         e['preventDefault']?.();
         toggleScrap();
       }

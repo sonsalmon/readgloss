@@ -242,6 +242,12 @@
     };
   }
 
+  // 이벤트 경로에 우리 확장 화면(readgloss-* host: 토스트·카드·패널·선택 카드·넘김 막대 등)이 있는지.
+  // except 는 판정에서 뺄 host(예: 넘김 막대 자신). closed shadow 안쪽은 못 보므로 host 이름으로 본다.
+  function isOwnUiPath(path, except = null) {
+    return (Array.isArray(path) ? path : []).some((n) => n && n !== except && typeof n.localName === 'string' && n.localName.startsWith('readgloss-'));
+  }
+
   // ⌥S 등 단축키가 입력 중(입력칸·textarea·편집 영역, IME 조합 중)에서 눌렸는지. path 는 e.composedPath().
   function isTypingPath(path, isComposing) {
     if (isComposing) return true;
@@ -268,6 +274,6 @@
   globalThis.readglossSelection = {
     MAX_TEXT, MAX_SIDE, MAX_TITLE, MAX_HEADINGS, WIDE_SIDE, WIDE_HEADINGS,
     classify, around, buildContext, pickHeadings, stageButton, mydictKey, firstMeaning, bestMeaning, mydictMessage, phraseMessage, findPhrase, MAX_EXPRESSIONS, expressionRows, noteText, expressionButton, expressionToggle, lookupExtras, isAcronym, expandAcronym, acronymLine,
-    normalizeUrl, scrapAskKey, localDateStr, scrapMessage, isTypingPath, waitUpTo,
+    normalizeUrl, scrapAskKey, localDateStr, scrapMessage, isTypingPath, isOwnUiPath, waitUpTo,
   };
 })();

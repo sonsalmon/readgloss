@@ -305,12 +305,12 @@
     }
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
 
-    // 막대가 있고 이벤트 경로에 입력칸·편집 영역이 없을 때만 키보드 ← →
+    // 막대가 있고 이벤트 경로에 입력칸·편집 영역·우리 확장 화면(막대 자신 외)이 없을 때만 키보드 ← →
+    // 무시하는 경우엔 preventDefault·stopPropagation 을 하지 않는다(다른 화면의 키 처리를 막지 않는다)
     const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
-    const isTyping = globalThis.readglossSelection?.isTypingPath
-      ? globalThis.readglossSelection.isTypingPath(path, e.isComposing)
-      : false;
-    if (isTyping) return;
+    const sel = globalThis.readglossSelection;
+    const isTyping = sel?.isTypingPath ? sel.isTypingPath(path, e.isComposing) : false;
+    if (isTyping || sel?.isOwnUiPath?.(path, barHost)) return;
 
     e.preventDefault();
     e.stopPropagation();
@@ -370,9 +370,23 @@
     }
   }
 
+  // 메모·할 일 바꾸기 뒤 이 페이지 기억(knownScraps)을 맞춘다. 이 페이지에 없는 스크랩이면 아무것도 안 한다.
+  function update(scrap) {
+    if (scrap?.id && knownScraps.has(scrap.id)) {
+      knownScraps.set(scrap.id, { ...knownScraps.get(scrap.id), ...scrap });
+    }
+  }
+
+  // 지우기 뒤 형광펜을 걷고 기억에서 뺀다 (다리 응답이 성공했을 때만 부른다)
+  function remove(id) {
+    unpaint(id);
+  }
+
   globalThis.readglossScrapPage = {
     paint,
     unpaint,
+    update,
+    remove,
     scrollTo,
     found,
     get scraps() {

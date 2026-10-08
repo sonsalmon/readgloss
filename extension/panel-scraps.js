@@ -14,8 +14,19 @@
     return !(foundSet && foundSet.has(scrap.id));
   }
 
+  // 다리 응답 실패 안내(성공이면 null). 다리 꺼짐·인증·내부 오류·응답 없음을 나눈다.
+  const SCRAP_ERRORS = {
+    'bridge-off': '다리가 꺼져 있어요. 터미널에서 node ~/dev/readgloss/bridge/server.mjs 를 실행해 주세요',
+    unauthorized: '다리와 연결하지 못했어요(인증). 확장을 다시 불러와 주세요',
+  };
+  function scrapErrorMessage(res) {
+    if (res && !res.error) return null;
+    return SCRAP_ERRORS[res?.error] || '저장하지 못했어요. 잠시 뒤 다시 눌러 주세요';
+  }
+
   globalThis.readglossScrapPanel = {
     isNotFound,
+    scrapErrorMessage,
   };
 
   const CSS = `
@@ -179,6 +190,7 @@
     let editingMemoId = null;
     let movingTaskId = null;
     let moveCandidates = [];
+    let notice = ''; // 마지막 쓰기 실패 안내
 
     const pageUrl = () => {
       const core = globalThis.readglossScrap;
@@ -235,35 +247,59 @@
       draw();
     }
 
+    // 쓰기 뒤: 다리가 성공했을 때만 페이지 기억·형광펜을 맞추고, 실패면 안내만 띄운다
     async function onApplyMove(scrap, newTask) {
       movingTaskId = null;
-      await ctx.send({
+      const res = await ctx.send({
         type: 'scraps',
         op: 'move',
         id: scrap.id,
         task: newTask,
       });
+      const msg = globalThis.readglossScrapPanel.scrapErrorMessage(res);
+      if (msg) {
+        notice = msg;
+        draw();
+        return;
+      }
+      notice = '';
+      globalThis.readglossScrapPage?.update?.({ ...scrap, task: newTask });
       loadData();
     }
 
     async function onSaveMemo(scrap, memo) {
       editingMemoId = null;
-      await ctx.send({
+      const res = await ctx.send({
         type: 'scraps',
         op: 'memo',
         id: scrap.id,
         memo,
       });
+      const msg = globalThis.readglossScrapPanel.scrapErrorMessage(res);
+      if (msg) {
+        notice = msg;
+        draw();
+        return;
+      }
+      notice = '';
+      globalThis.readglossScrapPage?.update?.({ ...scrap, memo });
       loadData();
     }
 
     async function onRemoveScrap(scrap) {
-      await ctx.send({
+      const res = await ctx.send({
         type: 'scraps',
         op: 'remove',
         id: scrap.id,
       });
-      globalThis.readglossScrapPage?.unpaint?.(scrap.id);
+      const msg = globalThis.readglossScrapPanel.scrapErrorMessage(res);
+      if (msg) {
+        notice = msg;
+        draw();
+        return;
+      }
+      notice = '';
+      globalThis.readglossScrapPage?.remove?.(scrap.id);
       loadData();
     }
 
@@ -328,7 +364,7 @@
 
               // 메모 편집 폼
               if (editingMemoId === item.id) {
-                const memoInput = h('textarea', { class: 'memo-input', rows: '2' });
+                const memoInput = h('textarea', { class: 'memo-input', rows: '2', maxlength: '1000' });
                 memoInput.value = item.memo || '';
                 const saveMemoBtn = h('button', {
                   class: 'scrap-btn',
@@ -431,7 +467,7 @@
         taskNodes.push(groupEl);
       }
 
-      root.replaceChildren(...taskNodes);
+      root.replaceChildren(...(notice ? [h('div', { class: 'scraps-empty', text: notice })] : []), ...taskNodes);
     }
 
     loadData();

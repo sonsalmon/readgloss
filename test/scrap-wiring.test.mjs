@@ -87,3 +87,12 @@ test('밖 페이지 답은 chrome.storage.local 키 scrapAsk:<날짜>:<정규화
   assert.match(sel, /scrapAskKey/);
   assert.match(sel, /storage/);
 });
+
+// T25 fix A: 막대 ← → 는 우리 화면 안에서 눌리면 아무것도 안 하고, 무시할 때는 preventDefault 전에 빠진다
+test('onBarKeyDown: 우리 화면 판정(isOwnUiPath) 뒤에만 preventDefault', () => {
+  const src = read('scrap.js');
+  const body = src.slice(src.indexOf('function onBarKeyDown'), src.indexOf('function openBar'));
+  const check = body.indexOf('isOwnUiPath?.(path, barHost)');
+  assert.ok(check > 0, 'isOwnUiPath 판정이 있어야 한다');
+  assert.ok(check < body.indexOf('e.preventDefault()'), '판정 뒤에 preventDefault');
+});

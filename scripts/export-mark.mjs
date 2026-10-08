@@ -9,9 +9,10 @@ export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 export function isValidDateStr(s) {
   if (typeof s !== 'string' || !DATE_RE.test(s)) return false;
   const [y, m, d] = s.split('-').map(Number);
-  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
-  const dt = new Date(`${s}T00:00:00`);
-  return !Number.isNaN(dt.getTime());
+  if (m < 1 || m > 12 || d < 1) return false;
+  // 달마다 날짜 수를 실제로 본다: 2026-02-31 은 3월 3일로 넘어가므로 거절
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
 }
 
 export function markDay(date, dataDir) {

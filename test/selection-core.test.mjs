@@ -86,3 +86,16 @@ test('buildContext: 앞 글(앞 블록 포함)은 끝에서 1500자, 뒤 글은 
   assert.deepEqual(buildContext({ headings: ['h'.repeat(500), '', '  '] }).headings, ['h'.repeat(MAX_TITLE)]);
   assert.deepEqual(buildContext({}), { before: '', after: '', title: '', headings: [] });
 });
+
+// T25 fix A: 우리 확장 화면(readgloss-*) 안에서 누른 키는 막대·⌥S가 가로채지 않는다
+test('isOwnUiPath: 경로에 readgloss-* host 가 있으면 true, 제외 노드는 무시', () => {
+  const el = (localName) => ({ localName });
+  const bar = el('readgloss-scrap-bar');
+  assert.equal(globalThis.readglossSelection.isOwnUiPath([el('input'), el('readgloss-toast'), el('body')]), true);
+  assert.equal(globalThis.readglossSelection.isOwnUiPath([el('button'), el('readgloss-ui')]), true);
+  assert.equal(globalThis.readglossSelection.isOwnUiPath([el('readgloss-selection')]), true);
+  assert.equal(globalThis.readglossSelection.isOwnUiPath([el('p'), el('body'), el('html')]), false);
+  assert.equal(globalThis.readglossSelection.isOwnUiPath([bar, el('div')], bar), false, '막대 자신은 제외');
+  assert.equal(globalThis.readglossSelection.isOwnUiPath([bar, el('readgloss-ui')], bar), true, '막대 밖 우리 host 는 포함');
+  assert.equal(globalThis.readglossSelection.isOwnUiPath(undefined), false);
+});

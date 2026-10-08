@@ -117,3 +117,38 @@ test('normalizeUrl: 확장(selection-core)과 다리(bridge/scraps.mjs)가 같�
     assert.equal(sel(u), bridgeNormalizeUrl(u), String(u));
   }
 });
+
+// T25 fix C: 쿼리 뺀 경로를 조각 단위로 비교 (access-control-lab 은 access-control 의 자식이 아니다)
+test('pageDepth 조각 단위: access-control-lab 은 depth 0', () => {
+  const urls = [
+    'https://portswigger.net/web-security/access-control',
+    'https://portswigger.net/web-security/access-control/idor',
+    'https://portswigger.net/web-security/access-control-lab',
+  ];
+  assert.equal(pageDepth('https://portswigger.net/web-security/access-control-lab', urls), 0);
+  assert.equal(pageDepth('https://portswigger.net/web-security/access-control/idor', urls), 1);
+});
+
+test('buildTree 페이지 순서: access-control, access-control/idor, access-control-lab', () => {
+  const scraps = ['access-control-lab', 'access-control/idor', 'access-control'].map((p, i) => ({
+    id: `00000000000${i}`,
+    task: 'S1-04',
+    url: `https://portswigger.net/web-security/${p}`,
+    title: p,
+    headings: [],
+    quote: { exact: `q${i}` },
+    ts: i,
+  }));
+  const tree = buildTree(scraps, { 'S1-04': 'T' });
+  assert.deepEqual(tree[0].pages.map((p) => p.url.split('/web-security/')[1]), ['access-control', 'access-control/idor', 'access-control-lab']);
+  assert.deepEqual(tree[0].pages.map((p) => p.depth), [0, 1, 0]);
+});
+
+// T25 fix B: 다리 응답이 실패면 안내 문구를 돌려준다(성공이면 null)
+test('scrapErrorMessage: 성공 응답은 null, 실패는 안내 문구(다리 꺼짐은 그 안내)', () => {
+  const { scrapErrorMessage } = globalThis.readglossScrapPanel;
+  assert.equal(scrapErrorMessage({ scraps: [], tasks: {} }), null);
+  assert.match(scrapErrorMessage({ error: 'bridge-off' }), /다리가 꺼져/);
+  assert.equal(typeof scrapErrorMessage(null), 'string');
+  assert.equal(typeof scrapErrorMessage({ error: 'internal' }), 'string');
+});

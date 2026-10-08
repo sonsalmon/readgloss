@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { renderScrapDocs, writeIfChanged, slugifyPage } from '../scripts/export-scraps.mjs';
@@ -201,5 +201,51 @@ test('같은 내용이면 파일 mtime 안 바뀜, 빈 할 일 문서는 지움,
     assert.ok(existsSync(userDocPath));
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// T25 fix D: 이름 겹침은 이미 쓴 최종 이름 집합으로 판정, 80자 이하, 폴더 밖 경로 거절, 깨진 scraps.json 은 멈춘다
+test('이름 겹침: A, A, A-2 는 a, a-2, a-2-2 로 모두 다르다', () => {
+  const mk = (id, title) => ({ id, task: 'S1-04', url: `https://example.com/${id}`, title, headings: [], quote: { exact: id }, ts: Number(id.replace(/\D/g, '')) });
+  const map = renderScrapDocs([mk('s1', 'A'), mk('s2', 'A'), mk('s3', 'A-2')], { 'S1-04': 'T' });
+  const names = [...map.keys()].filter((k) => k.startsWith('S1-04/')).sort();
+  assert.deepEqual(names, ['S1-04/a-2-2.md', 'S1-04/a-2.md', 'S1-04/a.md']);
+});
+
+test('이름 겹침: 접미사를 붙여도 이름은 80자 이하이고 서로 다르다', () => {
+  const long = 'a'.repeat(80);
+  const mk = (id) => ({ id, task: 'S1-04', url: `https://example.com/${id}`, title: long, headings: [], quote: { exact: id }, ts: Number(id.replace(/\D/g, '')) });
+  const map = renderScrapDocs([mk('s1'), mk('s2'), mk('s3')], { 'S1-04': 'T' });
+  const names = [...map.keys()].filter((k) => k.startsWith('S1-04/')).map((k) => k.slice('S1-04/'.length, -3));
+  assert.equal(new Set(names).size, 3);
+  for (const n of names) assert.ok(n.length <= 80, `길이 ${n.length}`);
+});
+
+test('writeIfChanged: 폴더 밖 경로(.. 나 절대 경로)는 throw 하고 아무것도 쓰지 않는다', () => {
+  const dir = createTempDir();
+  try {
+    assert.throws(() => writeIfChanged(dir, new Map([['ok.md', 'x'], ['../escape.md', 'y']])));
+    assert.throws(() => writeIfChanged(dir, new Map([['/tmp/abs-escape.md', 'y']])));
+    assert.equal(existsSync(join(dir, 'ok.md')), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('깨진 scraps.json 으로 실행하면 아무것도 지우지 않고 종료 코드 1, .bad 로 옮기지도 않는다', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const data = createTempDir();
+  const to = createTempDir();
+  try {
+    writeFileSync(join(data, 'scraps.json'), '{ 깨진');
+    writeFileSync(join(to, 'keep.md'), '<!-- 자동 생성 — 고치려면 확장 스크랩북에서 -->\n');
+    const r = spawnSync(process.execPath, ['scripts/export-scraps.mjs', '--to', to, '--data', data], { cwd: join(import.meta.dirname, '..'), encoding: 'utf8' });
+    assert.equal(r.status, 1);
+    assert.equal(existsSync(join(data, 'scraps.json')), true);
+    assert.equal(readdirSync(data).some((f) => f.includes('.bad')), false);
+    assert.equal(existsSync(join(to, 'keep.md')), true);
+  } finally {
+    rmSync(data, { recursive: true, force: true });
+    rmSync(to, { recursive: true, force: true });
   }
 });

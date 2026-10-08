@@ -237,32 +237,49 @@
   // 주소 정규화는 selection-core.js 의 normalizeUrl 한 벌만 쓴다(같은 규칙을 두 곳에 두지 않는다). 호출할 때 찾는다.
   const normalizeUrl = (input) => globalThis.readglossSelection.normalizeUrl(input);
 
-  // parentUrl 경로 아래에 childUrl 이 있는지 (디렉토리 경계 / 포함)
-  function isSubpath(parentUrl, childUrl) {
-    if (!parentUrl || !childUrl || parentUrl === childUrl) return false;
+  // 쿼리·해시를 뺀 경로를 [origin, 조각1, 조각2, ...] 로 쪼갠다. 주소가 아니면 null.
+  function pathPieces(url) {
+    const norm = normalizeUrl(url);
+    if (!norm) return null;
     try {
-      const p = new URL(normalizeUrl(parentUrl));
-      const c = new URL(normalizeUrl(childUrl));
-      if (p.origin !== c.origin) return false;
-      const pPath = p.pathname.endsWith('/') ? p.pathname : p.pathname + '/';
-      return c.pathname.startsWith(pPath);
+      const p = new URL(norm);
+      return [p.origin, ...p.pathname.split('/').filter(Boolean)];
     } catch {
-      return false;
+      return null;
     }
   }
 
-  // 같은 할 일 안에서 다른 페이지 경로 아래에 있는 깊이(다른 페이지 경로 아래면 +1)
+  // a 가 b 의 조상인가(조각 단위: access-control 은 access-control-lab 의 조상이 아니다)
+  function isPieceAncestor(a, b) {
+    if (a.length >= b.length) return false;
+    return a.every((piece, i) => piece === b[i]);
+  }
+
+  // 같은 할 일 안에서 자기 경로의 조상이 되는 다른 페이지 수 = 최대 조상 사슬 길이 (조상끼리는 항상 한 줄이라 개수와 같다)
   function pageDepth(url, urlsInTask) {
     if (!url || !Array.isArray(urlsInTask)) return 0;
+    const mine = pathPieces(url);
+    if (!mine) return 0;
     const norm = normalizeUrl(url);
-    const unique = new Set(urlsInTask.map((u) => normalizeUrl(u)).filter(Boolean));
+    const others = new Set(urlsInTask.map((u) => normalizeUrl(u)).filter((u) => u && u !== norm));
     let depth = 0;
-    for (const u of unique) {
-      if (u !== norm && isSubpath(u, norm)) {
-        depth++;
-      }
+    for (const u of others) {
+      const theirs = pathPieces(u);
+      if (theirs && isPieceAncestor(theirs, mine)) depth++;
     }
     return depth;
+  }
+
+  // 페이지 정렬: 조각 배열 순(사전순). 부모는 자식보다 앞이고, 부모 바로 뒤에 자식이 온다.
+  function comparePages(a, b) {
+    const pa = pathPieces(a.url) || [a.url];
+    const pb = pathPieces(b.url) || [b.url];
+    const n = Math.min(pa.length, pb.length);
+    for (let i = 0; i < n; i++) {
+      if (pa[i] !== pb[i]) return String(pa[i]).localeCompare(String(pb[i]));
+    }
+    if (pa.length !== pb.length) return pa.length - pb.length;
+    return String(a.url).localeCompare(String(b.url));
   }
 
   // 같은 할 일 안의 스크랩을 저장 순서(ts 오름차순)로 정렬
@@ -342,7 +359,7 @@
       }
 
       // 페이지 순서: 상위 경로 먼저 나타나도록 정렬
-      pages.sort((a, b) => a.url.localeCompare(b.url));
+      pages.sort(comparePages);
 
       result.push({
         task: t,

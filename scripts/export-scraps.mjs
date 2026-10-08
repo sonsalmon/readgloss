@@ -2,7 +2,7 @@
 // 사용: node scripts/export-scraps.mjs --to <폴더> [--data <폴더(기본 저장소 data/)>]
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createScraps } from '../bridge/scraps.mjs';
 import { loadLearning } from '../bridge/task-guess.mjs';
@@ -37,21 +37,18 @@ export function renderScrapDocs(scraps, tasks = {}) {
       const taskId = node.task;
       const taskTitle = node.title;
 
-      // 같은 할 일 안에서 slug 중복 방지
-      const slugCounts = new Map();
+      // 같은 할 일 안에서 이름 겹침 방지: 이미 쓴 최종 이름 집합으로 판정하고, 붙인 뒤에도 80자 이하
+      const usedSlugs = new Set();
       const pagesWithSlugs = [];
 
       for (const page of node.pages) {
         const baseSlug = slugifyPage(page.title);
-        let slug;
-        if (!slugCounts.has(baseSlug)) {
-          slugCounts.set(baseSlug, 1);
-          slug = baseSlug;
-        } else {
-          const nextNum = slugCounts.get(baseSlug) + 1;
-          slugCounts.set(baseSlug, nextNum);
-          slug = `${baseSlug}-${nextNum}`;
+        let slug = baseSlug;
+        for (let n = 2; usedSlugs.has(slug); n++) {
+          const suffix = `-${n}`;
+          slug = `${baseSlug.slice(0, 80 - suffix.length).replace(/-+$/, '')}${suffix}`;
         }
+        usedSlugs.add(slug);
         pagesWithSlugs.push({ ...page, slug });
       }
 
@@ -166,10 +163,36 @@ function removeEmptyDirs(dir) {
   }
 }
 
+// 스크랩 파일이 제대로 읽히는지 직접 본다. createScraps 는 깨진 파일을 .bad 로 옮기므로, 그 전에 멈추려고 따로 본다.
+// 없으면 괜찮고(null), 깨졌거나 못 읽으면 이유 문자열을 돌려준다.
+export function scrapsFileProblem(file) {
+  let raw;
+  try {
+    raw = readFileSync(file, 'utf8');
+  } catch (e) {
+    return e?.code === 'ENOENT' ? null : `읽지 못했습니다(${e?.message})`;
+  }
+  try {
+    const v = JSON.parse(raw);
+    if (v && typeof v === 'object' && v.v === 1 && v.scraps && typeof v.scraps === 'object' && !Array.isArray(v.scraps)) return null;
+  } catch {
+    // 아래에서 깨진 파일로 본다
+  }
+  return '깨진 scraps.json';
+}
+
 // 내용이 같으면 쓰지 않고, map 에 없는 기존 생성 문서는 지운다.
+// 대상 폴더 밖을 가리키는 경로(.. 나 절대 경로)가 하나라도 있으면 아무것도 쓰기 전에 throw 한다.
 export function writeIfChanged(dir, map) {
   const written = [];
   const removed = [];
+  const root = resolve(dir);
+  for (const relPath of map.keys()) {
+    const rel = relative(root, resolve(root, relPath));
+    if (!rel || rel.split(sep)[0] === '..' || resolve(root, rel) !== resolve(root, relPath)) {
+      throw new Error(`대상 폴더 밖 경로입니다: ${relPath}`);
+    }
+  }
 
   mkdirSync(dir, { recursive: true });
 
@@ -241,7 +264,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exit(2);
   }
 
-  const scrapsStore = createScraps({ file: join(dataDir, 'scraps.json') });
+  const scrapsFile = join(dataDir, 'scraps.json');
+  const problem = scrapsFileProblem(scrapsFile);
+  if (problem) {
+    console.error(`오류: ${problem} (${scrapsFile}). 아무것도 지우지 않고 멈춥니다. 파일을 고친 뒤 다시 실행하세요.`);
+    process.exit(1);
+  }
+
+  const scrapsStore = createScraps({ file: scrapsFile });
   const scraps = scrapsStore.all();
 
   const { nodes } = loadLearning(learningDir);
