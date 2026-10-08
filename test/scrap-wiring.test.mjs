@@ -96,3 +96,8 @@ test('onBarKeyDown: 우리 화면 판정(isOwnUiPath) 뒤에만 preventDefault',
   assert.ok(check > 0, 'isOwnUiPath 판정이 있어야 한다');
   assert.ok(check < body.indexOf('e.preventDefault()'), '판정 뒤에 preventDefault');
 });
+
+test('확장 task 형식도 다리와 같다: S1-02b·BUF-01 통과, S1-4·../x 는 null', () => {
+  for (const ok of ['S1-02b', 'BUF-01']) assert.equal(S.scrapMessage({ url: 'https://example.com', task: ok }).task, ok);
+  for (const bad of ['S1-4', '../x']) assert.equal(S.scrapMessage({ url: 'https://example.com', task: bad }).task, null);
+});

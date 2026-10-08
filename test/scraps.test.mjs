@@ -233,3 +233,9 @@ test('createScraps: forUrl, remove, move, memo 정상 동작과 영속성', () =
   assert.deepEqual(reloaded.all(), s.all());
   assert.deepEqual(readdirSync(join(file, '..')).filter((f) => f.endsWith('.tmp')), []);
 });
+
+test('task id 형식: S1-02b·BUF-01 허용, S1-4·../x 거절', async () => {
+  const { TASK_RE } = await import('../bridge/scraps.mjs');
+  for (const ok of ['S1-04', 'S1-02b', 'BUF-01', 'BUF-04']) assert.ok(TASK_RE.test(ok), ok);
+  for (const bad of ['S1-4', '../x', 'S1-02B', 'BUF-1', 'S1-02bc', 'x S1-02']) assert.ok(!TASK_RE.test(bad), bad);
+});

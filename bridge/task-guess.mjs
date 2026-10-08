@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { dateOf } from '../scripts/export-day.mjs';
-import { TASK_RE, normalizeUrl } from './scraps.mjs';
+import { TASK_FIND_RE, TASK_RE, normalizeUrl } from './scraps.mjs';
 
 const COMMON_HOSTS = new Set([
   'github.com',
@@ -41,10 +41,10 @@ export function loadLearning(dir) {
   try {
     const notesPath = join(dir, 'NOTES.md');
     const text = readFileSync(notesPath, 'utf8');
-    // ## 다음 한 걸음 절만 찾고 그 안의 첫 S\d-\d\d 추출
+    // ## 다음 한 걸음 절만 찾고 그 안의 첫 할 일 id 추출
     const mSection = text.match(/(?:^|\n)##\s*다음\s*한\s*걸음[^\n]*\n([\s\S]*?)(?=(?:\n##\s|\n#\s|$))/);
     if (mSection) {
-      const mTask = mSection[1].match(/S\d-\d{2}/);
+      const mTask = mSection[1].match(TASK_FIND_RE);
       if (mTask) next = mTask[0];
     }
   } catch (e) {

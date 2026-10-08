@@ -238,3 +238,11 @@ test('candidates 구성: 오늘 쓴 할 일들 + next + 맞는 할 일 (중복 �
   const c04 = r.candidates.find((c) => c.id === 'S1-04');
   assert.equal(c04.title, '웹 해킹 첫걸음: 접근 통제가 뚫리는 10가지 장면');
 });
+
+test('NOTES 다음 한 걸음: S1-02b 를 그대로 읽고 S1-02 로 자르지 않는다', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rg-notes-'));
+  writeFileSync(join(dir, 'NOTES.md'), '## 다음 한 걸음\n- S1-02b 를 이어서\n');
+  assert.equal(loadLearning(dir).next, 'S1-02b');
+  writeFileSync(join(dir, 'NOTES.md'), '## 다음 한 걸음\n- BUF-03 부터\n');
+  assert.equal(loadLearning(dir).next, 'BUF-03');
+});

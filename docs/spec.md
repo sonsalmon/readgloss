@@ -42,7 +42,7 @@
 }}}
 ```
 
-- `task`는 `^S\d-\d{2}$` 또는 `null`(= 인박스). `exact` 1~1000자, `prefix`·`suffix` 각 ≤64자, `headings` ≤3개 × ≤200자, `title` ≤300자, `translation` ≤2000자, `memo` ≤1000자. 넘으면 400.
+- `task`는 `^(?:S\d-\d{2}[a-z]?|BUF-\d{2})$` 또는 `null`(= 인박스). `exact` 1~1000자, `prefix`·`suffix` 각 ≤64자, `headings` ≤3개 × ≤200자, `title` ≤300자, `translation` ≤2000자, `memo` ≤1000자. 넘으면 400.
 - 주소 정규화: `#` 뒤를 버리고, `utm_*` 쿼리만 지우고, 끝 `/`를 뗀다. 나머지 쿼리는 남긴다.
 - 다리 `/scraps`(토큰 필요, 다른 주소와 같은 방식):
   - `GET /scraps` → `{scraps:[...], tasks:{id: card_title}}`(스크랩북용, `tasks`는 스크랩에 나온 할 일만). `GET /scraps?url=<주소>` → 그 페이지 스크랩만.
