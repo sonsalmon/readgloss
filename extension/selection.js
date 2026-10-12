@@ -320,6 +320,7 @@
     };
     async function toggle(it) {
       if (it.btn.getAttribute('aria-disabled') === 'true') return;
+      const anchor = globalThis.readglossToast?.rectOf(it.btn); // 확인 메시지 자리: 누른 ☆ 버튼
       it.btn.setAttribute('aria-disabled', 'true');
       err.hidden = true;
       const saved = it.row.id != null;
@@ -334,6 +335,7 @@
           const id = it.row.id;
           globalThis.readglossToast?.show({
             text: '단어장에 추가됐어요!',
+            anchor,
             onMemo: (memo) => send({ type: 'words', op: 'memo', id, memo }),
           });
         }
@@ -536,6 +538,7 @@
   async function togglePhrase() {
     if (ui.saveBtn.getAttribute('aria-disabled') === 'true') return;
     const my = seq;
+    const anchor = globalThis.readglossToast?.rectOf(current.range); // 확인 메시지 자리: 고른 글(저장 누른 순간)
     const saved = current.phraseId != null;
     ui.saveBtn.setAttribute('aria-disabled', 'true');
     notify('');
@@ -553,6 +556,7 @@
       if (!saved) {
         globalThis.readglossToast?.show({
           text: '단어장에 추가됐어요!',
+          anchor,
           onMemo: (memo) => send({ type: 'words', op: 'memo', id, memo }),
         });
         getSelection().removeAllRanges();
@@ -706,6 +710,7 @@
   async function saveScrap() {
     if (!ui?.scrapBtn || ui.scrapBtn.getAttribute('aria-disabled') === 'true' || !current || !current.quote) return;
     const my = seq;
+    const anchor = globalThis.readglossToast?.rectOf(current.range); // 확인 메시지 자리: 고른 글(저장 누른 순간)
     ui.scrapBtn.setAttribute('aria-disabled', 'true');
     notify('');
     const headings = headingsAbove(current.range.startContainer);
@@ -728,6 +733,7 @@
       globalThis.readglossScrapPage?.paint(Array.isArray(r.scraps) ? r.scraps : []);
       globalThis.readglossToast?.show({
         text: '스크랩했어요',
+        anchor,
         onMemo: (memo) => send({ type: 'scraps', op: 'memo', id, memo }),
       });
       getSelection().removeAllRanges();

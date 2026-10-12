@@ -115,8 +115,40 @@
   let toastHover = false; // 마우스를 올린 동안은 사라지지 않는다
   let toastMemo = false; // 메모 창이 열린 동안은 사라지지 않는다
   let toastGen = 0; // 늦게 온 메모 응답을 버린다
+  let toastKey = null; // 메시지가 떠 있는 동안 글자 키로 메모 칸을 여는 document 리스너
 
   const toastTheme = () => toastHost && (theme === 'auto' ? toastHost.removeAttribute('data-theme') : toastHost.setAttribute('data-theme', theme));
+  const stopToastKey = () => {
+    if (toastKey) document.removeEventListener('keydown', toastKey, true);
+    toastKey = null;
+  };
+
+  // 확인 메시지 자리(순수 함수, 시험이 쓴다). anchor 는 화면 좌표 {left, top, right, bottom}. 화면 안에 있으면 그 옆, 없으면 아래 가운데.
+  const TOAST_GAP = 8;
+  const TOAST_BOTTOM = 24; // 아래 가운데일 때 화면 아래 여백(CSS bottom 과 같다)
+  function toastPosition(anchor, size, viewport) {
+    const { width: w, height: h } = size;
+    const { width: vw, height: vh } = viewport;
+    const shown = !!anchor && anchor.right > 0 && anchor.bottom > 0 && anchor.left < vw && anchor.top < vh;
+    if (!shown) return { left: (vw - w) / 2, top: vh - TOAST_BOTTOM - h, placement: 'bottom-center' };
+    const left = Math.max(TOAST_GAP, Math.min(anchor.left, vw - w - TOAST_GAP)); // 오른쪽을 넘으면 왼쪽으로 민다
+    if (vh - anchor.bottom - TOAST_GAP >= h) return { left, top: anchor.bottom + TOAST_GAP, placement: 'below' };
+    return { left, top: anchor.top - TOAST_GAP - h, placement: 'above' };
+  }
+  // 메모 칸을 여는 글자 키인가(순수 함수, 시험이 쓴다). 글자 한 개 또는 한글 입력기(Process). 스페이스·조합 키·입력칸 위는 아니다.
+  // 우리 카드(readgloss-*, 닫힌 shadow)는 안의 입력칸이 path 에 안 보이므로 host 이름으로 막는다(selection-core 의 isOwnUiPath 와 같은 판정). 확인 메시지 자신은 막지 않는다.
+  const EDITABLE_TAGS = ['input', 'textarea', 'select'];
+  const isOwnCard = (n) => typeof n?.localName === 'string' && n.localName.startsWith('readgloss-') && n.localName !== 'readgloss-toast';
+  function startsMemo(e, path = []) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (!(e.key === 'Process' || (e.key?.length === 1 && e.key !== ' '))) return false;
+    return !path.some((n) => EDITABLE_TAGS.includes(n?.localName) || n?.isContentEditable === true || isOwnCard(n));
+  }
+  // 확인 메시지를 붙일 자리: 범위·요소의 화면 위치. 크기가 0이면(접힌 범위 등) null -> 아래 가운데
+  const rectOf = (x) => {
+    const r = x?.getBoundingClientRect?.();
+    return r && (r.width || r.height) ? r : null;
+  };
 
   function scheduleToast(delay = TOAST_MS) {
     clearTimeout(toastTimer);
@@ -128,6 +160,7 @@
 
   function hideToast() {
     clearTimeout(toastTimer);
+    stopToastKey();
     const h = toastHost;
     const pill = toastPill;
     toastHost = toastPill = null;
@@ -137,9 +170,10 @@
     setTimeout(() => h.remove(), 220);
   }
 
-  // text: 확인 문구. onMemo: [메모] 버튼을 눌렀을 때. 메모 저장 성공은 error 칸 없는 응답, 실패는 { error }.
-  function showToast({ text = '', onMemo } = {}) {
+  // text: 확인 문구. anchor: 붙일 화면 자리(rectOf 결과). onMemo: [메모] 버튼을 눌렀을 때. 메모 저장 성공은 error 칸 없는 응답, 실패는 { error }.
+  function showToast({ text = '', onMemo, anchor } = {}) {
     clearTimeout(toastTimer);
+    stopToastKey();
     toastHost?.remove(); // 다시 show 하면 이전 메시지를 대체한다
     toastHost = toastPill = null;
     toastHover = toastMemo = false;
@@ -187,12 +221,20 @@
       err.textContent = t;
       ta.focus();
     }
+    // 메시지 크기(메모 칸 포함)를 재서 자리를 정한다. 아래 공간이 모자라면 위로 다시 맞춘다.
+    function placeToast() {
+      const s = pill.getBoundingClientRect();
+      const p = toastPosition(anchor, { width: s.width, height: s.height }, { width: document.documentElement.clientWidth, height: innerHeight });
+      Object.assign(h.style, { top: `${p.top}px`, left: `${p.left}px`, right: 'auto', bottom: 'auto' });
+    }
     function openMemo() {
       toastMemo = true;
       clearTimeout(toastTimer);
+      stopToastKey(); // 메모 칸이 열리면 글자 키 리스너는 뗀다
       box.hidden = false;
       pill.classList.add('memo');
       if (memoBtn) memoBtn.hidden = true;
+      placeToast();
       ta.focus(); // 이때만 포커스를 가져간다(처음 뜰 때는 안 가져간다)
     }
     function cancelMemo() {
@@ -239,9 +281,15 @@
 
     shadow.append(style, pill);
     document.documentElement.append(h);
+    placeToast();
+    if (typeof onMemo === 'function') {
+      // 메시지가 떠 있는 동안 글자를 치면 메모 칸이 열리고 그 글자가 칸에 들어간다(preventDefault 하지 않는다: 키가 textarea 로 간다)
+      toastKey = (e) => { if (startsMemo(e, e.composedPath())) openMemo(); };
+      document.addEventListener('keydown', toastKey, true);
+    }
     scheduleToast();
   }
-  globalThis.readglossToast = { show: showToast };
+  globalThis.readglossToast = { show: showToast, toastPosition, startsMemo, rectOf };
 
   let host = null;
   let ui = null; // { card, scroll, ai, aiBtn, saveBtn, knownBtn }
@@ -404,6 +452,7 @@
     const my = seq;
     const op = W.buttonModel({ saved: !!current.state.saved[current.lemma], known: !!current.state.known[current.lemma] })[key].op;
     const lemma = current.lemma;
+    const anchor = rectOf(current.range); // 확인 메시지 자리: 저장을 누른 순간의 단어 위치(응답 뒤엔 선택이 풀릴 수 있다)
     ui[`${key}Btn`].setAttribute('aria-disabled', 'true');
     const r = await send(W.messageFor(op, { lemma, word: current.word, gloss: current.gloss, sentence: current.sentence, url: sourceUrl() }));
     if (my !== seq) return;
@@ -415,6 +464,7 @@
       if (op === 'save') {
         globalThis.readglossToast?.show({
           text: '단어장에 추가됐어요!',
+          anchor,
           onMemo: (memo) => send({ type: 'words', op: 'memo', lemma, memo }),
         });
         getSelection().removeAllRanges();
