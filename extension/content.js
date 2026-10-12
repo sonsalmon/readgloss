@@ -123,26 +123,36 @@
     toastKey = null;
   };
 
-  // 확인 메시지 자리(순수 함수, 시험이 쓴다). anchor 는 화면 좌표 {left, top, right, bottom}. 화면 안에 있으면 그 옆, 없으면 아래 가운데.
+  // 확인 메시지 자리(순수 함수, 시험이 쓴다). anchor 는 화면 좌표 {left, top, right, bottom}. 아래에 화면 안으로 들어가면 아래, 아니면 위, 그것도 안 되면 아래 가운데.
   const TOAST_GAP = 8;
   const TOAST_BOTTOM = 24; // 아래 가운데일 때 화면 아래 여백(CSS bottom 과 같다)
   function toastPosition(anchor, size, viewport) {
     const { width: w, height: h } = size;
     const { width: vw, height: vh } = viewport;
+    const center = { left: (vw - w) / 2, top: vh - TOAST_BOTTOM - h, placement: 'bottom-center' };
     const shown = !!anchor && anchor.right > 0 && anchor.bottom > 0 && anchor.left < vw && anchor.top < vh;
-    if (!shown) return { left: (vw - w) / 2, top: vh - TOAST_BOTTOM - h, placement: 'bottom-center' };
+    if (!shown) return center;
     const left = Math.max(TOAST_GAP, Math.min(anchor.left, vw - w - TOAST_GAP)); // 오른쪽을 넘으면 왼쪽으로 민다
-    if (vh - anchor.bottom - TOAST_GAP >= h) return { left, top: anchor.bottom + TOAST_GAP, placement: 'below' };
-    return { left, top: anchor.top - TOAST_GAP - h, placement: 'above' };
+    const below = anchor.bottom + TOAST_GAP;
+    if (below + h <= vh - TOAST_GAP) return { left, top: below, placement: 'below' };
+    const above = anchor.top - TOAST_GAP - h;
+    if (above >= TOAST_GAP) return { left, top: above, placement: 'above' };
+    return center;
   }
   // 메모 칸을 여는 글자 키인가(순수 함수, 시험이 쓴다). 글자 한 개 또는 한글 입력기(Process). 스페이스·조합 키·입력칸 위는 아니다.
-  // 우리 카드(readgloss-*, 닫힌 shadow)는 안의 입력칸이 path 에 안 보이므로 host 이름으로 막는다(selection-core 의 isOwnUiPath 와 같은 판정). 확인 메시지 자신은 막지 않는다.
+  // 우리 카드(readgloss-*, 닫힌 shadow)는 안의 입력칸이 path 에 안 보인다. 카드가 globalThis.readgloss<이름>Ui.isTyping() 을 주면 그 값만 보고(readglossSelectionUi: selection.js),
+  // 없으면 host 가 path 에 있는 것만으로 막는다(selection-core 의 isOwnUiPath 와 같은 판정). 확인 메시지 자신은 막지 않는다.
   const EDITABLE_TAGS = ['input', 'textarea', 'select'];
   const isOwnCard = (n) => typeof n?.localName === 'string' && n.localName.startsWith('readgloss-') && n.localName !== 'readgloss-toast';
+  const cardTyping = (n) => {
+    const ui = globalThis[`${n.localName.replace(/-(\w)/g, (_, c) => c.toUpperCase())}Ui`];
+    return typeof ui?.isTyping === 'function' ? ui.isTyping() === true : true;
+  };
   function startsMemo(e, path = []) {
     if (e.ctrlKey || e.metaKey || e.altKey) return false;
     if (!(e.key === 'Process' || (e.key?.length === 1 && e.key !== ' '))) return false;
-    return !path.some((n) => EDITABLE_TAGS.includes(n?.localName) || n?.isContentEditable === true || isOwnCard(n));
+    if (path.some((n) => EDITABLE_TAGS.includes(n?.localName) || n?.isContentEditable === true)) return false;
+    return !path.some((n) => isOwnCard(n) && cardTyping(n));
   }
   // 확인 메시지를 붙일 자리: 범위·요소의 화면 위치. 크기가 0이면(접힌 범위 등) null -> 아래 가운데
   const rectOf = (x) => {
@@ -216,6 +226,13 @@
     pill.addEventListener('mouseenter', () => { toastHover = true; clearTimeout(toastTimer); });
     pill.addEventListener('mouseleave', () => { toastHover = false; if (!toastMemo) scheduleToast(); });
 
+    // 메시지가 떠 있는 동안 글자를 치면 메모 칸이 열리고 그 글자가 칸에 들어간다(preventDefault 하지 않는다: 키가 textarea 로 간다)
+    function armKey() {
+      if (typeof onMemo !== 'function') return;
+      stopToastKey();
+      toastKey = (e) => { if (startsMemo(e, e.composedPath())) openMemo(); };
+      document.addEventListener('keydown', toastKey, true);
+    }
     function failMemo(t) {
       err.hidden = false;
       err.textContent = t;
@@ -245,6 +262,7 @@
       ta.blur();
       pill.classList.remove('memo');
       if (memoBtn) memoBtn.hidden = false;
+      armKey(); // 메시지가 아직 떠 있으니 글자 키로 다시 메모를 열 수 있게
       scheduleToast();
     }
     async function saveMemo() {
@@ -282,11 +300,7 @@
     shadow.append(style, pill);
     document.documentElement.append(h);
     placeToast();
-    if (typeof onMemo === 'function') {
-      // 메시지가 떠 있는 동안 글자를 치면 메모 칸이 열리고 그 글자가 칸에 들어간다(preventDefault 하지 않는다: 키가 textarea 로 간다)
-      toastKey = (e) => { if (startsMemo(e, e.composedPath())) openMemo(); };
-      document.addEventListener('keydown', toastKey, true);
-    }
+    armKey();
     scheduleToast();
   }
   globalThis.readglossToast = { show: showToast, toastPosition, startsMemo, rectOf };

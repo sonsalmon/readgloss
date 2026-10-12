@@ -112,6 +112,14 @@
   let settings = globalThis.readglossSettings?.normalize({}) ?? { selectionTranslate: true, theme: 'auto' }; // 저장된 값을 읽기 전에는 기본값
   let host = null;
   let ui = null; // { card, src, term, out, ctx, ctxBody, note, ctxBtn, copyBtn }
+  let shadowRoot = null; // 닫힌 shadow. 밖(content.js)에서는 안의 포커스를 못 보므로 아래 isTyping 으로 묻는다
+  // content.js startsMemo 가 쓴다: 카드 안 입력칸(내 사전 등)에 포커스가 있으면 글자 키로 메모 칸을 열지 않는다. 버튼(☆ 등)에 있으면 연다.
+  globalThis.readglossSelectionUi = {
+    isTyping: () => {
+      const a = shadowRoot?.activeElement;
+      return !!a && (a.localName === 'input' || a.localName === 'textarea' || a.isContentEditable === true);
+    },
+  };
   let current = null; // { text, range, anchor, mt, termKo, ctx, ctxNote, wide, wideNote, mine, phraseId }  ctx·wide 는 문맥·넓은 문맥 번역(성공했을 때만 생김)
   let seq = 0; // 닫거나 새로 열 때마다 올려서 늦게 온 응답을 버린다
   const applyTheme = () => host && (settings.theme === 'light' || settings.theme === 'dark' ? host.setAttribute('data-theme', settings.theme) : host.removeAttribute('data-theme'));
@@ -363,6 +371,7 @@
     current = null;
     host?.remove();
     host = ui = null;
+    shadowRoot = null;
   }
 
   function place() {
@@ -395,6 +404,7 @@
     host.style.cssText = 'all: initial; position: absolute; z-index: 2147483647; left: 0; top: 0;';
     applyTheme();
     const shadow = host.attachShadow({ mode: 'closed' }); // 페이지 CSS 와 격리
+    shadowRoot = shadow;
     const style = el('style');
     style.textContent = CSS;
     const card = el('div', 'card');

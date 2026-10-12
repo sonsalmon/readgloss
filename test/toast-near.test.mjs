@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 // content.js 는 DOM 에 붙는 classic script 다. 여기서는 등록 호출만 받는 가짜 document·window 를 두고 순수 함수만 꺼낸다.
 await import('../extension/text.js');
@@ -79,4 +80,33 @@ test('startsMemo: 우리 카드 안(닫힌 shadow 의 입력칸 포함)에서 �
   assert.equal(startsMemo({ key: 'a' }, [{ localName: 'readgloss-selection' }, { localName: 'body' }]), false, '드래그 카드의 내 사전 입력칸');
   assert.equal(startsMemo({ key: 'a' }, [{ localName: 'readgloss-card' }]), false);
   assert.equal(startsMemo({ key: 'a' }, [{ localName: 'readgloss-toast' }, { localName: 'body' }]), true, '메시지의 [메모] 버튼 위');
+});
+
+test('toastPosition: 위로 놓을 때 top 이 8보다 작아지면 아래 가운데', () => {
+  const p = toastPosition({ left: 400, right: 500, top: -50, bottom: 690 }, SIZE, { width: 1000, height: 713 });
+  assert.equal(p.placement, 'bottom-center');
+});
+
+test('toastPosition: 아래로 놓을 때 아래가 화면 밖이고 위도 안 되면 아래 가운데', () => {
+  const p = toastPosition({ left: 400, right: 500, top: 20, bottom: 700 }, SIZE, { width: 1000, height: 713 });
+  assert.equal(p.placement, 'bottom-center');
+});
+
+test('startsMemo: 우리 카드가 입력 상태(isTyping)를 알려 주면 그 값만 본다', () => {
+  const path = [{ localName: 'readgloss-selection' }, { localName: 'body' }];
+  try {
+    globalThis.readglossSelectionUi = { isTyping: () => false };
+    assert.equal(startsMemo({ key: 'a' }, path), true, '☆ 버튼에 포커스가 있으면 메모를 연다');
+    globalThis.readglossSelectionUi = { isTyping: () => true };
+    assert.equal(startsMemo({ key: 'a' }, path), false, '카드 입력칸에 포커스가 있으면 막는다');
+  } finally {
+    delete globalThis.readglossSelectionUi;
+  }
+});
+
+// 소스 순서 검사: 글자 키 리스너는 showToast 안의 함수(armKey)로 두고, Esc 로 메모 칸을 닫을 때 다시 단다.
+test('cancelMemo: Esc 로 닫으면 글자 키 리스너를 다시 단다(armKey)', () => {
+  const src = readFileSync(new URL('../extension/content.js', import.meta.url), 'utf8');
+  const body = src.slice(src.indexOf('function cancelMemo'), src.indexOf('async function saveMemo'));
+  assert.match(body, /armKey\(\)/, 'cancelMemo 가 armKey 를 부른다');
 });
