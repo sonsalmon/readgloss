@@ -15,6 +15,7 @@ export const LIMIT = {
   selection: 1000,
   title: 300,
   url: 2000,
+  quoteExact: 1000,
 };
 
 // 요청 본문 파싱 및 상한 검사
@@ -90,7 +91,34 @@ export function parseMemoOp(v) {
       selection = v.selection;
     }
 
-    // 8. task (TASK_RE 만족 | null)
+    // 8. quote ({ exact(1~1000), prefix(<=64), suffix(<=64) } | null)
+    let quote = null;
+    if (v.quote !== undefined && v.quote !== null) {
+      if (typeof v.quote !== 'object' || Array.isArray(v.quote)) return null;
+      if (typeof v.quote.exact !== 'string' || v.quote.exact.length < 1 || v.quote.exact.length > LIMIT.quoteExact) {
+        return null;
+      }
+
+      let prefix = '';
+      if (v.quote.prefix !== undefined && v.quote.prefix !== null) {
+        if (typeof v.quote.prefix !== 'string' || v.quote.prefix.length > LIMIT.prefix) return null;
+        prefix = v.quote.prefix;
+      }
+
+      let suffix = '';
+      if (v.quote.suffix !== undefined && v.quote.suffix !== null) {
+        if (typeof v.quote.suffix !== 'string' || v.quote.suffix.length > LIMIT.suffix) return null;
+        suffix = v.quote.suffix;
+      }
+
+      quote = {
+        exact: v.quote.exact,
+        prefix,
+        suffix,
+      };
+    }
+
+    // 9. task (TASK_RE 만족 | null)
     let task = null;
     if (v.task !== undefined && v.task !== null) {
       if (typeof v.task !== 'string' || !TASK_RE.test(v.task)) return null;
@@ -106,6 +134,7 @@ export function parseMemoOp(v) {
       para,
       pos,
       selection,
+      quote,
       task,
     };
   }
@@ -150,6 +179,13 @@ function formatMemo(node) {
       : null,
     pos: d.pos ?? 0,
     selection: d.selection ?? null,
+    quote: d.quote
+      ? {
+          exact: d.quote.exact ?? '',
+          prefix: d.quote.prefix ?? '',
+          suffix: d.quote.suffix ?? '',
+        }
+      : null,
     task: d.task ?? null,
     ts: node.ts ?? 0,
   };
@@ -200,6 +236,7 @@ export function createMemos({ db, now = Date.now }) {
         para: op.para,
         pos: op.pos,
         selection: op.selection,
+        quote: op.quote ?? null,
         task: op.task,
         ts: nowTs,
       };

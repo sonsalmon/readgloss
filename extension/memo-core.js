@@ -144,6 +144,123 @@
     return bestIndex;
   }
 
+  // 소제목 목록과 메모 목록을 소제목별 칸으로 묶음. 칸 안 메모는 ts 오름차순.
+  function buildSections(headings, memos, pageTitle) {
+    const memoList = Array.isArray(memos) ? memos.filter(Boolean) : [];
+    const sortedAll = [...memoList].sort((a, b) => (a?.ts ?? 0) - (b?.ts ?? 0));
+
+    if (!Array.isArray(headings) || headings.length === 0) {
+      return [
+        {
+          key: '_page',
+          text: pageTitle ?? '',
+          level: 1,
+          memos: sortedAll,
+        },
+      ];
+    }
+
+    // 대소문자 및 공백 정리 비교용 정규화 함수
+    const norm = (s) => (typeof s === 'string' ? s.trim().replace(/\s+/g, ' ').toLowerCase() : '');
+
+    const sections = headings.map((h) => ({
+      key: h.key,
+      text: h.text,
+      level: h.level,
+      memos: [],
+    }));
+
+    for (const m of sortedAll) {
+      let targetIndex = 0; // 일치하는 소제목을 못 찾으면 첫 칸
+      if (Array.isArray(m?.headings) && m.headings.length > 0) {
+        const lastHeadingText = norm(m.headings[m.headings.length - 1]);
+        if (lastHeadingText) {
+          const found = sections.findIndex((s) => norm(s.text) === lastHeadingText);
+          if (found !== -1) {
+            targetIndex = found;
+          }
+        }
+      }
+      sections[targetIndex].memos.push(m);
+    }
+
+    return sections;
+  }
+
+  // top <= viewportHeight / 3 인 것 중 마지막 key, 없으면 첫 key, 빈 배열이면 '_page'
+  function activeSectionKey(headingTops, viewportHeight) {
+    if (!Array.isArray(headingTops) || headingTops.length === 0) {
+      return '_page';
+    }
+    const vh = typeof viewportHeight === 'number' && Number.isFinite(viewportHeight) ? viewportHeight : 0;
+    const threshold = vh / 3;
+
+    let lastKey = null;
+    for (const h of headingTops) {
+      if (h && typeof h.top === 'number' && Number.isFinite(h.top) && h.top <= threshold) {
+        lastKey = h.key;
+      }
+    }
+
+    if (lastKey !== null) {
+      return lastKey;
+    }
+    return headingTops[0]?.key ?? '_page';
+  }
+
+  // now - lastTypedAt >= 1500 판정
+  function shouldMoveCaret(lastTypedAt, now) {
+    if (typeof lastTypedAt !== 'number' || !Number.isFinite(lastTypedAt) || lastTypedAt <= 0) return true; // 0 = 아직 안 침
+    if (typeof now !== 'number' || !Number.isFinite(now)) return true;
+    return now - lastTypedAt >= 1500;
+  }
+
+  // v2 키 판정: Enter(⌘·ctrl 없음) = 'newline', ⌘Enter 또는 ctrl+Enter(조합 중 아님) = 'save', Escape = 'fold', 그 밖 null
+  function padKeyV2(e) {
+    if (!e || typeof e !== 'object' || e.isComposing) return null;
+    if (e.key === 'Enter') {
+      if (e.metaKey || e.ctrlKey) return 'save';
+      return 'newline';
+    }
+    if (e.key === 'Escape') return 'fold';
+    return null;
+  }
+
+  // width 260~640, height 200~vh-40로 자르고, 창이 화면 안에 최소 40px 보이게 left·top을 당긴다(왼쪽 위 0 이상, 오른쪽·아래로 넘어가면 안쪽으로).
+  function clampRect(rect, viewport) {
+    const vw = viewport && typeof viewport.vw === 'number' && Number.isFinite(viewport.vw) ? viewport.vw : 0;
+    const vh = viewport && typeof viewport.vh === 'number' && Number.isFinite(viewport.vh) ? viewport.vh : 0;
+
+    const rawW = rect && typeof rect.width === 'number' && Number.isFinite(rect.width) ? rect.width : 260;
+    const rawH = rect && typeof rect.height === 'number' && Number.isFinite(rect.height) ? rect.height : 200;
+    const rawL = rect && typeof rect.left === 'number' && Number.isFinite(rect.left) ? rect.left : 0;
+    const rawT = rect && typeof rect.top === 'number' && Number.isFinite(rect.top) ? rect.top : 0;
+
+    const width = Math.max(260, Math.min(640, rawW));
+    const maxH = Math.max(200, vh - 40);
+    const height = Math.max(200, Math.min(maxH, rawH));
+
+    const maxLeft = Math.max(0, vw - 40);
+    const maxTop = Math.max(0, vh - 40);
+
+    const left = Math.max(0, Math.min(rawL, maxLeft));
+    const top = Math.max(0, Math.min(rawT, maxTop));
+
+    return { left, top, width, height };
+  }
+
+  // 글이 공백뿐이고 quote 없으면 false
+  function canSave(text, quote) {
+    const hasText = typeof text === 'string' && text.trim().length > 0;
+    let hasQuote = false;
+    if (typeof quote === 'string') {
+      hasQuote = quote.trim().length > 0;
+    } else if (quote && typeof quote === 'object') {
+      hasQuote = typeof quote.exact === 'string' && quote.exact.trim().length > 0;
+    }
+    return hasText || hasQuote;
+  }
+
   globalThis.readglossMemo = {
     normalizeUrl,
     currentHeading,
@@ -153,5 +270,11 @@
     formatDateMD,
     previewText,
     pickCenterBlock,
+    buildSections,
+    activeSectionKey,
+    shouldMoveCaret,
+    padKeyV2,
+    clampRect,
+    canSave,
   };
 })();
