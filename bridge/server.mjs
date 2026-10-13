@@ -22,6 +22,7 @@ import { createStudy, parseDays } from './study.mjs';
 import { createScraps, normalizeUrl, parseScrapOp, scrapId } from './scraps.mjs';
 import { guessTask, lastTaskToday, loadLearning } from './task-guess.mjs';
 import { dateOf } from '../scripts/export-day.mjs';
+import { openDb, migrateJson } from './db.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
@@ -84,7 +85,11 @@ function sendAiError(res, e, cors) {
 }
 
 // ask({word, sentence, context?}) / askTranslate(문단, 용어 지정 목록) / askContext(프롬프트 문자열) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
-export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
+export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), dbFile = join(dirname(cacheFile), 'readgloss.db'), learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
+  const dataDir = dirname(cacheFile);
+  const db = openDb(dbFile);
+  migrateJson({ db, dataDir, now });
+
   const token = loadOrCreateToken(tokenFile);
   const tokenBuf = Buffer.from(token);
   const lookup = createLookup({ cache: createCache(cacheFile), ask });
@@ -430,6 +435,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
   });
 
   return {
+    db,
     // 127.0.0.1 에만 바인딩한다. port 0 이면 임시 포트(테스트용). 실제 포트를 돌려준다.
     listen: (port = PORT) =>
       new Promise((resolve, reject) => {
@@ -440,6 +446,9 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       new Promise((resolve) => {
         dict.close();
         mt.close();
+        try {
+          db.close();
+        } catch {}
         server.close(() => resolve());
         server.closeAllConnections();
       }),
