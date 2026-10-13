@@ -22,11 +22,11 @@ const scrap = readExt('scrap.js');
 
 // A. Esc로 접은 뒤 ⌥M으로 열면 쓰던 글이 살아 있다. ⌥⇧M은 글을 지우지 않는다.
 test('A: 메모장을 열 때 보관한 쓰던 글을 쓰고, 목록(⌥⇧M)을 열어도 쓰던 글을 지우지 않는다', () => {
-  assert.match(memoPad, /const text = initialText !== undefined \? initialText : currentDraft;/, '열기는 보관한 글을 쓴다');
+  // 변경 기록 14: 쓰던 글은 소제목 칸마다 drafts[key] 로 보관한다(단일 입력 칸 → 칸별)
   assert.doesNotMatch(memoPad, /openPad\(''\)/, '빈 글로 열지 않는다');
-  assert.match(memoPad, /function closePad\(\) \{[\s\S]*?currentDraft = ta\.value;/, '접을 때 쓰던 글을 보관한다');
-  assert.match(memoPad, /function openList\(\) \{[\s\S]*?currentDraft = ta\.value;[\s\S]*?text: currentDraft/, '목록을 열 때 쓰던 글을 보관한 채 보인다');
-  assert.match(memoPad, /newBtn\.onclick = \(\) => renderPadUI\(root, currentDraft\)/, '[새 메모]는 쓰던 글을 되돌린다');
+  assert.doesNotMatch(memoPad, /\n\s+drafts = \{\};/, '쓰던 글 전체를 비우지 않는다(let 선언 줄은 제외)');
+  assert.match(memoPad, /function closePad\(\) \{[\s\S]*?drafts\[key\] = ta\.value;[\s\S]*?saveDrafts\(\);/, '접을 때 칸별 쓰던 글을 보관한다');
+  assert.match(memoPad, /function openList\(\) \{[\s\S]*?drafts\[key\] = ta\.value;/, '목록을 열 때 칸별 쓰던 글을 보관한다');
 });
 
 // B. 메모장 안 클릭·Esc는 열린 패널을 닫지 않는다. 넘김 막대도 메모장 안 Esc를 무시한다.
