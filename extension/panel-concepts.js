@@ -251,6 +251,9 @@
       if (typeof rerenderCurrentTab === 'function') {
         rerenderCurrentTab(pendingOpenConceptId);
       }
+      // 패널이 닫혀 있었으면 panel.js 가 같은 이벤트 안에서 render 를 불러 이 id 를 쓰고 비운다.
+      // 이미 열려 있었으면 render 가 안 불리니, 이벤트가 끝난 뒤 남은 id 를 비워 다음 열기 때 옛 상세가 뜨지 않게 한다.
+      queueMicrotask(() => { pendingOpenConceptId = null; });
     }
   }, { capture: true });
 
