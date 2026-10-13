@@ -296,3 +296,100 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 chrome.action.onClicked.addListener((tab) => {
   if (tab.id != null) chrome.tabs.sendMessage(tab.id, { type: 'open-panel' }).catch(() => {});
 });
+
+// --- 메모(T29b): content script·패널의 'memos' 요청을 다리 /memos 로 전달한다. op:'get' 은 GET, 나머지는 POST. ---
+async function memos(msg, retried = false) {
+  const token = await getToken(retried);
+  if (!token) return { error: 'pair-failed' };
+  const { op, url, id, text, title, headings, para, pos, selection, task, page } = msg;
+  let path = '/memos';
+  let init;
+  if (op === 'get') {
+    if (url) path += `?url=${encodeURIComponent(url)}`;
+    init = { headers: { 'X-Bridge-Token': token } };
+  } else {
+    init = {
+      method: 'POST',
+      headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ op, url, id, text, title, headings, para, pos, selection, task, page }),
+    };
+  }
+  const res = await bridgeFetch(path, init);
+  if (res.status === 401 && !retried) return memos(msg, true);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: data.error || `http-${res.status}` };
+  return data;
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'memos') return;
+  memos({ ...msg, page: pageOf(msg, sender) }).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
+  return true; // 비동기 응답
+});
+
+// --- 메모 점프(T29b): 다른 페이지 메모로 이동할 때 session storage 에 pendingMemo 저장 후 탭 주소 갱신 ---
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'memo-jump') return;
+  const { url, id, para, pos } = msg;
+  if (!url || sender.tab?.id == null) {
+    sendResponse({ error: 'invalid-jump' });
+    return;
+  }
+  const pendingMemo = { url, id, para: para ?? null, pos: pos ?? 0 };
+  const storage = chrome.storage.session ?? chrome.storage.local;
+  storage.set({ pendingMemo }).then(() => {
+    chrome.tabs.update(sender.tab.id, { url });
+    sendResponse({ ok: true });
+  }).catch((e) => {
+    sendResponse({ error: e?.message || 'storage-error' });
+  });
+  return true; // 비동기 응답
+});
+
+// --- 메모 점프 대기(T29b): 새 페이지의 content script 가 'memo-pending' 으로 묻는다. session 에서 꺼내 주고 지운다. ---
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'memo-pending') return;
+  const storage = chrome.storage.session ?? chrome.storage.local;
+  storage.get('pendingMemo').then(async (data) => {
+    await storage.remove('pendingMemo');
+    sendResponse({ pending: data?.pendingMemo ?? null });
+  }).catch(() => sendResponse({ pending: null }));
+  return true; // 비동기 응답
+});
+
+// --- 메모장 탭별 세션 상태(T29b): 열림·쓰던 글 보관 ---
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id) return;
+  const tabId = sender.tab?.id;
+  if (tabId == null) return;
+  const key = `memo_tab_${tabId}`;
+  const storage = chrome.storage.session ?? chrome.storage.local;
+
+  if (msg.type === 'memo-state-get') {
+    storage.get(key).then((data) => {
+      sendResponse(data?.[key] ?? { open: false, text: '' });
+    }).catch(() => sendResponse({ open: false, text: '' }));
+    return true; // 비동기 응답
+  }
+
+  if (msg.type === 'memo-state-set') {
+    const state = { open: !!msg.open, text: typeof msg.text === 'string' ? msg.text : '' };
+    storage.set({ [key]: state }).then(() => {
+      sendResponse({ ok: true });
+    }).catch(() => sendResponse({ error: 'storage-error' }));
+    return true; // 비동기 응답
+  }
+});
+
+chrome.tabs.onRemoved?.addListener((tabId) => {
+  const storage = chrome.storage.session ?? chrome.storage.local;
+  storage.remove(`memo_tab_${tabId}`).catch(() => {});
+});
+
+// --- 단축키 커맨드 중계(T29b): memo-open, memo-list 명령을 해당 탭으로 전달 ---
+chrome.commands?.onCommand?.addListener((cmd, tab) => {
+  if (tab?.id != null) {
+    chrome.tabs.sendMessage(tab.id, { type: 'memo-command', cmd }).catch(() => {});
+  }
+});
+

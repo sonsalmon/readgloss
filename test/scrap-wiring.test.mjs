@@ -62,7 +62,9 @@ test('⌥S 처리기는 카드 열림 조건 안에만 있다', () => {
   assert.match(src, /host\s*&&\s*e\.code\s*===\s*['"]KeyS['"]\s*&&\s*e\.altKey/);
   // 전역 commands에는 등록되지 않았음을 확인
   const manifest = read('manifest.json');
-  assert.doesNotMatch(manifest, /"commands"/);
+  // T29b(명세 12-7): 메모장 단축키 commands 는 생겼다. ⌥S 스크랩은 여전히 전역 단축키가 아니다.
+  assert.doesNotMatch(manifest, /"(Alt|Option)\+S"/);
+  assert.doesNotMatch(manifest, /"scrap[^"]*"\s*:\s*\{\s*"suggested_key"/);
 });
 
 test('다리 꺼짐이면 기존 꺼짐 안내를 쓴다', () => {

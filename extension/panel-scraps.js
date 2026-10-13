@@ -86,6 +86,13 @@
     .scrap-sentence:hover {
       filter: brightness(0.96);
     }
+    .memo-sentence {
+      background-color: #EEEDFE;
+      color: #222;
+    }
+    .memo-sentence:hover {
+      filter: brightness(0.96);
+    }
     .not-found-badge {
       display: inline-block;
       font-size: 11px;
@@ -200,7 +207,10 @@
 
     async function loadData() {
       root.replaceChildren(h('div', { class: 'scraps-empty', text: '불러오는 중…' }));
-      const res = await ctx.send({ type: 'scraps', op: 'get' });
+      const [res, memoRes] = await Promise.all([
+        ctx.send({ type: 'scraps', op: 'get' }),
+        ctx.send({ type: 'memos', op: 'get' }),
+      ]);
       if (!res || res.error) {
         root.replaceChildren(h('div', { class: 'scraps-empty', text: '스크랩을 불러오지 못했어요.' }));
         return;
@@ -208,6 +218,7 @@
       state = {
         scraps: Array.isArray(res.scraps) ? res.scraps : [],
         tasks: res.tasks && typeof res.tasks === 'object' ? res.tasks : {},
+        memos: Array.isArray(memoRes?.memos) ? memoRes.memos : [],
       };
       draw();
     }
@@ -229,6 +240,90 @@
           task: scrap.task,
         });
       }
+    }
+
+    function onMemoSentenceClick(memo) {
+      const cur = pageUrl();
+      const core = globalThis.readglossScrap;
+      const targetUrl = core?.normalizeUrl ? core.normalizeUrl(memo.url) : memo.url;
+
+      if (cur && targetUrl && cur === targetUrl) {
+        let found = false;
+        const scrapPage = globalThis.readglossScrapPage;
+        if (memo.para && scrapPage?.buildTextIndex && core?.findQuote && scrapPage?.offsetToRange) {
+          const { fullText, nodes } = scrapPage.buildTextIndex();
+          const match = core.findQuote(fullText, memo.para, memo.pos);
+          if (match) {
+            const range = scrapPage.offsetToRange(nodes, match.start, match.end);
+            if (range) {
+              found = true;
+              const el = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+              el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              if (typeof CSS !== 'undefined' && CSS.highlights && typeof Highlight !== 'undefined') {
+                CSS.highlights.set('readgloss-scrap-flash', new Highlight(range));
+                setTimeout(() => CSS.highlights.delete('readgloss-scrap-flash'), 1200);
+              }
+            }
+          }
+        }
+        if (!found) {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          notice = '그 문단을 찾지 못했어요';
+          draw();
+          setTimeout(() => {
+            if (notice === '그 문단을 찾지 못했어요') {
+              notice = '';
+              draw();
+            }
+          }, 2000);
+        }
+      } else {
+        chrome.runtime.sendMessage({
+          type: 'memo-jump',
+          url: memo.url,
+          id: memo.id,
+          para: memo.para,
+          pos: memo.pos,
+        });
+      }
+    }
+
+    async function onRemoveMemo(memo) {
+      const res = await ctx.send({
+        type: 'memos',
+        op: 'remove',
+        id: memo.id,
+      });
+      const msg = globalThis.readglossScrapPanel.scrapErrorMessage(res);
+      if (msg) {
+        notice = msg;
+        draw();
+        return;
+      }
+      notice = '';
+      loadData();
+    }
+
+    function renderMemoCard(item, container) {
+      const card = h('div', { class: 'scrap-card' });
+      const memoSpan = h('span', {
+        class: 'scrap-sentence memo-sentence',
+        text: `메모: ${item.text}`,
+        title: '클릭하여 해당 위치로 이동',
+        onclick: () => onMemoSentenceClick(item),
+      });
+      card.append(memoSpan);
+
+      const actions = h('div', { class: 'scrap-actions' },
+        h('button', {
+          class: 'scrap-btn scrap-btn-danger',
+          type: 'button',
+          text: '지우기',
+          onclick: () => onRemoveMemo(item),
+        })
+      );
+      card.append(actions);
+      container.append(card);
     }
 
     async function onStartMove(scrap) {
@@ -329,6 +424,12 @@
           const indent = Math.max(0, page.depth || 0) * 16;
           const pageEl = h('div', { class: 'page-group', style: `padding-left: ${indent}px;` });
           pageEl.append(h('div', { class: 'page-title', text: page.title || page.url }));
+
+          const pageMemos = (state.memos || []).filter((m) => {
+            const mu = core?.normalizeUrl ? core.normalizeUrl(m.url) : m.url;
+            return mu === page.url;
+          });
+          const matchedMemoIds = new Set();
 
           for (const section of page.sections) {
             if (section.headings && section.headings.length > 0) {
@@ -472,6 +573,33 @@
               card.append(actions);
 
               pageEl.append(card);
+            }
+
+            // 이 소제목에 맞는 메모 표시
+            const secKey = JSON.stringify(section.headings || []);
+            const secMemos = pageMemos.filter((m) => JSON.stringify(m.headings || []) === secKey);
+            for (const m of secMemos) {
+              matchedMemoIds.add(m.id);
+              renderMemoCard(m, pageEl);
+            }
+          }
+
+          // 아직 어떤 소제목에도 포함되지 않은 남은 메모들
+          const remainingMemos = pageMemos.filter((m) => !matchedMemoIds.has(m.id));
+          if (remainingMemos.length > 0) {
+            const extraSections = new Map();
+            for (const m of remainingMemos) {
+              const key = JSON.stringify(m.headings || []);
+              if (!extraSections.has(key)) extraSections.set(key, { headings: m.headings || [], items: [] });
+              extraSections.get(key).items.push(m);
+            }
+            for (const sec of extraSections.values()) {
+              if (sec.headings.length > 0) {
+                pageEl.append(h('div', { class: 'section-headings', text: sec.headings.join(' › ') }));
+              }
+              for (const m of sec.items) {
+                renderMemoCard(m, pageEl);
+              }
             }
           }
 

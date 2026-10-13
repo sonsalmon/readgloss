@@ -13,6 +13,7 @@
     { id: 'known', label: '알아요' },
     { id: 'mydict', label: '내 사전' },
     { id: 'scrap', label: '스크랩' },
+    { id: 'memo', label: '메모' },
   ];
   const RANGES = [7, 14, 30];
   const DEFAULT_RANGE = 14;
