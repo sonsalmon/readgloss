@@ -88,7 +88,10 @@ function sendAiError(res, e, cors) {
 export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), dbFile = join(dirname(cacheFile), 'readgloss.db'), learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
   const dataDir = dirname(cacheFile);
   const db = openDb(dbFile);
-  migrateJson({ db, dataDir, now });
+  const migration = migrateJson({ db, dataDir, now });
+  if (!migration.ok) {
+    console.error(`이전 실패: ${migration.error}`);
+  }
 
   const token = loadOrCreateToken(tokenFile);
   const tokenBuf = Buffer.from(token);
@@ -436,6 +439,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
 
   return {
     db,
+    migration,
     // 127.0.0.1 에만 바인딩한다. port 0 이면 임시 포트(테스트용). 실제 포트를 돌려준다.
     listen: (port = PORT) =>
       new Promise((resolve, reject) => {

@@ -5,6 +5,10 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync } from 'nod
 import { dirname, join } from 'node:path';
 
 const SCHEMA = `
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
 CREATE TABLE IF NOT EXISTS nodes (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,
@@ -312,8 +316,9 @@ function loadScrapsData(file) {
 // --- migrateJson 구현 ---
 
 export function migrateJson({ db, dataDir, log = console.log, now = Date.now, hook }) {
-  const nodeCount = db.raw.prepare('SELECT count(*) as count FROM nodes').get().count;
-  if (db.existed || nodeCount > 0) {
+  // 건너뛰기 판단은 meta 행이 있는지로만 한다.
+  const migratedRow = db.raw.prepare("SELECT value FROM meta WHERE key = 'migrated_at'").get();
+  if (migratedRow) {
     return { ok: true, skipped: true };
   }
 
@@ -324,10 +329,6 @@ export function migrateJson({ db, dataDir, log = console.log, now = Date.now, ho
   const hasWords = existsSync(wordsFile);
   const hasMydict = existsSync(mydictFile);
   const hasScraps = existsSync(scrapsFile);
-
-  if (!hasWords && !hasMydict && !hasScraps) {
-    return { ok: true, counts: { saved: 0, known: 0, history: 0, phrases: 0, mydict: 0, scraps: 0 } };
-  }
 
   const { saved, known, history, phrases } = hasWords ? loadWordsData(wordsFile) : { saved: new Map(), known: new Map(), history: [], phrases: new Map() };
   const mydict = hasMydict ? loadMydictData(mydictFile) : new Map();
@@ -343,7 +344,13 @@ export function migrateJson({ db, dataDir, log = console.log, now = Date.now, ho
   };
 
   db.raw.exec('BEGIN TRANSACTION');
+  let afterCounts = null;
+  const tsSuffix = now();
   try {
+    // 이전 잔여 점·선이 있으면 같은 트랜잭션 안에서 먼저 지운다.
+    db.raw.exec('DELETE FROM edges;');
+    db.raw.exec('DELETE FROM nodes;');
+
     // 1. word 점들 (단어장·아는 단어·최근 찾은 단어)
     const allLemmas = new Set([...saved.keys(), ...known.keys(), ...history.map((h) => h.lemma)]);
     for (const lemma of allLemmas) {
@@ -444,16 +451,10 @@ export function migrateJson({ db, dataDir, log = console.log, now = Date.now, ho
       }
     }
 
+    // COMMIT 바로 전에 ('migrated_at', <ts>)를 넣는다.
+    db.raw.prepare("INSERT INTO meta (key, value) VALUES ('migrated_at', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(String(tsSuffix));
     db.raw.exec('COMMIT');
-
-    // JSON 파일 이름 변경
-    const tsSuffix = now();
-    if (hasWords) renameSync(wordsFile, `${wordsFile}.migrated-${tsSuffix}`);
-    if (hasMydict) renameSync(mydictFile, `${mydictFile}.migrated-${tsSuffix}`);
-    if (hasScraps) renameSync(scrapsFile, `${scrapsFile}.migrated-${tsSuffix}`);
-
-    log(`이전 완료: 단어장 ${after.saved}개, 아는 단어 ${after.known}개, 최근 ${after.history}개, 구 ${after.phrases}개, 내 사전 ${after.mydict}개, 스크랩 ${after.scraps}개`);
-    return { ok: true, counts: after };
+    afterCounts = after;
   } catch (err) {
     try {
       db.raw.exec('ROLLBACK');
@@ -471,4 +472,41 @@ export function migrateJson({ db, dataDir, log = console.log, now = Date.now, ho
     log(`이전 실패: ${err.message}`);
     return { ok: false, error: err.message };
   }
+
+  // COMMIT과 migrated_at이 들어간 뒤에는 db를 절대 지우지 않는다.
+  // 이름 바꾸기는 별도 try로 감싼다.
+  const renames = [];
+  const filesToRename = [
+    { exists: hasWords, original: wordsFile, target: `${wordsFile}.migrated-${tsSuffix}` },
+    { exists: hasMydict, original: mydictFile, target: `${mydictFile}.migrated-${tsSuffix}` },
+    { exists: hasScraps, original: scrapsFile, target: `${scrapsFile}.migrated-${tsSuffix}` },
+  ];
+
+  let renameSuccess = true;
+  try {
+    for (const item of filesToRename) {
+      if (item.exists) {
+        renameSync(item.original, item.target);
+        renames.push(item);
+      }
+    }
+  } catch (renameErr) {
+    renameSuccess = false;
+    // 하나라도 실패하면 이미 바꾼 이름을 원래대로 되돌린다 (되돌리기 실패는 오류 로그만).
+    for (const item of renames.reverse()) {
+      try {
+        renameSync(item.target, item.original);
+      } catch (revertErr) {
+        console.error(`이름 되돌리기 실패: ${item.target} -> ${item.original}: ${revertErr.message}`);
+      }
+    }
+    console.error(`이전 후 JSON 파일 이름 바꾸기 실패: ${renameErr.message}`);
+  }
+
+  log(`이전 완료: 단어장 ${afterCounts.saved}개, 아는 단어 ${afterCounts.known}개, 최근 ${afterCounts.history}개, 구 ${afterCounts.phrases}개, 내 사전 ${afterCounts.mydict}개, 스크랩 ${afterCounts.scraps}개`);
+
+  if (!renameSuccess) {
+    return { ok: true, counts: afterCounts, renamed: false };
+  }
+  return { ok: true, counts: afterCounts };
 }

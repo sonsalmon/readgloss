@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { openDb, migrateJson } from '../bridge/db.mjs';
 
 function createFixtureData(dir) {
@@ -235,4 +237,89 @@ test('del은 들어오는 선과 나가는 선을 모두 지운다', () => {
   assert.notEqual(db.get('C'), null);
 
   db.close();
+});
+
+test('옮기는 중 프로세스가 죽으면 다음 시작 때 다시 옮긴다', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rg-db-test-kill-'));
+  createFixtureData(dir);
+  const dbFile = join(dir, 'readgloss.db');
+  const fixedTime = 1770000000000;
+  const dbModulePath = fileURLToPath(new URL('../bridge/db.mjs', import.meta.url));
+
+  // 자식 프로세스에서 openDb + migrateJson 호출 중 hook에서 SIGKILL로 자기를 죽인다
+  const childCode = `
+    import { openDb, migrateJson } from ${JSON.stringify(dbModulePath)};
+    const db = openDb(${JSON.stringify(dbFile)});
+    migrateJson({
+      db,
+      dataDir: ${JSON.stringify(dir)},
+      hook: () => {
+        process.kill(process.pid, 'SIGKILL');
+      },
+    });
+  `;
+
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', childCode]);
+  assert.equal(child.signal, 'SIGKILL');
+
+  // 부모가 같은 폴더로 openDb + migrateJson을 다시 부른다
+  const db = openDb(dbFile);
+  const res = migrateJson({ db, dataDir: dir, now: () => fixedTime });
+
+  assert.equal(res.ok, true);
+  assert.equal(res.skipped, undefined);
+  assert.deepEqual(res.counts, {
+    saved: 2,
+    known: 2,
+    history: 1,
+    phrases: 1,
+    mydict: 1,
+    scraps: 1,
+  });
+
+  assert.equal(existsSync(join(dir, 'words.json')), false);
+  assert.equal(existsSync(join(dir, 'mydict.json')), false);
+  assert.equal(existsSync(join(dir, 'scraps.json')), false);
+
+  assert.equal(existsSync(join(dir, `words.json.migrated-${fixedTime}`)), true);
+  assert.equal(existsSync(join(dir, `mydict.json.migrated-${fixedTime}`)), true);
+  assert.equal(existsSync(join(dir, `scraps.json.migrated-${fixedTime}`)), true);
+
+  db.close();
+});
+
+test('이름 바꾸기가 실패해도 db와 JSON이 모두 남는다', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rg-db-test-rename-fail-'));
+  createFixtureData(dir);
+  const dbFile = join(dir, 'readgloss.db');
+  const db1 = openDb(dbFile);
+
+  // now: () => 42로 부르기 전에 mydict.json.migrated-42 자리에 비어 있지 않은 폴더를 만들어 둔다
+  const blockDir = join(dir, 'mydict.json.migrated-42');
+  mkdirSync(join(blockDir, 'sub'), { recursive: true });
+
+  const res1 = migrateJson({ db: db1, dataDir: dir, now: () => 42 });
+  assert.equal(res1.ok, true);
+  assert.equal(res1.renamed, false);
+
+  // db의 단어·내 사전 점 개수가 JSON과 같음
+  const wordNodes = db1.byKind('word');
+  assert.equal(wordNodes.length, 5);
+  const mydictNodes = db1.byKind('mydict');
+  assert.equal(mydictNodes.length, 1);
+
+  // words.json·mydict.json·scraps.json이 원래 이름 그대로 있음
+  assert.equal(existsSync(join(dir, 'words.json')), true);
+  assert.equal(existsSync(join(dir, 'mydict.json')), true);
+  assert.equal(existsSync(join(dir, 'scraps.json')), true);
+
+  db1.close();
+
+  // 다시 부르면 건너뜀(skipped:true)
+  const db2 = openDb(dbFile);
+  const res2 = migrateJson({ db: db2, dataDir: dir, now: () => 42 });
+  assert.equal(res2.ok, true);
+  assert.equal(res2.skipped, true);
+
+  db2.close();
 });
