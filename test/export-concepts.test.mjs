@@ -4,7 +4,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { renderConceptDocs } from '../scripts/export-concepts.mjs';
-import { writeIfChanged, slugifyPage, HEADER_COMMENT } from '../scripts/export-scraps.mjs';
+import { writeIfChanged, slugifyPage } from '../scripts/export-scraps.mjs';
+import { CONCEPT_HEADER_COMMENT } from '../scripts/export-concepts.mjs';
 
 function createTempDir() {
   return mkdtempSync(join(tmpdir(), 'rg-export-concepts-test-'));
@@ -61,7 +62,7 @@ test('export-concepts: 링크 모양, 같은 내용이면 안 씀, 주석 없는
     const acLines = acDoc.split('\n');
 
     // 첫 줄 자동 생성 주석
-    assert.equal(acLines[0], HEADER_COMMENT);
+    assert.equal(acLines[0], CONCEPT_HEADER_COMMENT); // 개념 문서 머리(T28 고침 H)
 
     // 제목
     assert.match(acDoc, /# Access Control/);

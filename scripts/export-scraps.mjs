@@ -13,9 +13,9 @@ await import('../extension/scrap-core.js');
 const { buildTree } = globalThis.readglossScrap;
 
 // 스크랩 문서 머리 주석.
-export const SCRAP_HEADER_COMMENT = '<!-- 자동 생성 — 고치려면 확장 스크랩북에서 -->';
+export const HEADER_COMMENT = '<!-- 자동 생성 — 고치려면 확장 스크랩북에서 -->';
+export const SCRAP_HEADER_COMMENT = HEADER_COMMENT;
 // 개념 문서 머리 주석(export-concepts.mjs 가 쓴다). 이름은 기존 시험(test/export-concepts.test.mjs)이 가져다 쓰는 그대로 둔다.
-export const HEADER_COMMENT = '<!-- 자동 생성 — 고치려면 확장 개념 탭에서 -->';
 
 // 페이지 파일 이름: 제목을 소문자, 영숫자·한글 아닌 것은 하이픈, 80자
 export function slugifyPage(title) {

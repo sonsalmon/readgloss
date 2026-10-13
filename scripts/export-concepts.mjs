@@ -7,10 +7,10 @@ import { fileURLToPath } from 'node:url';
 import { createConcepts } from '../bridge/concepts.mjs';
 import { loadLearning } from '../bridge/task-guess.mjs';
 import { openReadDb, loadData } from './data-source.mjs';
-import { HEADER_COMMENT, slugifyPage, writeIfChanged, pageFileNames, pageKey } from './export-scraps.mjs';
+import { slugifyPage, writeIfChanged, pageFileNames, pageKey } from './export-scraps.mjs';
 
-// 개념 문서 머리 주석(고치려면 개념 탭에서). export-scraps.mjs 의 HEADER_COMMENT 와 같은 값.
-export const CONCEPT_HEADER_COMMENT = HEADER_COMMENT;
+// 개념 문서 머리 주석(고치려면 개념 탭에서). 스크랩 문서 머리(export-scraps HEADER_COMMENT)와 다르다.
+export const CONCEPT_HEADER_COMMENT = '<!-- 자동 생성 — 고치려면 확장 개념 탭에서 -->';
 
 // 개념 목록 -> Map<상대경로, 내용>. pageFiles 는 pageFileNames 결과(없으면 제목으로 링크).
 export function renderConceptDocs(concepts, pageFiles = null) {
