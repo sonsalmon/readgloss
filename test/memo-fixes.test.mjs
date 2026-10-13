@@ -79,7 +79,8 @@ test('E: 저장 실패면 글을 지우지 않고 다리 꺼짐 안내를 보이
   assert.match(memoPad, /if \(res\?\.memo\) \{\s*ta\.value = '';/, '성공일 때만 비운다');
   assert.match(memoPad, /res\?\.error === 'bridge-off' \? BRIDGE_OFF_TEXT : '저장하지 못했어요'/, '실패 문구');
   assert.match(memoPad, /const BRIDGE_OFF_TEXT = '다리가 꺼져 있어요\. 터미널에서 node ~\/dev\/readgloss\/bridge\/server\.mjs 를 실행해 주세요';/);
-  assert.match(memoPad, /if \(isOpen && currentMode === 'pad'\) \{\s*performSave\(\);/, '⌥M 은 저장을 거쳐 성공일 때만 글을 비운다');
+  // 변경 기록 14: ⌥M 은 열기↔접기 토글이고 저장은 ⌘Enter 로만 한다(글을 지우지 않는다)
+  assert.match(memoPad, /if \(cmd === 'memo-open'\) \{\s*if \(isOpen\) \{\s*closePad\(\);/, '⌥M 은 토글');
 });
 
 // 작은 것 1~4
