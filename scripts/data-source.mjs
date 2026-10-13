@@ -66,10 +66,11 @@ export function loadData(dataDir) {
         }
 
         raw.close();
+        raw = null;
         return { words, mydict, scraps };
       }
-    } catch {
-      // 오류 시 아래 JSON 폴백으로 이동
+    } catch (e) {
+      throw new Error(`readgloss.db 를 열거나 읽을 수 없어요: ${dbFile} (${e?.message ?? e})`);
     } finally {
       if (raw) {
         try {

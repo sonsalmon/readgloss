@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -88,15 +88,27 @@ function sendAiError(res, e, cors) {
 // ask({word, sentence, context?}) / askTranslate(문단, 용어 지정 목록) / askContext(프롬프트 문자열) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
 export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), dbFile = join(dirname(cacheFile), 'readgloss.db'), learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
   const dataDir = dirname(cacheFile);
-  // db 를 못 열거나 옮기기가 실패하면 JSON 으로 계속 돈다(변경 기록 11-2).
+  const dbExisted = existsSync(dbFile);
+  // db 를 못 열거나 옮기기가 실패하면 JSON 으로 계속 돈다(변경 기록 11-2). 단, db 파일이 이미 있었는데 openDb 가 실패하면 예외를 던진다.
   let rawDb = null;
-  let migration;
+  let migration = { ok: false };
   try {
     rawDb = openDb(dbFile);
-    migration = migrateJson({ db: rawDb, dataDir, now });
   } catch (e) {
+    if (dbExisted) {
+      throw new Error(`readgloss.db 를 열 수 없어요: ${dbFile} — 백업에서 되살리거나 파일을 옮긴 뒤 다시 시작하세요`);
+    }
     migration = { ok: false, error: e?.message ?? String(e) };
   }
+
+  if (rawDb) {
+    try {
+      migration = migrateJson({ db: rawDb, dataDir, now });
+    } catch (e) {
+      migration = { ok: false, error: e?.message ?? String(e) };
+    }
+  }
+
   let db = null;
   if (!migration.ok) {
     console.error(`이전 실패: ${migration.error}`);

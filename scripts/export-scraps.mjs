@@ -271,7 +271,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exit(1);
   }
 
-  const { scraps: scrapsData } = loadData(dataDir);
+  let data;
+  try {
+    data = loadData(dataDir);
+  } catch (e) {
+    console.error(`오류: ${e?.message ?? e}`);
+    process.exit(1);
+  }
+  const { scraps: scrapsData } = data;
   const scraps = Object.values(scrapsData?.scraps ?? {});
 
   const { nodes } = loadLearning(learningDir);

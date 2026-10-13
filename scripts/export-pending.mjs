@@ -122,5 +122,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     }
   }
 
-  process.stdout.write(exportPending(dataDir, today));
+  try {
+    process.stdout.write(exportPending(dataDir, today));
+  } catch (e) {
+    console.error(`오류: ${e?.message ?? e}`);
+    process.exit(1);
+  }
 }
