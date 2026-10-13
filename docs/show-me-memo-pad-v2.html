@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>메모장 v2</title>
+<style>
+:root{--bg:#fbfaf7;--fg:#222;--mut:#666;--card:#fff;--bd:#e3e0d8;--acc:#534AB7;--accbg:#EEEDFE;--q:#FAEEDA;--qf:#633806}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1b1a;--fg:#eee;--mut:#aaa;--card:#252524;--bd:#3a3936;--acc:#AFA9EC;--accbg:#26215C;--q:#412402;--qf:#FAC775}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Apple SD Gothic Neo",sans-serif}
+main{max-width:960px;margin:auto;padding:16px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:16px 0;overflow-x:auto}
+h1{font-size:22px}h2{font-size:18px;margin:0 0 8px}.mut{color:var(--mut);font-size:14px}
+table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-top:1px solid var(--bd);padding:6px;text-align:left;vertical-align:top}
+kbd{border:1px solid var(--bd);border-radius:4px;padding:0 5px;font-size:13px}
+.mock{display:grid;grid-template-columns:1fr 300px;gap:14px}
+@media(max-width:700px){.mock{grid-template-columns:1fr}}
+.page{border:1px solid var(--bd);border-radius:8px;padding:12px;font-size:14px;line-height:1.7}
+.page h3{font-size:15px;margin:10px 0 4px}.page .now{outline:2px solid var(--acc);border-radius:4px}
+.pad{border:1px solid var(--acc);border-radius:10px;background:var(--card);font-size:13px;position:relative}
+.bar{background:var(--accbg);color:var(--acc);padding:6px 10px;border-radius:10px 10px 0 0;font-size:12px;cursor:move;display:flex;justify-content:space-between}
+.sec{padding:6px 10px;border-top:1px dashed var(--bd)}.sec b{font-size:12px;color:var(--mut)}
+.sec.on{background:var(--accbg)}
+.m{margin:3px 0 3px 8px}
+.q{background:var(--q);color:var(--qf);border-radius:6px;padding:2px 6px;font-size:12px;display:block;margin:3px 0 3px 8px}
+.in{border:1px solid var(--acc);border-radius:6px;padding:4px 6px;margin:4px 0 2px 8px;min-height:34px;color:var(--mut)}
+.grip{position:absolute;right:2px;bottom:0;font-size:12px;color:var(--mut)}
+</style></head><body><main>
+<h1>메모장 v2 — 쓸 때는 페이지 문서, 저장은 짤막한 메모</h1>
+<p class="mut">readgloss 메모장 변경안 · 2026-10-13 · 상태: 정범 확인 대기</p>
+
+<section><h2>1. 화면</h2>
+<div class="mock">
+<div class="page">
+<h3>Access control vulnerabilities</h3>
+<p>Access control is the application of constraints on who can perform…</p>
+<h3 class="now">Vertical privilege escalation</h3>
+<p>If a user can gain access to functionality that they are not permitted to access…</p>
+<h3>Horizontal privilege escalation</h3>
+<p>…</p>
+</div>
+<div class="pad">
+<div class="bar"><span>접근 통제 랩 › Access control</span><span>⠿ 끌어서 옮기기</span></div>
+<div class="sec"><b>Access control vulnerabilities</b>
+<div class="m">권한 확인 = 서버가 해야 함</div></div>
+<div class="sec on"><b>Vertical privilege escalation</b>
+<div class="m">관리자 기능을 일반 사용자가 씀 = 수직</div>
+<span class="q">“gain access to functionality that they are not permitted…”</span>
+<div class="in">여기에 쓰는 중… (Enter 줄바꿈 · ⌘Enter 저장)</div></div>
+<div class="sec"><b>Horizontal privilege escalation</b></div>
+<span class="grip">◢</span>
+</div></div>
+<p class="mut">본문에서 지금 보는 소제목(보라 테두리)과 메모장의 칸(보라 배경)이 함께 움직인다.</p></section>
+
+<section><h2>2. 키</h2>
+<table>
+<tr><th>키</th><th>하는 일</th></tr>
+<tr><td><kbd>⌥ M</kbd></td><td>메모장 열기 ↔ 접기(토글). 쓰던 글은 남는다.</td></tr>
+<tr><td>글 고르고 <kbd>⌥ M</kbd></td><td>뜻 카드를 닫고, 고른 글을 인용으로 붙인 채 메모장을 연다(접혀 있었으면 열고, 열려 있었으면 인용만 붙인다).</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>줄바꿈.</td></tr>
+<tr><td><kbd>⌘ Enter</kbd></td><td>지금 소제목 아래에 메모로 저장. 쓰는 칸이 비고 다음 메모를 쓴다.</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>메모장 접기(⌥M과 같음).</td></tr>
+<tr><td><kbd>⌥ ⇧ M</kbd></td><td>모든 페이지의 지난 메모 목록(지금 그대로).</td></tr>
+</table></section>
+
+<section><h2>3. 스크롤을 따라가는 규칙</h2>
+<pre class="mermaid">
+flowchart LR
+  S["본문 스크롤"] --> H{"지금 소제목이 바뀌었나?"}
+  H -->|아니오| N["가만히"]
+  H -->|예| A["메모장이 그 소제목 칸으로 스크롤"]
+  A --> W{"그 칸 쓰는 칸에 글이 있나?"}
+  W -->|있다| K["그 글 끝에 커서 (줄 안 더함)"]
+  W -->|없다| E["빈 쓰는 칸에 커서"]
+</pre>
+<ul>
+<li>쓰던 글은 소제목마다 따로 남는다. 다른 소제목에 갔다 와도 그대로다.</li>
+<li>왔다 갔다 해도 빈 줄이 생기지 않는다(저장은 ⌘Enter로만).</li>
+<li>입력 칸에 글을 치는 중이면 커서를 옮기지 않는다(스크롤만 따라감). 치기를 멈추면 따라간다.</li>
+</ul></section>
+
+<section><h2>4. 인용(고른 글 넣기)</h2>
+<ul>
+<li>고른 글은 쓰는 칸 위에 노란 인용 줄로 붙는다. 누르면 펼쳐서 전문을 읽을 수 있다. ✕로 뺀다.</li>
+<li>저장하면 인용은 그 메모의 일부가 된다(메모 = 인용 + 내 글). 나중에 인용을 누르면 본문의 그 자리로 간다.</li>
+<li>뜻 카드와 부딪히지 않는다: 글을 고르면 뜻 카드가 뜨고, 그 상태에서 ⌥M을 누르면 뜻 카드가 닫히고 메모 모드로 바뀐다.</li>
+</ul></section>
+
+<section><h2>5. 위치와 크기</h2>
+<ul>
+<li>맨 위 줄을 끌어 원하는 곳에 둔다. 오른쪽 아래 모서리를 끌어 크기를 바꾼다.</li>
+<li>위치·크기는 기억한다(모든 페이지에 같이 적용). 화면 밖으로 나가면 안쪽으로 당긴다.</li>
+</ul></section>
+
+<section><h2>6. 저장 단위 (추천)</h2>
+<pre class="mermaid">
+flowchart LR
+  P["메모장 화면<br/>= 이 페이지 문서"] -->|⌘Enter| M1["메모 1개<br/>(소제목 · 인용 · 내 글)"]
+  M1 --> DB[("readgloss.db")]
+  DB --> V["메모장 화면 다시 그림<br/>(소제목 순서로 모아 보기)"]
+  DB --> C["개념에 붙이기·튜터·세션 끝 정리"]
+</pre>
+<p>쓸 때는 문서처럼 이어 쓰고, 저장은 짤막한 메모로 쌓인다. 메모 하나 = 생각 하나라서 나중에 개념별로 다시 묶기 쉽다.</p></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'default'});</script>
+</body></html>
