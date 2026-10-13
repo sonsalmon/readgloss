@@ -29,7 +29,7 @@
     scrapErrorMessage,
   };
 
-  const CSS = `
+  const STYLE_TEXT = `
     .scraps-container {
       font-size: 13px;
       line-height: 1.5;
@@ -190,7 +190,7 @@
     if (typeof document === 'undefined') return;
 
     const root = h('div', { class: 'scraps-container' });
-    const style = h('style', { text: CSS });
+    const style = h('style', { text: STYLE_TEXT });
     container.replaceChildren(style, root);
 
     let state = { scraps: [], tasks: {} };
@@ -405,10 +405,32 @@
         return;
       }
 
-      const tree = core.buildTree(state.scraps, state.tasks);
+      const combined = [
+        ...(state.scraps || []).map((s) => ({ task: s.task ?? null, url: s.url, title: s.title })),
+        ...(state.memos || []).map((m) => ({ task: m.task ?? null, url: m.url, title: m.title })),
+      ];
+      const tree = core.buildTree(combined, state.tasks);
       if (!tree || tree.length === 0) {
         root.replaceChildren(h('div', { class: 'scraps-empty', text: '아직 스크랩한 문장이 없어요. 웹페이지에서 문장을 드래그한 뒤 카드에서 [스크랩]을 눌러 보세요.' }));
         return;
+      }
+
+      const scrapsTree = core.buildTree(state.scraps || [], state.tasks);
+      const pageKey = (task, url) => `${task ?? null}|${core?.normalizeUrl ? core.normalizeUrl(url) : url}`;
+
+      const scrapPageMap = new Map();
+      for (const group of scrapsTree) {
+        const t = group.task ?? null;
+        for (const p of group.pages) {
+          scrapPageMap.set(pageKey(t, p.url), p);
+        }
+      }
+
+      const memoMap = new Map();
+      for (const m of (state.memos || [])) {
+        const k = pageKey(m.task ?? null, m.url);
+        if (!memoMap.has(k)) memoMap.set(k, []);
+        memoMap.get(k).push(m);
       }
 
       const curUrl = pageUrl();
@@ -417,6 +439,7 @@
       const taskNodes = [];
       for (const group of tree) {
         const groupEl = h('div', { class: 'task-group' });
+        const groupTask = group.task ?? null;
         const titleText = `${group.title} · ${group.count}개`;
         groupEl.append(h('h3', { class: 'task-title', text: titleText }));
 
@@ -425,16 +448,16 @@
           const pageEl = h('div', { class: 'page-group', style: `padding-left: ${indent}px;` });
           pageEl.append(h('div', { class: 'page-title', text: page.title || page.url }));
 
-          const pageMemos = (state.memos || []).filter((m) => {
-            const mu = core?.normalizeUrl ? core.normalizeUrl(m.url) : m.url;
-            return mu === page.url;
-          });
+          const key = pageKey(groupTask, page.url);
+          const scrapPage = scrapPageMap.get(key);
+          const pageMemos = memoMap.get(key) || [];
           const matchedMemoIds = new Set();
 
-          for (const section of page.sections) {
-            if (section.headings && section.headings.length > 0) {
-              pageEl.append(h('div', { class: 'section-headings', text: section.headings.join(' › ') }));
-            }
+          if (scrapPage) {
+            for (const section of scrapPage.sections) {
+              if (section.headings && section.headings.length > 0) {
+                pageEl.append(h('div', { class: 'section-headings', text: section.headings.join(' › ') }));
+              }
 
             for (const item of section.items) {
               const card = h('div', { class: 'scrap-card' });
@@ -583,6 +606,7 @@
               renderMemoCard(m, pageEl);
             }
           }
+        }
 
           // 아직 어떤 소제목에도 포함되지 않은 남은 메모들
           const remainingMemos = pageMemos.filter((m) => !matchedMemoIds.has(m.id));

@@ -65,6 +65,14 @@ export function pageFileNames(scraps, memos = []) {
   return map;
 }
 
+// 메모 한 개를 목록 항목 줄들로: 첫 줄은 "- 글 (날짜)", 다음 줄은 들여써서 같은 항목 안에 둔다.
+// 줄 맨 앞의 # · > - 는 마크다운 제목·인용·목록으로 읽히지 않게 \ 를 붙인다.
+function memoItemLines(m) {
+  const d = dateOf(m.ts);
+  const [first, ...rest] = String(m.text ?? '').split('\n').map((l) => l.replace(/^(\s*)([#>-])/, '$1\\$2'));
+  return [`- ${first} (${d})`, ...rest.map((l) => `  ${l}`)];
+}
+
 // 스크랩 목록과 할 일 매핑 -> Map<상대경로, 내용>
 export function renderScrapDocs(scraps, tasks = {}, memos = []) {
   const combined = [
@@ -167,8 +175,7 @@ export function renderScrapDocs(scraps, tasks = {}, memos = []) {
               pageLines.push(`### ${heading}`, '');
             }
             for (const m of items) {
-              const d = dateOf(m.ts);
-              pageLines.push(`- ${m.text} (${d})`);
+              pageLines.push(...memoItemLines(m));
             }
             pageLines.push('');
           }
@@ -235,8 +242,7 @@ export function renderScrapDocs(scraps, tasks = {}, memos = []) {
               inboxLines.push(`#### ${heading}`, '');
             }
             for (const m of items) {
-              const d = dateOf(m.ts);
-              inboxLines.push(`- ${m.text} (${d})`);
+              inboxLines.push(...memoItemLines(m));
             }
             inboxLines.push('');
           }

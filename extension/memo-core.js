@@ -107,6 +107,43 @@
     return singleLine.slice(0, limit);
   }
 
+  // 화면 가운데 y에 가장 가까운 블록 인덱스(0부터) 반환.
+  // 가운데를 덮는 블록이 있으면 그것, 없으면 위·아래 거리 최소, 블록이 없으면 -1.
+  function pickCenterBlock(blocks, viewportHeight) {
+    if (!Array.isArray(blocks) || blocks.length === 0 || typeof viewportHeight !== 'number' || !Number.isFinite(viewportHeight)) {
+      return -1;
+    }
+    const centerY = viewportHeight / 2;
+    let bestIndex = -1;
+    let minDistance = Infinity;
+
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i];
+      if (!b || typeof b.top !== 'number' || typeof b.bottom !== 'number' || !Number.isFinite(b.top) || !Number.isFinite(b.bottom)) {
+        continue;
+      }
+      let dist = 0;
+      if (b.top <= centerY && b.bottom >= centerY) {
+        dist = 0;
+      } else if (b.bottom < centerY) {
+        dist = centerY - b.bottom;
+      } else {
+        dist = b.top - centerY;
+      }
+
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestIndex = i;
+        if (dist === 0) {
+          // 가운데를 덮는 첫 번째 블록 발견
+          break;
+        }
+      }
+    }
+
+    return bestIndex;
+  }
+
   globalThis.readglossMemo = {
     normalizeUrl,
     currentHeading,
@@ -115,5 +152,6 @@
     padKey,
     formatDateMD,
     previewText,
+    pickCenterBlock,
   };
 })();

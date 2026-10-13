@@ -299,6 +299,8 @@
 
   function onBarKeyDown(e) {
     if (!barHost) return;
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    if (path.some((n) => n?.localName === 'readgloss-memo-pad')) return;
     if (e.key === 'Escape') {
       closeBar();
       return;
@@ -307,7 +309,6 @@
 
     // 막대가 있고 이벤트 경로에 입력칸·편집 영역·우리 확장 화면(막대 자신 외)이 없을 때만 키보드 ← →
     // 무시하는 경우엔 preventDefault·stopPropagation 을 하지 않는다(다른 화면의 키 처리를 막지 않는다)
-    const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
     const sel = globalThis.readglossSelection;
     const isTyping = sel?.isTypingPath ? sel.isTypingPath(path, e.isComposing) : false;
     if (isTyping || sel?.isOwnUiPath?.(path, barHost)) return;

@@ -12,13 +12,14 @@
   let currentTask = null; // 짐작된 할 일 id
   let currentTaskTitle = ''; // 짐작된 할 일 제목
   let typingTimer = 0;
+  let currentDraft = ''; // 쓰던 글 보관
 
   // content.js startsMemo 등에서 우리 메모장 입력 여부를 판정할 수 있도록 인터페이스 제공
   globalThis.readglossMemoPadUi = {
     isTyping: () => isOpen && currentMode === 'pad',
   };
 
-  const CSS = `
+  const STYLE_TEXT = `
     :host {
       all: initial;
       position: fixed;
@@ -80,6 +81,10 @@
     .meta.success {
       background: #e6f4ea;
       color: #137333;
+    }
+    .meta.error {
+      background: var(--danger-bg);
+      color: var(--danger);
     }
     @media (prefers-color-scheme: dark) {
       .meta.success {
@@ -225,6 +230,10 @@
 
   // 안내 배너 잠깐 띄우기
   function showToastNotice(text) {
+    if (globalThis.readglossToast?.show) {
+      globalThis.readglossToast.show({ text });
+      return;
+    }
     if (!shadow) return;
     const notice = document.createElement('div');
     notice.className = 'toast-notice';
@@ -258,11 +267,6 @@
 
   // 화면 가운데 문단 및 para, pos 구하기
   function getCenterParagraph() {
-    const cx = window.innerWidth / 2;
-    const cy = window.innerHeight / 2;
-    const el = document.elementFromPoint(cx, cy);
-    if (!el) return { para: null, pos: 0 };
-
     const scrapPage = globalThis.readglossScrapPage;
     const scrapCore = globalThis.readglossScrap;
     const memoCore = globalThis.readglossMemo;
@@ -270,12 +274,36 @@
       return { para: null, pos: 0 };
     }
 
+    const vh = window.innerHeight;
+    const selector = 'p, li, blockquote, dd, td, h1, h2, h3, h4, h5, h6';
+    const elements = [...document.querySelectorAll(selector)];
+    const candidates = [];
+    const blocks = [];
+
+    for (const el of elements) {
+      if (el.closest('pre') || el.closest('readgloss-memo-pad, readgloss-ui, readgloss-card, readgloss-toast, [data-readgloss]')) {
+        continue;
+      }
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < vh) {
+        if ((el.textContent || '').trim().length > 0) {
+          candidates.push(el);
+          blocks.push({ top: rect.top, bottom: rect.bottom });
+        }
+      }
+    }
+
+    const chosenIdx = memoCore?.pickCenterBlock ? memoCore.pickCenterBlock(blocks, vh) : -1;
+    if (chosenIdx === -1 || !candidates[chosenIdx]) {
+      return { para: null, pos: 0 };
+    }
+
+    const chosenEl = candidates[chosenIdx];
     const { fullText, nodes } = scrapPage.buildTextIndex();
     if (!fullText || !nodes.length) return { para: null, pos: 0 };
 
-    // 화면 가운데 요소의 글이 시작하는 오프셋 찾기
     let startOffset = -1;
-    let curr = el;
+    let curr = chosenEl;
     while (curr && curr !== document.body && curr !== document.documentElement) {
       const walker = document.createTreeWalker(curr, NodeFilter.SHOW_TEXT);
       let textNode = walker.nextNode();
@@ -292,12 +320,16 @@
     }
 
     if (startOffset === -1) {
-      // 못 찾으면 중간 노드 오프셋
       const mid = nodes[Math.floor(nodes.length / 2)];
       startOffset = mid ? mid.start : 0;
     }
 
-    const endOffset = Math.min(startOffset + 300, fullText.length);
+    // 끝: 그 블록 글의 끝과 시작+300자 중 작은 쪽(블록을 넘어 옆 글을 가져오지 않게)
+    let blockEnd = -1;
+    for (const item of nodes) {
+      if (chosenEl.contains(item.node) && item.end > blockEnd) blockEnd = item.end;
+    }
+    const endOffset = Math.min(blockEnd > startOffset ? blockEnd : fullText.length, startOffset + 300, fullText.length);
     const quote = scrapCore.quoteOf(fullText, startOffset, endOffset);
     const exact = memoCore?.centerParagraphText ? memoCore.centerParagraphText(quote.exact) : quote.exact.slice(0, 300);
 
@@ -313,20 +345,23 @@
 
   // background 에 쓰던 글 저장
   function saveDraft(text) {
+    currentDraft = text || '';
     chrome.runtime.sendMessage({
       type: 'memo-state-set',
       open: isOpen,
-      text: text || '',
+      text: currentDraft,
     });
   }
 
+  const BRIDGE_OFF_TEXT = '다리가 꺼져 있어요. 터미널에서 node ~/dev/readgloss/bridge/server.mjs 를 실행해 주세요';
+
   // 메모 저장 실행
   async function performSave() {
-    if (!shadow) return;
+    if (!shadow) return false;
     const ta = shadow.querySelector('.pad-textarea');
-    if (!ta) return;
+    if (!ta) return false;
     const rawText = ta.value.trim();
-    if (!rawText) return; // 빈 글은 저장하지 않음
+    if (!rawText) return false; // 빈 글은 저장하지 않음
 
     const text = rawText.slice(0, 2000);
     const metaEl = shadow.querySelector('.meta');
@@ -355,8 +390,11 @@
 
     if (res?.memo) {
       ta.value = '';
+      currentDraft = '';
       saveDraft('');
+      savedSelection = null; // 둘째 메모부터는 처음 열 때 고른 글을 다시 쓰지 않음
       if (metaEl) {
+        metaEl.classList.remove('error');
         metaEl.classList.add('success');
         metaEl.textContent = '메모했어요';
         setTimeout(() => {
@@ -366,6 +404,15 @@
           }
         }, 1500);
       }
+      return true;
+    } else {
+      const errMsg = res?.error === 'bridge-off' ? BRIDGE_OFF_TEXT : '저장하지 못했어요';
+      if (metaEl) {
+        metaEl.classList.remove('success');
+        metaEl.classList.add('error');
+        metaEl.textContent = errMsg;
+      }
+      return false;
     }
   }
 
@@ -429,7 +476,7 @@
     root.replaceChildren();
 
     const style = document.createElement('style');
-    style.textContent = CSS;
+    style.textContent = STYLE_TEXT;
 
     const box = document.createElement('div');
     box.className = 'pad-box';
@@ -491,7 +538,7 @@
     root.replaceChildren();
 
     const style = document.createElement('style');
-    style.textContent = CSS;
+    style.textContent = STYLE_TEXT;
 
     const box = document.createElement('div');
     box.className = 'pad-box';
@@ -518,7 +565,7 @@
     newBtn.className = 'btn';
     newBtn.type = 'button';
     newBtn.textContent = '새 메모';
-    newBtn.onclick = () => renderPadUI(root, '');
+    newBtn.onclick = () => renderPadUI(root, currentDraft);
 
     header.append(title, newBtn);
 
@@ -528,6 +575,10 @@
 
     box.append(header, listContainer);
     root.append(style, box);
+
+    // ⌥⇧M 직후 목록에 포커스를 줌 (Esc가 바로 동작)
+    box.tabIndex = -1;
+    setTimeout(() => box.focus(), 0);
 
     // 다리에서 메모 목록 가져오기
     const res = await new Promise((resolve) => {
@@ -611,34 +662,41 @@
   }
 
   // 메모장 열기
-  function openPad(initialText = '') {
+  function openPad(initialText) {
     isOpen = true;
     savedSelection = window.getSelection()?.toString()?.trim()?.slice(0, 1000) || null;
     fetchTaskGuess();
     const root = ensureHost();
-    renderPadUI(root, initialText);
-    chrome.runtime.sendMessage({ type: 'memo-state-set', open: true, text: initialText });
+    const text = initialText !== undefined ? initialText : currentDraft;
+    currentDraft = text;
+    renderPadUI(root, text);
+    chrome.runtime.sendMessage({ type: 'memo-state-set', open: true, text });
   }
 
   // 메모장 접기(닫기)
   function closePad() {
-    let text = '';
-    if (shadow) {
+    clearTimeout(typingTimer);
+    if (shadow && currentMode === 'pad') {
       const ta = shadow.querySelector('.pad-textarea');
-      if (ta) text = ta.value;
+      if (ta) currentDraft = ta.value;
     }
     isOpen = false;
     currentMode = 'pad';
     removeHost();
-    chrome.runtime.sendMessage({ type: 'memo-state-set', open: false, text });
+    chrome.runtime.sendMessage({ type: 'memo-state-set', open: false, text: currentDraft });
   }
 
   // 목록 모드로 열기
   function openList() {
+    clearTimeout(typingTimer);
+    if (shadow && currentMode === 'pad') {
+      const ta = shadow.querySelector('.pad-textarea');
+      if (ta) currentDraft = ta.value;
+    }
     isOpen = true;
     const root = ensureHost();
     openListUI(root);
-    chrome.runtime.sendMessage({ type: 'memo-state-set', open: true, text: '' });
+    chrome.runtime.sendMessage({ type: 'memo-state-set', open: true, text: currentDraft });
   }
 
   // 다른 페이지에서 점프해 온 경우 (memo-pending 확인)
@@ -660,6 +718,9 @@
   function restoreStateOnLoad() {
     chrome.runtime.sendMessage({ type: 'memo-state-get' }, (res) => {
       if (chrome.runtime.lastError || !res) return;
+      if (typeof res.text === 'string') {
+        currentDraft = res.text;
+      }
       if (res.open === true) {
         openPad(res.text || '');
       }
@@ -673,17 +734,11 @@
 
     if (cmd === 'memo-open') {
       if (isOpen && currentMode === 'pad') {
-        const ta = shadow?.querySelector('.pad-textarea');
-        const val = ta?.value?.trim();
-        if (val) {
-          performSave().then(() => {
-            if (ta) ta.value = '';
-          });
-        }
+        performSave(); // 성공하면 performSave 가 글을 비우고, 실패하면 글을 그대로 둔다
       } else if (isOpen && currentMode === 'list') {
-        if (shadow) renderPadUI(shadow, '');
+        if (shadow) renderPadUI(shadow, currentDraft);
       } else {
-        openPad('');
+        openPad();
       }
     } else if (cmd === 'memo-list') {
       openList();
