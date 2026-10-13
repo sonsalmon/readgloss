@@ -14,7 +14,8 @@
 
 - 새 npm 의존성을 넣지 않는다.
 - `createWords`·`createMydict`·`createScraps`의 반환 모양과 HTTP 응답 모양을 바꾸지 않는다.
-- 기존 시험은 고치지 않는다. 기존 시험은 모두 통과해야 한다. 시간 재는 시험(dict-server·claude-client·annotate·mt-live)이 부하로 흔들리면 따로 다시 돌려 확인한다.
+- 기존 시험은 고치지 않는다. 기존 시험은 모두 통과해야 한다.
+  - 예외(10-13 메인 세션 결정): 저장 정본이 JSON에서 db로 바뀌어 "디스크의 JSON 파일을 읽는" 단언 3곳(`test/words-server.test.mjs:95`, `test/mydict-server.test.mjs:35`, `test/phrases.test.mjs:123`)은 `scripts/data-source.mjs`의 `loadData`로 읽게 바꿨다(커밋 fcb7ca9). 독립 검증이 다른 동작을 숨기지 않는다고 판정했다. 시간 재는 시험(dict-server·claude-client·annotate·mt-live)이 부하로 흔들리면 따로 다시 돌려 확인한다.
 - 개념 이름 1~80자. 별칭 0~5개, 각 1~80자. 정의 1~500자. 관련 개념 0~10개.
 - 개념 key = 이름을 소문자로 바꾸고 공백을 하나로 줄인 값. key는 유일하다.
 - 회색 표시 이름 `readgloss-concept`, 배경 `rgba(136,135,128,0.18)`.
