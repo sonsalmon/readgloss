@@ -89,10 +89,27 @@
     return results;
   }
 
+  // terms 목록을 정의된 개념(defined)과 나중에 볼 것(later)으로 분리 (순수 함수)
+  function splitTerms(terms) {
+    const defined = [];
+    const later = [];
+    if (!Array.isArray(terms)) return { defined, later };
+    for (const t of terms) {
+      if (!t) continue;
+      if (t.later === true) {
+        later.push(t);
+      } else {
+        defined.push(t);
+      }
+    }
+    return { defined, later };
+  }
+
   globalThis.readglossConcept = {
     LIMIT,
     escapeRegex,
     parseAliases,
     findTerms,
+    splitTerms,
   };
 })();

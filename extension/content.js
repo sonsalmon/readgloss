@@ -373,8 +373,20 @@
       getSelection().removeAllRanges();
       close();
     });
+    const laterBtn = el('button', 'btn', '나중에');
+    laterBtn.type = 'button';
+    laterBtn.setAttribute('aria-label', '나중에 볼 것으로 저장');
+    laterBtn.addEventListener('click', () => {
+      if (!current) return;
+      const name = current.word || current.lemma || '';
+      const anchor = rectOf(current.range);
+      const sentence = current.sentence || '';
+      globalThis.readglossConceptPage?.saveLater({ name, sentence, anchor });
+      getSelection().removeAllRanges();
+      close();
+    });
     const knownBtn = mkWordBtn('known');
-    foot.append(saveBtn, conceptBtn, knownBtn, aiBtn);
+    foot.append(saveBtn, conceptBtn, laterBtn, knownBtn, aiBtn);
     ui = { card, tops, mine, acr, term, scroll, ai, aiWide, aiBtn, saveBtn, knownBtn };
     const md = globalThis.readglossMydict;
     const key = globalThis.readglossSelection.mydictKey(current.word); // 키 규칙에 안 맞으면 [내 사전에 추가] 를 숨긴다

@@ -8,6 +8,7 @@ import { createConcepts } from '../bridge/concepts.mjs';
 import { loadLearning } from '../bridge/task-guess.mjs';
 import { openReadDb, loadData } from './data-source.mjs';
 import { slugifyPage, writeIfChanged, pageFileNames, pageKey } from './export-scraps.mjs';
+import { dateOf } from './export-day.mjs';
 
 // 개념 문서 머리 주석(고치려면 개념 탭에서). 스크랩 문서 머리(export-scraps HEADER_COMMENT)와 다르다.
 export const CONCEPT_HEADER_COMMENT = '<!-- 자동 생성 — 고치려면 확장 개념 탭에서 -->';
@@ -45,7 +46,16 @@ export function renderConceptDocs(concepts, pageFiles = null) {
     }
 
     // 정의 문단
-    if (c.definition) {
+    const isLater = c.later === true || !c.definition;
+    if (isLater) {
+      lines.push('(아직 설명 없음)', '');
+      if (c.seen) {
+        const title = c.seen.title || '';
+        const url = c.seen.url || '';
+        const sentence = (c.seen.sentence || '').slice(0, 120);
+        lines.push(`본 곳: [${title}](${url}) — "${sentence}"`, '');
+      }
+    } else if (c.definition) {
       lines.push(c.definition, '');
     }
 
@@ -83,6 +93,21 @@ export function renderConceptDocs(concepts, pageFiles = null) {
     }
 
     docs.set(`${c.slug}.md`, lines.join('\n').trimEnd() + '\n');
+  }
+
+  // 나중에-볼-것.md 목록 한 장(오래된 것 먼저: - <이름> · <본 곳 제목> · <YYYY-MM-DD>)
+  // 나중에 볼 것이 없으면 그 파일을 만들지 않는다(있던 자동 생성 파일이면 writeIfChanged가 지움).
+  const laterConcepts = concepts.filter((c) => c.later === true || !c.definition);
+  if (laterConcepts.length > 0) {
+    const sortedLater = [...laterConcepts].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    const laterLines = [CONCEPT_HEADER_COMMENT, '', '# 나중에 볼 것', ''];
+    for (const c of sortedLater) {
+      const name = c.name || '';
+      const seenTitle = c.seen?.title || c.firstTitle || '';
+      const d = dateOf(c.ts || Date.now());
+      laterLines.push(`- ${name} · ${seenTitle} · ${d}`);
+    }
+    docs.set('나중에-볼-것.md', laterLines.join('\n').trimEnd() + '\n');
   }
 
   return docs;

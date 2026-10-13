@@ -1,7 +1,7 @@
 // bridge/concepts.mjs
 // 내 개념 저장소: SQLite db(nodes, edges)를 이용한 개념 점·선 관리.
 import { createHash, randomBytes } from 'node:crypto';
-import { TASK_RE, SCRAP_ID_RE } from './scraps.mjs';
+import { TASK_RE, SCRAP_ID_RE, normalizeUrl } from './scraps.mjs';
 
 export const CONCEPT_ID_RE = /^c_[0-9a-f]{12}$/;
 export const LIMIT = {
@@ -11,6 +11,9 @@ export const LIMIT = {
   definition: 500,
   relatedCount: 10,
   relatedName: 80,
+  seenSentence: 300,
+  seenTitle: 300,
+  seenUrl: 2000,
 };
 
 // 개념 key: 이름을 소문자로 바꾸고 공백을 하나로 줄인 값 (유일)
@@ -52,7 +55,7 @@ export function parseConceptOp(v) {
       }
     }
 
-    if (typeof v.definition !== 'string' || v.definition.length < 1 || v.definition.length > LIMIT.definition) {
+    if (typeof v.definition !== 'string' || v.definition.length > LIMIT.definition) {
       return null;
     }
     const definition = v.definition;
@@ -80,6 +83,21 @@ export function parseConceptOp(v) {
       scrapId = v.scrapId;
     }
 
+    let seen = null;
+    if (v.seen !== undefined && v.seen !== null) {
+      if (typeof v.seen !== 'object' || Array.isArray(v.seen)) return null;
+      if (typeof v.seen.url !== 'string' || v.seen.url.length > LIMIT.seenUrl) return null;
+      const normUrl = normalizeUrl(v.seen.url);
+      if (!normUrl) return null;
+      if (typeof v.seen.title !== 'string' || v.seen.title.length > LIMIT.seenTitle) return null;
+      if (typeof v.seen.sentence !== 'string' || v.seen.sentence.length > LIMIT.seenSentence) return null;
+      seen = {
+        url: normUrl,
+        title: v.seen.title,
+        sentence: v.seen.sentence,
+      };
+    }
+
     return {
       op: 'save',
       id,
@@ -89,6 +107,7 @@ export function parseConceptOp(v) {
       related,
       task,
       scrapId,
+      seen,
     };
   }
 
@@ -161,11 +180,16 @@ export function createConcepts({ db, now = Date.now, learning }) {
     }
     appears.sort((a, b) => a.ts - b.ts);
 
+    const definition = d.definition ?? '';
+    const later = definition === '';
+
     return {
       id: node.id,
       name: d.name || '',
       aliases: Array.isArray(d.aliases) ? [...d.aliases] : [],
-      definition: d.definition || '',
+      definition,
+      later,
+      seen: d.seen ?? null,
       related,
       appears,
       firstTask: d.firstTask ?? null,
@@ -190,12 +214,13 @@ export function createConcepts({ db, now = Date.now, learning }) {
     const items = [];
     for (const n of nodes) {
       const d = n.data || {};
+      const later = (d.definition ?? '') === '';
       if (d.name) {
-        items.push({ id: n.id, term: d.name });
+        items.push({ id: n.id, term: d.name, later });
       }
       if (Array.isArray(d.aliases)) {
         for (const a of d.aliases) {
-          if (a) items.push({ id: n.id, term: a });
+          if (a) items.push({ id: n.id, term: a, later });
         }
       }
     }
@@ -260,10 +285,15 @@ export function createConcepts({ db, now = Date.now, learning }) {
         }
       }
 
+      const seen = op.seen !== undefined && op.seen !== null
+        ? op.seen
+        : (existingNode?.data?.seen ?? null);
+
       const data = {
         name: op.name,
         aliases: op.aliases || [],
         definition: op.definition,
+        seen,
         firstTask,
         firstUrl,
         firstTitle,

@@ -37,8 +37,8 @@ test('길이 상한을 넘으면 parseConceptOp는 null', () => {
   assert.equal(parseConceptOp({ ...valid, aliases: ['a'.repeat(81)] }), null);
   assert.equal(parseConceptOp({ ...valid, aliases: 'not-an-array' }), null);
 
-  // definition 상한 (1~500자)
-  assert.equal(parseConceptOp({ ...valid, definition: '' }), null);
+  // definition 상한 (0~500자, 빈 설명은 나중에 볼 것 — 변경 기록 13)
+  assert.equal(parseConceptOp({ ...valid, definition: '' })?.definition, '');
   assert.equal(parseConceptOp({ ...valid, definition: 'd'.repeat(501) }), null);
 
   // related 상한 (0~10개, 각 1~80자)

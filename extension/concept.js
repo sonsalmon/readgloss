@@ -2,17 +2,21 @@
 // 페이지 내 개념 접착(T28): 개념어 회색 형광펜 칠하기, 마우스 호버 카드, 칠한 범위 클릭, [내 개념으로] 칸 열기.
 // CSS Custom Highlight API(readgloss-concept)를 사용하며 페이지 DOM 글은 바꾸지 않는다.
 (() => {
-  const HIGHLIGHT_NAME = 'readgloss-concept';
+  const HIGHLIGHT_CONCEPT = 'readgloss-concept';
+  const HIGHLIGHT_LATER = 'readgloss-later';
   const STYLE_ID = 'readgloss-concept-style';
 
-  // 스타일 주입: ::highlight(readgloss-concept) { background-color: rgba(136,135,128,0.18); }
+  // 스타일 주입: ::highlight(readgloss-concept), ::highlight(readgloss-later)
   function ensureStyle() {
     if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
-      ::highlight(${HIGHLIGHT_NAME}) {
+      ::highlight(${HIGHLIGHT_CONCEPT}) {
         background-color: rgba(136, 135, 128, 0.18);
+      }
+      ::highlight(${HIGHLIGHT_LATER}) {
+        text-decoration: underline dotted rgba(136, 135, 128, 0.7);
       }
     `;
     (document.head || document.documentElement || document.body)?.append(style);
@@ -48,9 +52,9 @@
     }
   }
 
-  let cachedTerms = []; // [{ id, term }]
-  let conceptItems = []; // [{ id, range }]
-  let conceptsCache = null; // GET /concepts 캐시 [{ id, name, aliases, definition, related, appears }]
+  let cachedTerms = []; // [{ id, term, later }]
+  let conceptItems = []; // [{ id, range, later }]
+  let conceptsCache = null; // GET /concepts 캐시 [{ id, name, aliases, definition, later, seen, related, appears }]
 
   // 다리 메시지 전송 헬퍼
   function send(msg) {
@@ -78,15 +82,24 @@
   function applyHighlights() {
     ensureStyle();
     if (typeof CSS === 'undefined' || !CSS.highlights || typeof Highlight === 'undefined') return;
-    const ranges = conceptItems.map((item) => item.range).filter(Boolean);
-    if (ranges.length > 0) {
-      CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...ranges));
+
+    const definedRanges = conceptItems.filter((item) => !item.later).map((item) => item.range).filter(Boolean);
+    const laterRanges = conceptItems.filter((item) => item.later).map((item) => item.range).filter(Boolean);
+
+    if (definedRanges.length > 0) {
+      CSS.highlights.set(HIGHLIGHT_CONCEPT, new Highlight(...definedRanges));
     } else {
-      CSS.highlights.delete(HIGHLIGHT_NAME);
+      CSS.highlights.delete(HIGHLIGHT_CONCEPT);
+    }
+
+    if (laterRanges.length > 0) {
+      CSS.highlights.set(HIGHLIGHT_LATER, new Highlight(...laterRanges));
+    } else {
+      CSS.highlights.delete(HIGHLIGHT_LATER);
     }
   }
 
-  // 본문에서 개념어를 찾아 readgloss-concept로 칠하기
+  // 본문에서 개념어를 찾아 readgloss-concept(회색) 또는 readgloss-later(점선 밑줄)로 칠하기
   function paint(terms) {
     if (Array.isArray(terms)) {
       cachedTerms = terms;
@@ -105,14 +118,31 @@
     const core = globalThis.readglossConcept;
     if (!core?.findTerms) return;
 
-    const matches = core.findTerms(fullText, cachedTerms);
+    const { defined, later } = core.splitTerms ? core.splitTerms(cachedTerms) : { defined: cachedTerms, later: [] };
     const items = [];
-    for (const m of matches) {
-      const range = offsetToRange(nodes, m.start, m.end);
-      if (range) {
-        items.push({ id: m.id, range });
+
+    // 1. 설명 있는 개념 (readgloss-concept)
+    if (defined.length > 0) {
+      const defMatches = core.findTerms(fullText, defined);
+      for (const m of defMatches) {
+        const range = offsetToRange(nodes, m.start, m.end);
+        if (range) {
+          items.push({ id: m.id, range, later: false });
+        }
       }
     }
+
+    // 2. 설명 없는 개념 (readgloss-later)
+    if (later.length > 0) {
+      const laterMatches = core.findTerms(fullText, later);
+      for (const m of laterMatches) {
+        const range = offsetToRange(nodes, m.start, m.end);
+        if (range) {
+          items.push({ id: m.id, range, later: true });
+        }
+      }
+    }
+
     conceptItems = items;
     applyHighlights();
   }
@@ -219,6 +249,22 @@
         padding-top: 4px;
         margin-top: 4px;
       }
+      .btn-write {
+        display: inline-block;
+        margin-top: 6px;
+        padding: 3px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--rg-border);
+        background: var(--rg-bg);
+        color: var(--rg-fg);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .btn-write:hover {
+        background: var(--rg-chip);
+      }
     `;
 
     const card = document.createElement('div');
@@ -228,34 +274,69 @@
     nameEl.className = 'name';
     nameEl.textContent = concept.name || '';
 
-    const defEl = document.createElement('div');
-    defEl.className = 'def';
-    defEl.textContent = concept.definition || '';
+    const isLater = concept.later === true || !concept.definition;
 
-    card.append(nameEl, defEl);
+    if (isLater) {
+      const defEl = document.createElement('div');
+      defEl.className = 'def';
+      defEl.textContent = '나중에 볼 것 · 아직 설명 없음';
+      card.append(nameEl, defEl);
 
-    // 관련 개념 칩
-    if (Array.isArray(concept.related) && concept.related.length > 0) {
-      const chipsEl = document.createElement('div');
-      chipsEl.className = 'chips';
-      for (const r of concept.related) {
-        const chip = document.createElement('span');
-        chip.className = 'chip';
-        chip.textContent = r.name;
-        chipsEl.append(chip);
+      const seenTitle = concept.seen?.title || concept.firstTitle;
+      if (seenTitle) {
+        const seenEl = document.createElement('div');
+        seenEl.className = 'first';
+        seenEl.textContent = `본 곳: ${seenTitle}`;
+        card.append(seenEl);
       }
-      card.append(chipsEl);
-    }
 
-    // 처음 나온 곳: <taskTitle> · <title>
-    const firstAppear = Array.isArray(concept.appears) && concept.appears[0];
-    if (firstAppear) {
-      const firstEl = document.createElement('div');
-      firstEl.className = 'first';
-      const taskText = firstAppear.taskTitle || firstAppear.task || '인박스';
-      const titleText = firstAppear.title || '페이지';
-      firstEl.textContent = `처음 나온 곳: ${taskText} · ${titleText}`;
-      card.append(firstEl);
+      const writeBtn = document.createElement('button');
+      writeBtn.className = 'btn-write';
+      writeBtn.type = 'button';
+      writeBtn.textContent = '지금 쓰기';
+      writeBtn.onclick = (e) => {
+        e.stopPropagation();
+        closeCard();
+        openForm({
+          id: concept.id,
+          name: concept.name,
+          aliases: concept.aliases,
+          definition: '',
+          related: concept.related?.map((r) => r.name),
+          anchor: hit.rect,
+        });
+      };
+      card.append(writeBtn);
+    } else {
+      const defEl = document.createElement('div');
+      defEl.className = 'def';
+      defEl.textContent = concept.definition || '';
+
+      card.append(nameEl, defEl);
+
+      // 관련 개념 칩
+      if (Array.isArray(concept.related) && concept.related.length > 0) {
+        const chipsEl = document.createElement('div');
+        chipsEl.className = 'chips';
+        for (const r of concept.related) {
+          const chip = document.createElement('span');
+          chip.className = 'chip';
+          chip.textContent = r.name;
+          chipsEl.append(chip);
+        }
+        card.append(chipsEl);
+      }
+
+      // 처음 나온 곳: <taskTitle> · <title>
+      const firstAppear = Array.isArray(concept.appears) && concept.appears[0];
+      if (firstAppear) {
+        const firstEl = document.createElement('div');
+        firstEl.className = 'first';
+        const taskText = firstAppear.taskTitle || firstAppear.task || '인박스';
+        const titleText = firstAppear.title || '페이지';
+        firstEl.textContent = `처음 나온 곳: ${taskText} · ${titleText}`;
+        card.append(firstEl);
+      }
     }
 
     // 키 및 클릭 전파 방지
@@ -350,6 +431,7 @@
     closeForm();
     closeCard();
 
+    const conceptId = seed.id || null;
     const initialName = (seed.name || '').trim().slice(0, 80);
     const scrapId = seed.scrapId || null;
 
@@ -530,7 +612,7 @@
 
     const titleEl = document.createElement('div');
     titleEl.className = 'title';
-    titleEl.textContent = '내 개념으로';
+    titleEl.textContent = conceptId ? '개념 고치기' : '내 개념으로';
 
     // 이름
     const nameField = document.createElement('div');
@@ -555,6 +637,7 @@
     aliasIn.className = 'input';
     aliasIn.type = 'text';
     aliasIn.placeholder = '별칭1, 별칭2';
+    aliasIn.value = Array.isArray(seed.aliases) ? seed.aliases.join(', ') : (seed.aliases || '');
     aliasField.append(aliasLabel, aliasIn);
 
     // 내 정의
@@ -568,6 +651,7 @@
     defIn.rows = 3;
     defIn.maxLength = 500;
     defIn.placeholder = '내가 이해한 개념 정의';
+    defIn.value = seed.definition || '';
     defField.append(defLabel, defIn);
 
     // 관련 개념
@@ -588,6 +672,11 @@
     const chipList = document.createElement('div');
     chipList.className = 'chip-list';
     const relatedSet = new Set();
+    if (Array.isArray(seed.related)) {
+      for (const r of seed.related) {
+        if (r) relatedSet.add(r);
+      }
+    }
 
     function renderRelatedChips() {
       chipList.replaceChildren();
@@ -607,6 +696,7 @@
         chipList.append(chip);
       }
     }
+    renderRelatedChips();
 
     relIn.addEventListener('input', () => {
       const q = relIn.value.trim().toLowerCase();
@@ -690,7 +780,7 @@
       saveBtn.disabled = true;
       saveBtn.textContent = '저장 중…';
 
-      const res = await send({
+      const payload = {
         type: 'concepts',
         op: 'save',
         name: cleanName,
@@ -699,7 +789,12 @@
         related: [...relatedSet],
         task,
         scrapId,
-      });
+      };
+      if (conceptId) {
+        payload.id = conceptId;
+      }
+
+      const res = await send(payload);
 
       saveBtn.disabled = false;
       saveBtn.textContent = '저장';
@@ -776,12 +871,67 @@
     else defIn.focus();
   }
 
+  // --- saveLater: 칸 없이 바로 나중에 볼 것으로 저장 ---
+  async function saveLater({ name, sentence, anchor }) {
+    const cleanName = (name || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+    if (!cleanName) return;
+
+    let task = null;
+    try {
+      const g = await send({ type: 'scraps', op: 'guess', url: location.href });
+      if (g && g.task && !g.ask) task = g.task;
+    } catch {
+      // 짐작 실패는 무시
+    }
+
+    const seen = {
+      url: location.href,
+      title: document.title || '',
+      sentence: (sentence || '').slice(0, 300),
+    };
+
+    const res = await send({
+      type: 'concepts',
+      op: 'save',
+      name: cleanName,
+      definition: '',
+      seen,
+      task,
+    });
+
+    if (res?.error === 'exists') {
+      globalThis.readglossToast?.show({
+        text: '이미 있어요',
+        anchor,
+      });
+      return;
+    }
+
+    if (res && !res.error) {
+      conceptsCache = null;
+      window.dispatchEvent(new CustomEvent('readgloss:concepts-updated', { detail: { id: res.concept?.id } }));
+      globalThis.readglossToast?.show({
+        text: '나중에 볼 것에 넣었어요',
+        anchor,
+      });
+      chrome.runtime.sendMessage({ type: 'concepts', op: 'names' }, (r) => {
+        if (r?.terms) paint(r.terms);
+      });
+    } else {
+      globalThis.readglossToast?.show({
+        text: res?.error || '저장하지 못했어요',
+        anchor,
+      });
+    }
+  }
+
   // --- 외부 공개 API ---
   globalThis.readglossConceptPage = {
     paint,
     openForm,
     closeForm,
     closeCard,
+    saveLater,
   };
 
   // --- 이벤트 리스너 등록 ---

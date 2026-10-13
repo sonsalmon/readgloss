@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dateOf, exportDay } from './export-day.mjs';
-import { loadData } from './data-source.mjs';
+import { loadData, openReadDb } from './data-source.mjs';
 
 const readJson = (file) => {
   try {
@@ -14,6 +14,32 @@ const readJson = (file) => {
     return {};
   }
 };
+
+function getLaterConcepts(dataDir, data) {
+  let list = [];
+  if (Array.isArray(data?.concepts)) {
+    list = data.concepts;
+  } else {
+    try {
+      const db = openReadDb(dataDir);
+      if (db) {
+        try {
+          list = db.byKind('concept');
+        } finally {
+          db.close();
+        }
+      }
+    } catch {
+      // db 열기 실패는 무시
+    }
+  }
+
+  return list.filter((c) => {
+    if (!c) return false;
+    const def = c.data ? c.data.definition : c.definition;
+    return def === '';
+  });
+}
 
 export function pendingDays(dataDir, today = dateOf(Date.now())) {
   const state = readJson(join(dataDir, 'export-state.json'));
@@ -31,7 +57,8 @@ export function pendingDays(dataDir, today = dateOf(Date.now())) {
     }
   };
 
-  const { words, mydict, scraps: scrapsData, memos = [] } = loadData(dataDir);
+  const data = loadData(dataDir);
+  const { words, mydict, scraps: scrapsData, memos = [] } = data;
 
   // 1. words (saved, phrases)
   if (words.saved && typeof words.saved === 'object') {
@@ -66,6 +93,12 @@ export function pendingDays(dataDir, today = dateOf(Date.now())) {
     }
   }
 
+  // 5. later concepts
+  const laterConcepts = getLaterConcepts(dataDir, data);
+  for (const c of laterConcepts) {
+    if (c) checkTs(c.ts);
+  }
+
   return Array.from(days).sort();
 }
 
@@ -73,7 +106,9 @@ export function exportPending(dataDir, today = dateOf(Date.now())) {
   const days = pendingDays(dataDir, today);
   if (days.length === 0) return '';
 
-  const { scraps: scrapsData, memos = [] } = loadData(dataDir);
+  const data = loadData(dataDir);
+  const { scraps: scrapsData, memos = [] } = data;
+  const laterConcepts = getLaterConcepts(dataDir, data);
   const allScraps = scrapsData.scraps && typeof scrapsData.scraps === 'object'
     ? Object.values(scrapsData.scraps).filter((s) => s && Number.isFinite(s.ts))
     : [];
@@ -86,6 +121,7 @@ export function exportPending(dataDir, today = dateOf(Date.now())) {
     const dayOut = exportDay(day, dataDir);
     const dayScraps = allScraps.filter((s) => dateOf(s.ts) === day);
     const dayMemos = allMemos.filter((m) => dateOf(m.ts) === day);
+    const dayLater = laterConcepts.filter((c) => dateOf(c.ts) === day);
 
     const lines = [`### ${day}`, '', dayOut.trimEnd()];
 
@@ -111,6 +147,10 @@ export function exportPending(dataDir, today = dateOf(Date.now())) {
 
     if (dayMemos.length > 0) {
       extraLines.push(`메모 ${dayMemos.length}개`);
+    }
+
+    if (dayLater.length > 0) {
+      extraLines.push(`나중에 볼 것 ${dayLater.length}개`);
     }
 
     if (extraLines.length > 0) {

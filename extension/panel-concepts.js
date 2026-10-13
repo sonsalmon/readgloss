@@ -14,6 +14,43 @@
     .concepts-search-row {
       margin-bottom: 12px;
     }
+    .filter-chips {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .filter-chip {
+      background: none;
+      border: 1px solid var(--rg-border, #d0d7de);
+      border-radius: 14px;
+      padding: 3px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--rg-muted, #656d76);
+      transition: all 0.15s;
+    }
+    .filter-chip:hover {
+      background: var(--rg-hover, rgba(0, 0, 0, 0.04));
+    }
+    .filter-chip.active {
+      background: var(--rg-accent-soft, rgba(47, 111, 235, 0.10));
+      color: var(--rg-accent, #2f6feb);
+      border-color: var(--rg-accent, #2f6feb);
+      font-weight: 600;
+    }
+    .detail-seen-row {
+      margin-bottom: 12px;
+      font-size: 12.5px;
+      color: var(--rg-muted, #656d76);
+    }
+    .detail-seen-link {
+      color: var(--rg-accent, #2f6feb);
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    .detail-seen-link:hover {
+      opacity: 0.8;
+    }
     .concepts-search {
       width: 100%;
       box-sizing: border-box;
@@ -306,6 +343,7 @@
     pendingOpenConceptId = null;
     let selectedConceptId = targetConceptId;
     let currentView = targetConceptId ? 'detail' : 'list'; // 'list' | 'detail'
+    let filterMode = 'all'; // 'all' | 'defined' | 'later'
     let searchQuery = '';
     let statusMsg = '';
     let isError = false;
@@ -391,6 +429,32 @@
 
     // --- 목록 화면 ---
     function renderListView(parent) {
+      parent.replaceChildren();
+
+      // 거르기 칩: 전체 · 내 개념 · 나중에 볼 것 (N)
+      const laterCount = conceptsList.filter((c) => c.later === true || !c.definition).length;
+      const chipsRow = document.createElement('div');
+      chipsRow.className = 'filter-chips';
+
+      const chipsData = [
+        { key: 'all', label: '전체' },
+        { key: 'defined', label: '내 개념' },
+        { key: 'later', label: `나중에 볼 것 (${laterCount})` },
+      ];
+
+      for (const cd of chipsData) {
+        const btn = document.createElement('button');
+        btn.className = `filter-chip ${filterMode === cd.key ? 'active' : ''}`;
+        btn.type = 'button';
+        btn.textContent = cd.label;
+        btn.onclick = () => {
+          filterMode = cd.key;
+          renderListView(parent);
+        };
+        chipsRow.append(btn);
+      }
+      parent.append(chipsRow);
+
       const searchRow = document.createElement('div');
       searchRow.className = 'concepts-search-row';
 
@@ -416,12 +480,23 @@
 
       const q = searchQuery.trim().toLowerCase();
       const filtered = conceptsList.filter((c) => {
+        const isLater = c.later === true || !c.definition;
+        if (filterMode === 'defined' && isLater) return false;
+        if (filterMode === 'later' && !isLater) return false;
+
         if (!q) return true;
         if ((c.name || '').toLowerCase().includes(q)) return true;
         if (Array.isArray(c.aliases) && c.aliases.some((a) => a.toLowerCase().includes(q))) return true;
         if ((c.definition || '').toLowerCase().includes(q)) return true;
         return false;
       });
+
+      // 나중에 볼 것은 ts 오름차순(오래된 것 먼저)
+      if (filterMode === 'later') {
+        filtered.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      } else {
+        filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      }
 
       if (filtered.length === 0) {
         const empty = document.createElement('div');
@@ -457,7 +532,12 @@
 
         const def = document.createElement('div');
         def.className = 'concept-def-preview';
-        def.textContent = c.definition || '';
+        const isLater = c.later === true || !c.definition;
+        if (isLater) {
+          def.textContent = c.seen?.title ? `본 곳: ${c.seen.title}` : '아직 설명 없음';
+        } else {
+          def.textContent = c.definition || '';
+        }
 
         item.append(head, def);
         container.append(item);
@@ -505,6 +585,31 @@
       title.className = 'detail-title';
       title.textContent = concept.name;
       parent.append(title);
+
+      // 나중에 볼 것(later)이면 "본 곳: <제목>" 줄 표시 (누르면 지금 탭에서 열기)
+      // 데이터 출처: 변경 기록 13의 정본은 concept.seen { title, url, sentence } 이며, firstTitle/firstUrl은 변경 기록 11 스크랩 연동 개념의 하위 호환 fallback
+      const isLater = concept.later === true || !concept.definition;
+      const seenTitle = concept.seen?.title || concept.firstTitle;
+      const seenUrl = concept.seen?.url || concept.firstUrl;
+
+      if (isLater && seenTitle) {
+        const seenRow = document.createElement('div');
+        seenRow.className = 'detail-seen-row';
+        seenRow.textContent = '본 곳: ';
+        const seenLink = document.createElement('span');
+        seenLink.className = 'detail-seen-link';
+        seenLink.textContent = seenTitle;
+        if (seenUrl) {
+          seenLink.onclick = () => {
+            chrome.runtime.sendMessage({
+              type: 'open-url',
+              url: seenUrl,
+            });
+          };
+        }
+        seenRow.append(seenLink);
+        parent.append(seenRow);
+      }
 
       // 정의 필드
       const defField = document.createElement('div');

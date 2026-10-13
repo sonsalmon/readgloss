@@ -444,9 +444,32 @@
         getSelection().removeAllRanges();
         close();
       });
+      ui.laterBtn = button('나중에', '나중에 볼 것으로 저장', () => {
+        if (!current) return;
+        const anchor = globalThis.readglossToast?.rectOf(current.range);
+        // 고른 글이 든 문장(고른 글 자체가 아니라 그 문장)을 본 곳으로 남긴다. 문장을 못 찾으면 고른 글.
+        let sentence = '';
+        if (current.range) {
+          try {
+            const block = blockOf(current.range.startContainer);
+            if (block) {
+              const { text: plain, offset } = plainTextAt(block, current.range.startContainer, current.range.startOffset);
+              sentence = extractSentence(plain, offset, current.text.length);
+            }
+          } catch {}
+        }
+        if (!sentence) sentence = current.text;
+        globalThis.readglossConceptPage?.saveLater({
+          name: current.text,
+          sentence,
+          anchor,
+        });
+        getSelection().removeAllRanges();
+        close();
+      });
       ui.copyBtn = button('복사', '번역문 복사', () => copy());
       const foot = el('div', 'foot');
-      foot.append(ui.ctxBtn, ui.saveBtn, ui.scrapBtn, ui.conceptBtn);
+      foot.append(ui.ctxBtn, ui.saveBtn, ui.scrapBtn, ui.conceptBtn, ui.laterBtn);
       const key = core.mydictKey(text); // 키 규칙에 안 맞는 선택(너무 길거나 허용 밖 글자)은 [내 사전에 추가] 를 숨긴다
       if (key) {
         ui.md = createMydict({

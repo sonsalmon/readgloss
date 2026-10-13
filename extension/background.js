@@ -188,7 +188,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function concepts(msg, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
-  const { op, id, name, aliases, definition, related, task, scrapId } = msg;
+  const { op, id, name, aliases, definition, related, task, scrapId, seen } = msg;
   let path = '/concepts';
   let init;
   if (op === 'names') {
@@ -200,7 +200,7 @@ async function concepts(msg, retried = false) {
     init = {
       method: 'POST',
       headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ op, id, name, aliases, definition, related, task, scrapId }),
+      body: JSON.stringify({ op, id, name, aliases, definition, related, task, scrapId, seen }),
     };
   }
   const res = await bridgeFetch(path, init);
@@ -214,6 +214,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id || msg?.type !== 'concepts') return;
   concepts(msg).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
   return true; // 비동기 응답
+});
+
+// --- URL 열기: 지금 탭 주소 갱신 (개념 상세 "본 곳" 클릭 등) ---
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'open-url') return;
+  const { url } = msg;
+  if (!url || sender.tab?.id == null) {
+    sendResponse({ error: 'invalid-url' });
+    return;
+  }
+  chrome.tabs.update(sender.tab.id, { url });
+  sendResponse({ ok: true });
+  return true;
 });
 
 // --- 스크랩 점프(T25): 다른 페이지 스크랩으로 이동할 때 session storage 에 pendingScrap 저장 후 탭 주소 갱신 ---
