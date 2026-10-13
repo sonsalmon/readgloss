@@ -23,6 +23,7 @@ import { createScraps, normalizeUrl, parseScrapOp, scrapId } from './scraps.mjs'
 import { guessTask, lastTaskToday, loadLearning } from './task-guess.mjs';
 import { dateOf } from '../scripts/export-day.mjs';
 import { openDb, migrateJson } from './db.mjs';
+import { createConcepts, parseConceptOp } from './concepts.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
@@ -87,13 +88,20 @@ function sendAiError(res, e, cors) {
 // ask({word, sentence, context?}) / askTranslate(문단, 용어 지정 목록) / askContext(프롬프트 문자열) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
 export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), dbFile = join(dirname(cacheFile), 'readgloss.db'), learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
   const dataDir = dirname(cacheFile);
-  const rawDb = openDb(dbFile);
-  const migration = migrateJson({ db: rawDb, dataDir, now });
+  // db 를 못 열거나 옮기기가 실패하면 JSON 으로 계속 돈다(변경 기록 11-2).
+  let rawDb = null;
+  let migration;
+  try {
+    rawDb = openDb(dbFile);
+    migration = migrateJson({ db: rawDb, dataDir, now });
+  } catch (e) {
+    migration = { ok: false, error: e?.message ?? String(e) };
+  }
   let db = null;
   if (!migration.ok) {
     console.error(`이전 실패: ${migration.error}`);
     try {
-      rawDb.close();
+      rawDb?.close();
     } catch {}
   } else {
     db = rawDb;
@@ -109,6 +117,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
   const mydict = db ? createMydict({ db, now }) : createMydict({ file: mydictFile, now });
   const study = createStudy({ file: studyFile, now });
   const scraps = db ? createScraps({ db, now }) : createScraps({ file: scrapsFile, now });
+  const concepts = db ? createConcepts({ db, now, learning: () => loadLearning(learningDir) }) : null;
   const levels = loadWordLevels();
   const annotate = createAnnotate({ dict, levels, isKnown: words.isKnown, glossary, mydict });
   const mine = `chrome-extension://${extensionId}`;
@@ -367,6 +376,28 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     send(res, 200, { scraps: out }, cors);
   }
 
+  // 개념: GET -> { concepts }, GET ?names=1 -> { terms }, POST op save|remove|link
+  async function handleConcepts(req, res, cors) {
+    if (!db || !concepts) return send(res, 503, { error: 'no-db' }, cors);
+    if (req.method === 'GET') {
+      const u = new URL(req.url, 'http://x');
+      if (u.searchParams.get('names') === '1') {
+        return send(res, 200, { terms: concepts.terms() }, cors);
+      }
+      return send(res, 200, { concepts: concepts.list() }, cors);
+    }
+    const { value, status } = await readJson(req, MAX_WORDS_BODY);
+    if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+    const op = parseConceptOp(value);
+    if (!op) return send(res, 400, { error: 'bad-request' }, cors);
+    const out = concepts.apply(op);
+    if (!out) return send(res, 404, { error: 'not-found' }, cors);
+    if (out.error === 'exists') return send(res, 409, { error: 'exists', id: out.id }, cors);
+    if (op.op === 'save' || op.op === 'link') return send(res, 200, { concept: out }, cors);
+    if (op.op === 'remove') return send(res, 200, { ok: true }, cors);
+    return send(res, 200, out, cors);
+  }
+
   async function handle(req, res) {
     // 1. Host 가 고정값이 아니면 거절. 2. Origin 이 있는데 내 확장이 아니면 거절(토큰 유무와 무관).
     if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, { error: 'forbidden' });
@@ -429,6 +460,10 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     if (path === '/scraps') {
       if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleScraps(req, res, cors);
+    }
+    if (path === '/concepts') {
+      if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleConcepts(req, res, cors);
     }
     if (path === '/translate') {
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);

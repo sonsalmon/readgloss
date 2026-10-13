@@ -13,6 +13,7 @@
     "export:pending": "node scripts/export-pending.mjs",
     "export:mark": "node scripts/export-mark.mjs",
     "export:scraps": "node scripts/export-scraps.mjs",
+    "export:concepts": "node scripts/export-concepts.mjs",
     "scraps": "node scripts/scraps-cli.mjs"
   }
 }

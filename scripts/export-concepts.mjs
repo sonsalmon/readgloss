@@ -1,0 +1,124 @@
+// scripts/export-concepts.mjs
+// 개념 문서를 대상 폴더에 내보낸다.
+// 사용: node scripts/export-concepts.mjs --to <폴더> [--data <폴더(기본 data/)>] [--learning <폴더>]
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { openDb } from '../bridge/db.mjs';
+import { createConcepts } from '../bridge/concepts.mjs';
+import { loadLearning } from '../bridge/task-guess.mjs';
+import { HEADER_COMMENT, slugifyPage, writeIfChanged } from './export-scraps.mjs';
+
+// 개념 목록 -> Map<상대경로, 내용>
+export function renderConceptDocs(concepts) {
+  const docs = new Map();
+  const usedSlugs = new Set();
+  const conceptsWithSlug = [];
+
+  for (const c of concepts) {
+    const baseSlug = slugifyPage(c.name);
+    let slug = baseSlug;
+    for (let n = 2; usedSlugs.has(slug); n++) {
+      const suffix = `-${n}`;
+      slug = `${baseSlug.slice(0, 80 - suffix.length).replace(/-+$/, '')}${suffix}`;
+    }
+    usedSlugs.add(slug);
+    conceptsWithSlug.push({ ...c, slug });
+  }
+
+  // 개념 id/name -> slug 매핑 테이블 생성 (related 링크 연결용)
+  const slugByConcept = new Map();
+  for (const c of conceptsWithSlug) {
+    if (c.id) slugByConcept.set(c.id, c.slug);
+    if (c.name) slugByConcept.set(c.name.toLowerCase(), c.slug);
+  }
+
+  for (const c of conceptsWithSlug) {
+    const lines = [HEADER_COMMENT, '', `# ${c.name}`, ''];
+
+    // 별칭 (있을 때만)
+    if (Array.isArray(c.aliases) && c.aliases.length > 0) {
+      lines.push(`별칭: ${c.aliases.join(', ')}`, '');
+    }
+
+    // 정의 문단
+    if (c.definition) {
+      lines.push(c.definition, '');
+    }
+
+    // 관련: [[<다른 개념 파일 이름>]]
+    if (Array.isArray(c.related) && c.related.length > 0) {
+      const links = [];
+      for (const r of c.related) {
+        const targetName = r.name || r;
+        const targetSlug =
+          slugByConcept.get(r.id) ||
+          slugByConcept.get(typeof targetName === 'string' ? targetName.toLowerCase() : '') ||
+          slugifyPage(targetName);
+        links.push(`[[${targetSlug}]]`);
+      }
+      lines.push(`관련: ${links.join(', ')}`, '');
+    }
+
+    // ## 나온 곳
+    // - <할 일 제목> · [[../scraps/<할일>/<페이지 파일 이름>]] — "<exact 앞 80자>"
+    if (Array.isArray(c.appears) && c.appears.length > 0) {
+      lines.push('## 나온 곳', '');
+      for (const app of c.appears) {
+        const taskTitle = app.taskTitle || (app.task ? app.task : '인박스');
+        const pageSlug = slugifyPage(app.title || 'page');
+        const pageLink = app.task ? `../scraps/${app.task}/${pageSlug}` : '../scraps/inbox';
+        const exact80 = (app.exact || '').slice(0, 80);
+        lines.push(`- ${taskTitle} · [[${pageLink}]] — "${exact80}"`);
+      }
+      lines.push('');
+    }
+
+    docs.set(`${c.slug}.md`, lines.join('\n').trimEnd() + '\n');
+  }
+
+  return docs;
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const args = process.argv.slice(2);
+  let toDir = null;
+  let dataDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
+  let learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career');
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--to' && args[i + 1]) {
+      toDir = resolve(args[++i]);
+    } else if (args[i] === '--data' && args[i + 1]) {
+      dataDir = resolve(args[++i]);
+    } else if (args[i] === '--learning' && args[i + 1]) {
+      learningDir = resolve(args[++i]);
+    } else {
+      console.error('사용: node scripts/export-concepts.mjs --to <폴더> [--data <폴더>] [--learning <폴더>]');
+      process.exit(2);
+    }
+  }
+
+  if (!toDir) {
+    console.error('오류: --to <폴더> 인자가 필수입니다.');
+    process.exit(2);
+  }
+
+  const dbFile = join(dataDir, 'readgloss.db');
+  if (!existsSync(dbFile)) {
+    console.error(`오류: db 파일이 없습니다 (${dbFile}).`);
+    process.exit(1);
+  }
+
+  const db = openDb(dbFile);
+  const learning = loadLearning(learningDir);
+  const conceptsModule = createConcepts({ db, learning });
+  const concepts = conceptsModule.list();
+  db.close();
+
+  const map = renderConceptDocs(concepts);
+  const { written, removed } = writeIfChanged(toDir, map);
+
+  console.log(`개념 문서 내보내기 완료: ${written.length}개 작성, ${removed.length}개 삭제 (${toDir})`);
+}
