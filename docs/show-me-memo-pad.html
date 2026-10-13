@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>메모장 설계</title>
+<style>
+:root{--bg:#fbfaf7;--fg:#222;--mut:#666;--card:#fff;--bd:#e3e0d8;--acc:#534AB7;--accbg:#EEEDFE}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1b1a;--fg:#eee;--mut:#aaa;--card:#252524;--bd:#3a3936;--acc:#AFA9EC;--accbg:#26215C}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Apple SD Gothic Neo",sans-serif}
+main{max-width:900px;margin:auto;padding:16px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:16px 0;overflow-x:auto}
+h1{font-size:22px}h2{font-size:18px;margin:0 0 8px}.mut{color:var(--mut);font-size:14px}
+table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-top:1px solid var(--bd);padding:6px;text-align:left;vertical-align:top}
+kbd{border:1px solid var(--bd);border-radius:4px;padding:0 5px;font-size:13px}
+.mock{display:grid;grid-template-columns:1fr 260px;gap:12px}
+@media(max-width:640px){.mock{grid-template-columns:1fr}}
+.page{border:1px solid var(--bd);border-radius:8px;padding:12px;font-size:14px;color:var(--mut);min-height:180px}
+.pad{border:1px solid var(--acc);border-radius:10px;padding:10px;font-size:13px;background:var(--card)}
+.pad .meta{background:var(--accbg);color:var(--acc);border-radius:6px;padding:6px;margin-bottom:8px;font-size:12px}
+.pad textarea{width:100%;box-sizing:border-box;height:70px;border:1px solid var(--bd);border-radius:6px;background:transparent;color:var(--fg);font:inherit}
+</style></head><body><main>
+<h1>메모장 (브라우저 안)</h1>
+<p class="mut">readgloss 다음 조각 · 2026-10-13 · 상태: 정범 확인 대기</p>
+
+<section><h2>1. 목표</h2>
+<ul>
+<li>정범이 웹 페이지에서 공부하면서 단축키로 메모한다.</li>
+<li>확장이 메모의 맥락을 자동으로 채운다. 정범은 맥락을 쓰지 않는다.</li>
+<li>정범이 단축키로 지난 메모를 본다. 메모를 누르면 그 페이지 그 자리로 간다.</li>
+</ul></section>
+
+<section><h2>2. 화면 (예시)</h2>
+<div class="mock">
+<div class="page">PortSwigger · Access control<br><br>…Vertical privilege escalation arises when a user can gain access to functionality that they are not permitted to access…</div>
+<div class="pad">
+<div class="meta">접근 통제 랩 › Access control › Vertical privilege escalation<br>portswigger.net · 지금 보는 문단 자동 기록</div>
+<textarea>관리자 기능을 일반 사용자가 쓰는 것 = 수직</textarea>
+<div class="mut">Enter 저장 · Shift+Enter 줄바꿈 · Esc 접기</div>
+</div></div>
+<p class="mut">메모장은 화면 오른쪽 아래에 뜬다. 페이지를 옮겨도 다시 뜬다(접기 전까지).</p></section>
+
+<section><h2>3. 단축키</h2>
+<table>
+<tr><th>키</th><th>하는 일</th></tr>
+<tr><td><kbd>⌥ M</kbd></td><td>메모장을 연다. 이미 열려 있으면 새 메모를 시작한다.</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>메모장을 접는다. 쓰던 글은 남는다.</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>메모를 저장한다. 빈 칸으로 새 메모가 준비된다.</td></tr>
+<tr><td><kbd>⌥ ⇧ M</kbd></td><td>지난 메모 목록을 연다. 이 페이지 메모가 맨 위다.</td></tr>
+</table>
+<p class="mut">키는 chrome://extensions/shortcuts 에서 바꿀 수 있다.</p></section>
+
+<section><h2>4. 확장이 자동으로 채우는 맥락</h2>
+<pre class="mermaid">
+flowchart LR
+  K["⌥M 누름"] --> C["맥락 모으기"]
+  C --> S["사이트·주소·제목"]
+  C --> H["지금 보는 소제목"]
+  C --> P["화면 가운데 문단 앞 300자<br/>+ 그 자리 기억(다시 찾기용)"]
+  C --> G["고른 글이 있으면 그 글"]
+  C --> T["지금 할 일 (짐작)"]
+  S & H & P & G & T --> M[("메모 = 점<br/>할 일·페이지와 선으로 이음")]
+</pre>
+<p>AI는 쓰지 않는다. 모두 페이지에서 바로 읽는다.</p></section>
+
+<section><h2>5. 메모가 가는 곳</h2>
+<pre class="mermaid">
+flowchart LR
+  Pad["메모장"] --> DB[("readgloss.db")]
+  DB --> List["⌥⇧M 지난 메모 목록"]
+  DB --> Book["스크랩북: 같은 페이지 아래에 메모도"]
+  DB -->|세션 따라잡기| Doc["학습 폴더 scraps/할일/페이지.md<br/>'메모' 소제목 아래"]
+</pre></section>
+
+<section><h2>6. 만드는 순서</h2>
+<p>메모는 새 저장소(readgloss.db)에 들어간다. 그래서 "내 개념" 작업 1·2(db) 다음에 만든다.</p>
+<pre class="mermaid">
+flowchart LR
+  A["T26 db"] --> B["T27 개념 저장"] --> C["T28 개념 화면"]
+  A --> M["T29 메모장"]
+</pre>
+<p class="mut">T29는 T26이 끝나면 T27·T28과 따로 진행할 수 있다.</p></section>
+
+<section><h2>7. 이번에 하지 않는 것</h2>
+<ul>
+<li>맥 전체(다른 앱, 전체 화면)에서 뜨는 메모장. → 브라우저 안 메모장을 써 본 뒤 정한다.</li>
+<li>스크린샷 끌어 넣기.</li>
+<li>메모를 AI로 정리하기. → 세션 끝에 에이전트가 한다.</li>
+</ul></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'default'});</script>
+</body></html>
