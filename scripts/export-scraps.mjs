@@ -66,11 +66,18 @@ export function pageFileNames(scraps, memos = []) {
 }
 
 // 메모 한 개를 목록 항목 줄들로: 첫 줄은 "- 글 (날짜)", 다음 줄은 들여써서 같은 항목 안에 둔다.
+// 인용이 있으면 맨 앞에 "- > 인용"(앞 200자, 한 줄)을 두고, 글이 없으면 그 줄 끝에 날짜를 쓴다.
 // 줄 맨 앞의 # · > - 는 마크다운 제목·인용·목록으로 읽히지 않게 \ 를 붙인다.
 function memoItemLines(m) {
   const d = dateOf(m.ts);
-  const [first, ...rest] = String(m.text ?? '').split('\n').map((l) => l.replace(/^(\s*)([#>-])/, '$1\\$2'));
-  return [`- ${first} (${d})`, ...rest.map((l) => `  ${l}`)];
+  const esc = (l) => l.replace(/^(\s*)([#>-])/, '$1\\$2');
+  const exact = Array.from(String(m.quote?.exact ?? '').replace(/\s+/g, ' ').trim()).slice(0, 200).join('');
+  const quote = exact ? `> ${esc(exact)}` : '';
+  const hasText = String(m.text ?? '').trim().length > 0;
+  const [first, ...rest] = String(m.text ?? '').split('\n').map(esc);
+  if (!quote) return [`- ${first} (${d})`, ...rest.map((l) => `  ${l}`)];
+  if (!hasText) return [`- ${quote} (${d})`];
+  return [`- ${quote}`, `  ${first} (${d})`, ...rest.map((l) => `  ${l}`)];
 }
 
 // 스크랩 목록과 할 일 매핑 -> Map<상대경로, 내용>

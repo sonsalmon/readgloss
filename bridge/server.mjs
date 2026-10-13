@@ -430,7 +430,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     if (!out) return send(res, 404, { error: 'not-found' }, cors);
     if (op.op === 'save') {
       try {
-        study.record({ kind: 'memo', text: op.text, url: op.url });
+        study.record({ kind: 'memo', text: op.text || op.quote?.exact, url: op.url });
       } catch {
         // 기록 실패는 무시
       }

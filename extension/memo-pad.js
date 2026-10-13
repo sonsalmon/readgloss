@@ -1105,8 +1105,9 @@
     }
   }
 
-  // 현재 활성 칸 스타일 및 포커스 적용
-  function applyActiveSection(moveCaret = true) {
+  // 현재 활성 칸 스타일 및 포커스 적용. force 는 입력 직후 제한을 무시한다(칸을 다시 그린 뒤).
+  // 페이지 입력칸에 커서가 있으면 force 여도 커서를 옮기지 않는다(메모장 화면 스크롤만).
+  function applyActiveSection(moveCaret = true, force = false) {
     if (!shadow || !isOpen || currentMode !== 'pad') return;
     const sections = shadow.querySelectorAll('.sec');
     for (const sec of sections) {
@@ -1122,8 +1123,9 @@
     if (moveCaret && activeEl) {
       const memoCore = globalThis.readglossMemo;
       const now = Date.now();
-      const allowMove = memoCore?.shouldMoveCaret ? memoCore.shouldMoveCaret(lastTypedAt, now) : (now - lastTypedAt >= 1500);
-      if (allowMove) {
+      const allowMove = force || (memoCore?.shouldMoveCaret ? memoCore.shouldMoveCaret(lastTypedAt, now) : (now - lastTypedAt >= 1500));
+      const pageFieldFocused = memoCore?.isPageField ? memoCore.isPageField(document.activeElement) : false;
+      if (allowMove && !pageFieldFocused) {
         const ta = activeEl.querySelector('.sec-textarea');
         if (ta) {
           ta.focus();
@@ -1168,7 +1170,8 @@
     const newContainer = shadow.querySelector('.sections-container');
     if (newContainer) newContainer.scrollTop = prevScrollTop;
 
-    applyActiveSection(false);
+    // 다시 그리면 커서가 사라지므로 쓰는 칸에 다시 넣는다(같은 칸이어도)
+    applyActiveSection(true, true);
   }
 
   // 소제목 목록 변경 감지 (h1~h3 개수가 바뀔 때만, 500ms 묶음)
@@ -1321,22 +1324,6 @@
         }, 200);
       });
 
-      ta.addEventListener('keydown', (e) => {
-        const action = memoCore?.padKeyV2 ? memoCore.padKeyV2(e) : null;
-        if (action === 'save') {
-          e.preventDefault();
-          performSave(s.key, ta);
-        } else if (action === 'newline') {
-          setTimeout(() => autoResize(ta), 0);
-        } else if (action === 'fold') {
-          e.preventDefault();
-          closePad();
-        } else if (e.altKey && e.shiftKey && e.code === 'KeyM') {
-          e.preventDefault();
-          openListUI(root);
-        }
-      });
-
       sec.append(ta);
       sectionsContainer.append(sec);
     }
@@ -1344,6 +1331,24 @@
     const info = document.createElement('div');
     info.className = 'mut';
     info.textContent = '⌘Enter 저장 · Enter 줄바꿈 · Esc·⌥M 접기 · ⌥⇧M 지난 메모';
+
+    // ⌘Enter 저장 · Esc 접기 · ⌥⇧M 목록: 메모장 안 어디에 포커스가 있어도 동작한다. 칸 밖이면 지금 칸 글을 쓴다.
+    box.addEventListener('keydown', (e) => {
+      const action = memoCore?.padKeyV2 ? memoCore.padKeyV2(e) : null;
+      const key = e.target?.closest?.('.sec')?.dataset?.key || currentActiveKey;
+      if (action === 'save') {
+        e.preventDefault();
+        performSave(key, box.querySelector(`.sec[data-key="${CSS.escape(key)}"] .sec-textarea`));
+      } else if (action === 'newline') {
+        if (e.target?.classList?.contains('sec-textarea')) setTimeout(() => autoResize(e.target), 0);
+      } else if (action === 'fold') {
+        e.preventDefault();
+        closePad();
+      } else if (e.altKey && e.shiftKey && e.code === 'KeyM') {
+        e.preventDefault();
+        openListUI(root);
+      }
+    });
 
     box.append(meta, sectionsContainer, info, createResizeHandle());
     root.append(style, box);
@@ -1432,7 +1437,7 @@
         infoText.className = 'memo-info';
         const dateStr = memoCore?.formatDateMD ? memoCore.formatDateMD(m.ts) : '';
         const titleStr = m.title || m.url || '';
-        const preview = memoCore?.previewText ? memoCore.previewText(m.text, 80) : m.text.slice(0, 80);
+        const preview = memoCore?.previewText ? memoCore.previewText(m.text || m.quote?.exact || '', 80) : (m.text || '').slice(0, 80);
         infoText.textContent = `${dateStr} · ${titleStr} · ${preview}`;
         infoText.onclick = () => jumpToMemo(m);
 
@@ -1530,13 +1535,13 @@
     renderPadUI(root);
     saveDrafts();
 
-    // 초기 활성 칸 계산 및 스크롤/포커스
+    // 초기 활성 칸 계산 및 스크롤/포커스. 칸 키가 그대로여도 쓰는 칸에 커서를 넣는다.
     if (targetSectionKey) {
       lastTypedAt = 0;
-      applyActiveSection(true);
     } else {
-      updateActiveSection(true);
+      updateActiveSection(false);
     }
+    applyActiveSection(true, true);
 
     // 열 때 다리 GET /memos?url= 로 메모 불러오기
     chrome.runtime.sendMessage({ type: 'memos', op: 'get', url: location.href }, (res) => {

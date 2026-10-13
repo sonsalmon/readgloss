@@ -226,7 +226,15 @@
     return null;
   }
 
-  // width 260~640, height 200~vh-40로 자르고, 창이 화면 안에 최소 40px 보이게 left·top을 당긴다(왼쪽 위 0 이상, 오른쪽·아래로 넘어가면 안쪽으로).
+  // 페이지의 입력칸(input·textarea·select·편집 영역)인지. 메모장이 커서를 빼앗지 않을지 가릴 때 쓴다.
+  function isPageField(el) {
+    if (!el || typeof el !== 'object') return false;
+    if (el.isContentEditable === true) return true;
+    return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT';
+  }
+
+  // width 260~640, height 200~vh-40로 자르고, 창 전체가 화면 안에 들어오게 left·top을 당긴다(0 이상, 오른쪽·아래는 화면 - 창 크기까지).
+  // 창이 화면보다 크면 상한이 먼저 줄어든다(화면 밖으로 나가지 않게).
   function clampRect(rect, viewport) {
     const vw = viewport && typeof viewport.vw === 'number' && Number.isFinite(viewport.vw) ? viewport.vw : 0;
     const vh = viewport && typeof viewport.vh === 'number' && Number.isFinite(viewport.vh) ? viewport.vh : 0;
@@ -236,12 +244,11 @@
     const rawL = rect && typeof rect.left === 'number' && Number.isFinite(rect.left) ? rect.left : 0;
     const rawT = rect && typeof rect.top === 'number' && Number.isFinite(rect.top) ? rect.top : 0;
 
-    const width = Math.max(260, Math.min(640, rawW));
-    const maxH = Math.max(200, vh - 40);
-    const height = Math.max(200, Math.min(maxH, rawH));
+    const width = Math.min(Math.max(260, Math.min(640, rawW)), vw > 0 ? vw : Infinity);
+    const height = Math.min(Math.max(200, Math.min(vh - 40, rawH)), vh > 0 ? vh : Infinity);
 
-    const maxLeft = Math.max(0, vw - 40);
-    const maxTop = Math.max(0, vh - 40);
+    const maxLeft = Math.max(0, vw - width);
+    const maxTop = Math.max(0, vh - height);
 
     const left = Math.max(0, Math.min(rawL, maxLeft));
     const top = Math.max(0, Math.min(rawT, maxTop));
@@ -275,6 +282,7 @@
     shouldMoveCaret,
     padKeyV2,
     clampRect,
+    isPageField,
     canSave,
   };
 })();

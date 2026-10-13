@@ -314,7 +314,7 @@ chrome.action.onClicked.addListener((tab) => {
 async function memos(msg, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
-  const { op, url, id, text, title, headings, para, pos, selection, task, page } = msg;
+  const { op, url, id, text, title, headings, para, pos, selection, task, page, quote } = msg;
   let path = '/memos';
   let init;
   if (op === 'get') {
@@ -324,7 +324,7 @@ async function memos(msg, retried = false) {
     init = {
       method: 'POST',
       headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ op, url, id, text, title, headings, para, pos, selection, task, page }),
+      body: JSON.stringify({ op, url, id, text, title, headings, para, pos, selection, task, page, quote }),
     };
   }
   const res = await bridgeFetch(path, init);
