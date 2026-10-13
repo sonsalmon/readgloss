@@ -1,8 +1,196 @@
 // 메모장(T29b): 브라우저 안 메모장 UI 및 동작 접착.
-// Shadow DOM host: readgloss-memo-pad, 화면 오른쪽 아래 고정(가로 320px).
+// Shadow DOM host: readgloss-memo-pad, 화면 오른쪽 아래(기본 320x360) 또는 기억된 위치.
 (() => {
   const HOST_TAG = 'readgloss-memo-pad';
   const FLASH_NAME = 'readgloss-scrap-flash';
+  const DEFAULT_WIDTH = 320;
+  const DEFAULT_HEIGHT = 360;
+  const MARGIN = 24;
+
+  function getDefaultRect() {
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+    const left = Math.max(0, vw - DEFAULT_WIDTH - MARGIN);
+    const top = Math.max(0, vh - DEFAULT_HEIGHT - MARGIN);
+    return { left, top, width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT };
+  }
+
+  let currentRect = getDefaultRect();
+
+  function applyRect(rect) {
+    if (!rect) return;
+    const memoCore = globalThis.readglossMemo;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+    const clamped = memoCore?.clampRect ? memoCore.clampRect(rect, { vw, vh }) : rect;
+    currentRect = clamped;
+    if (host) {
+      host.style.position = 'fixed';
+      host.style.left = `${clamped.left}px`;
+      host.style.top = `${clamped.top}px`;
+      host.style.width = `${clamped.width}px`;
+      host.style.height = `${clamped.height}px`;
+      host.style.right = 'auto';
+      host.style.bottom = 'auto';
+    }
+  }
+
+  function finalizeRect() {
+    const memoCore = globalThis.readglossMemo;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+    const clamped = memoCore?.clampRect ? memoCore.clampRect(currentRect, { vw, vh }) : currentRect;
+    applyRect(clamped);
+    if (chrome?.storage?.local?.set) {
+      chrome.storage.local.set({ memoPadRect: clamped });
+    }
+  }
+
+  function loadAndApplyRect(callback) {
+    if (chrome?.storage?.local?.get) {
+      chrome.storage.local.get(['memoPadRect'], (items) => {
+        if (!chrome.runtime?.lastError && items?.memoPadRect) {
+          applyRect(items.memoPadRect);
+        } else {
+          applyRect(currentRect || getDefaultRect());
+        }
+        if (typeof callback === 'function') callback();
+      });
+    } else {
+      applyRect(currentRect || getDefaultRect());
+      if (typeof callback === 'function') callback();
+    }
+  }
+
+  function attachDragHandle(metaEl) {
+    if (!metaEl) return;
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startLeft = 0;
+    let startTop = 0;
+
+    metaEl.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      startLeft = currentRect.left;
+      startTop = currentRect.top;
+      try {
+        metaEl.setPointerCapture(e.pointerId);
+      } catch {}
+      document.documentElement.style.userSelect = 'none';
+    });
+
+    metaEl.addEventListener('pointermove', (e) => {
+      if (!isDragging) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      applyRect({
+        left: startLeft + dx,
+        top: startTop + dy,
+        width: currentRect.width,
+        height: currentRect.height,
+      });
+    });
+
+    const onPointerUp = (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+      e.stopPropagation();
+      try {
+        metaEl.releasePointerCapture(e.pointerId);
+      } catch {}
+      document.documentElement.style.userSelect = '';
+      finalizeRect();
+    };
+
+    metaEl.addEventListener('pointerup', onPointerUp);
+    metaEl.addEventListener('pointercancel', onPointerUp);
+
+    for (const evt of ['mousedown', 'mousemove', 'mouseup', 'click']) {
+      metaEl.addEventListener(evt, (e) => e.stopPropagation());
+    }
+  }
+
+  function createResizeHandle() {
+    const handle = document.createElement('div');
+    handle.className = 'resize-handle';
+    handle.textContent = '◢';
+    handle.setAttribute('aria-label', '크기 조절');
+
+    let isResizing = false;
+    let startX = 0;
+    let startY = 0;
+    let startW = 0;
+    let startH = 0;
+
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      isResizing = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      startW = currentRect.width;
+      startH = currentRect.height;
+      try {
+        handle.setPointerCapture(e.pointerId);
+      } catch {}
+      document.documentElement.style.userSelect = 'none';
+    });
+
+    handle.addEventListener('pointermove', (e) => {
+      if (!isResizing) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      applyRect({
+        left: currentRect.left,
+        top: currentRect.top,
+        width: startW + dx,
+        height: startH + dy,
+      });
+    });
+
+    const onPointerUp = (e) => {
+      if (!isResizing) return;
+      isResizing = false;
+      e.stopPropagation();
+      try {
+        handle.releasePointerCapture(e.pointerId);
+      } catch {}
+      document.documentElement.style.userSelect = '';
+      finalizeRect();
+    };
+
+    handle.addEventListener('pointerup', onPointerUp);
+    handle.addEventListener('pointercancel', onPointerUp);
+
+    for (const evt of ['mousedown', 'mousemove', 'mouseup', 'click']) {
+      handle.addEventListener(evt, (e) => e.stopPropagation());
+    }
+
+    return handle;
+  }
+
+  let resizeDebounceTimer = 0;
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeDebounceTimer);
+      resizeDebounceTimer = setTimeout(() => {
+        if (isOpen && host) {
+          applyRect(currentRect);
+        }
+      }, 200);
+    });
+  }
 
   let host = null;
   let shadow = null;
@@ -23,9 +211,6 @@
     :host {
       all: initial;
       position: fixed;
-      right: 24px;
-      bottom: 24px;
-      width: 320px;
       z-index: 2147483646;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple SD Gothic Neo", sans-serif;
       font-size: 13px;
@@ -55,6 +240,7 @@
       }
     }
     .pad-box {
+      position: relative;
       background: var(--card);
       color: var(--fg);
       border: 1px solid var(--acc);
@@ -64,6 +250,9 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
+      box-sizing: border-box;
+      width: 100%;
+      height: 100%;
     }
     .meta {
       background: var(--accbg);
@@ -77,6 +266,13 @@
       display: flex;
       align-items: center;
       transition: background 0.15s, color 0.15s;
+      cursor: grab;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+    .meta:active {
+      cursor: grabbing;
     }
     .meta.success {
       background: #e6f4ea;
@@ -96,7 +292,6 @@
       width: 100%;
       box-sizing: border-box;
       min-height: 74px;
-      max-height: 220px;
       border: 1px solid var(--bd);
       border-radius: 6px;
       background: transparent;
@@ -105,8 +300,9 @@
       font-size: 13px;
       line-height: 1.5;
       padding: 6px 8px;
-      resize: vertical;
+      resize: none;
       outline: none;
+      flex: 1;
     }
     .pad-textarea:focus {
       border-color: var(--acc);
@@ -116,6 +312,7 @@
       font-size: 11.5px;
       user-select: none;
       word-break: keep-all;
+      padding-right: 16px;
     }
     .header-row {
       display: flex;
@@ -154,7 +351,8 @@
       color: var(--danger);
     }
     .list-container {
-      max-height: 280px;
+      flex: 1;
+      min-height: 0;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
@@ -189,6 +387,28 @@
       padding: 24px 8px;
       font-size: 12.5px;
     }
+    .resize-handle {
+      position: absolute;
+      right: 2px;
+      bottom: 2px;
+      width: 14px;
+      height: 14px;
+      font-size: 11px;
+      line-height: 14px;
+      text-align: center;
+      color: var(--mut);
+      cursor: nwse-resize;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+    }
+    .resize-handle:hover {
+      color: var(--acc);
+    }
     .toast-notice {
       position: absolute;
       top: -36px;
@@ -216,6 +436,7 @@
       host = document.createElement(HOST_TAG);
       shadow = host.attachShadow({ mode: 'open' });
       document.documentElement.append(host);
+      applyRect(currentRect);
     }
     return shadow;
   }
@@ -485,6 +706,7 @@
     const meta = document.createElement('div');
     meta.className = 'meta';
     meta.textContent = buildMetaText();
+    attachDragHandle(meta);
 
     const ta = document.createElement('textarea');
     ta.className = 'pad-textarea';
@@ -499,13 +721,17 @@
 
     ta.addEventListener('keydown', (e) => {
       const memoCore = globalThis.readglossMemo;
-      const action = memoCore?.padKey ? memoCore.padKey(e) : null;
+      const action = memoCore?.padKeyV2 ? memoCore.padKeyV2(e) : null;
 
       if (action === 'save') {
         e.preventDefault();
-        performSave();
+        const canSaveFn = memoCore?.canSave;
+        const allowable = canSaveFn ? canSaveFn(ta.value, null) : Boolean(ta.value.trim());
+        if (allowable) {
+          performSave();
+        }
       } else if (action === 'newline') {
-        // Shift+Enter 는 기본 줄바꿈 허용
+        // 기본 동작(줄바꿈) 그대로 두고 아무것도 안 함
       } else if (action === 'fold') {
         e.preventDefault();
         closePad();
@@ -524,9 +750,9 @@
 
     const info = document.createElement('div');
     info.className = 'mut';
-    info.textContent = 'Enter 저장 · Shift+Enter 줄바꿈 · Esc 접기 · ⌥⇧M 지난 메모';
+    info.textContent = '⌘Enter 저장 · Enter 줄바꿈 · Esc·⌥M 접기 · ⌥⇧M 지난 메모';
 
-    box.append(meta, ta, info);
+    box.append(meta, ta, info, createResizeHandle());
     root.append(style, box);
 
     // 포커스
@@ -574,7 +800,7 @@
     listContainer.className = 'list-container';
     listContainer.textContent = '불러오는 중…';
 
-    box.append(header, listContainer);
+    box.append(header, listContainer, createResizeHandle());
     root.append(style, box);
 
     // ⌥⇧M 직후 목록에 포커스를 줌 (Esc가 바로 동작)
@@ -665,6 +891,7 @@
   // 메모장 열기
   function openPad(initialText) {
     isOpen = true;
+    loadAndApplyRect();
     savedSelection = window.getSelection()?.toString()?.trim()?.slice(0, 1000) || null;
     fetchTaskGuess();
     const root = ensureHost();
@@ -695,6 +922,7 @@
       if (ta) currentDraft = ta.value;
     }
     isOpen = true;
+    loadAndApplyRect();
     const root = ensureHost();
     openListUI(root);
     chrome.runtime.sendMessage({ type: 'memo-state-set', open: true, text: currentDraft });
@@ -734,12 +962,10 @@
     const cmd = msg.cmd;
 
     if (cmd === 'memo-open') {
-      if (isOpen && currentMode === 'pad') {
-        performSave(); // 성공하면 performSave 가 글을 비우고, 실패하면 글을 그대로 둔다
-      } else if (isOpen && currentMode === 'list') {
-        if (shadow) renderPadUI(shadow, currentDraft);
+      if (isOpen) {
+        closePad();
       } else {
-        openPad();
+        openPad(currentDraft);
       }
     } else if (cmd === 'memo-list') {
       openList();
@@ -748,6 +974,7 @@
 
   // 초기화
   function initMemoPad() {
+    loadAndApplyRect();
     checkPendingMemoOnLoad();
     restoreStateOnLoad();
   }
