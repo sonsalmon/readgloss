@@ -1,6 +1,6 @@
 // bridge/concepts.mjs
 // 내 개념 저장소: SQLite db(nodes, edges)를 이용한 개념 점·선 관리.
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { TASK_RE, SCRAP_ID_RE } from './scraps.mjs';
 
 export const CONCEPT_ID_RE = /^c_[0-9a-f]{12}$/;
@@ -218,10 +218,9 @@ export function createConcepts({ db, now = Date.now, learning }) {
     if (op.op === 'save') {
       const key = conceptKey(op.name);
       if (!key) return null;
-      const computedId = conceptId(op.name);
 
       const existingByKey = db.byKey('concept', key);
-      let targetId = op.id || computedId;
+      let targetId = op.id || null;
 
       if (op.id) {
         // 수정 모드: 없는 id면 null
@@ -239,6 +238,7 @@ export function createConcepts({ db, now = Date.now, learning }) {
         if (existingByKey) {
           return { error: 'exists', id: existingByKey.id };
         }
+        targetId = 'c_' + randomBytes(6).toString('hex');
       }
 
       const existingNode = db.get(targetId);

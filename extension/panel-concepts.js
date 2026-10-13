@@ -244,7 +244,7 @@
   let pendingOpenConceptId = null;
   let rerenderCurrentTab = null;
 
-  // 패널 열기 시 conceptId 전달 받음
+  // 패널 열기 시 conceptId 전달 받음. panel.js 의 open-panel 리스너보다 먼저 와야 막 열린 패널이 이 id 를 놓치지 않는다(capture).
   window.addEventListener('readgloss:open-panel', (e) => {
     if (e.detail?.conceptId) {
       pendingOpenConceptId = e.detail.conceptId;
@@ -252,13 +252,15 @@
         rerenderCurrentTab(pendingOpenConceptId);
       }
     }
-  });
+  }, { capture: true });
 
   function render(pane) {
     let conceptsList = [];
-    let currentView = 'list'; // 'list' | 'detail'
-    let selectedConceptId = pendingOpenConceptId || null;
+    let isLoading = true; // 목록을 받는 중이면 상세 대신 "불러오는 중"을 보인다
+    let targetConceptId = pendingOpenConceptId || null; // 열어 달라고 받은 id: 목록을 받은 뒤 상세로 연다
     pendingOpenConceptId = null;
+    let selectedConceptId = targetConceptId;
+    let currentView = targetConceptId ? 'detail' : 'list'; // 'list' | 'detail'
     let searchQuery = '';
     let statusMsg = '';
     let isError = false;
@@ -275,7 +277,8 @@
     }
 
     async function loadConcepts() {
-      const res = await send({ type: 'concepts', op: 'get' });
+      isLoading = true;
+      let res = await send({ type: 'concepts', op: 'get' });
       if (res && Array.isArray(res.concepts)) {
         conceptsList = res.concepts;
         // 이름순 정렬
@@ -283,14 +286,35 @@
       } else {
         conceptsList = [];
       }
+
+      // 열 id가 목록에 없으면(방금 만든 개념) 한 번 더 받아 온 뒤 상세를 그린다
+      const openId = targetConceptId;
+      if (openId && !conceptsList.some((c) => c.id === openId)) {
+        res = await send({ type: 'concepts', op: 'get' });
+        if (res && Array.isArray(res.concepts)) {
+          conceptsList = res.concepts;
+          conceptsList.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        }
+      }
+
+      isLoading = false;
+      targetConceptId = null;
+
+      if (openId && conceptsList.some((c) => c.id === openId)) {
+        selectedConceptId = openId;
+        currentView = 'detail';
+      }
       draw();
     }
 
     rerenderCurrentTab = (conceptId) => {
+      targetConceptId = conceptId;
       selectedConceptId = conceptId;
       currentView = 'detail';
       statusMsg = '';
-      draw();
+      isLoading = true;
+      draw(); // 목록을 받는 동안 "불러오는 중"
+      loadConcepts();
     };
 
     function draw() {
@@ -389,9 +413,19 @@
 
     // --- 상세 화면 ---
     function renderDetailView(parent) {
+      // 목록을 아직 못 받았으면 목록 화면으로 되돌리지 말고 "불러오는 중"을 보인다.
+      if (isLoading) {
+        const loading = document.createElement('div');
+        loading.className = 'concepts-empty';
+        loading.textContent = '개념을 불러오는 중…';
+        parent.append(loading);
+        return;
+      }
+
       const concept = conceptsList.find((c) => c.id === selectedConceptId);
       if (!concept) {
         currentView = 'list';
+        selectedConceptId = null;
         renderListView(parent);
         return;
       }
@@ -405,6 +439,7 @@
       backBtn.textContent = '← 목록';
       backBtn.onclick = () => {
         currentView = 'list';
+        targetConceptId = null; // 로딩 중에 누르면 열 예정이던 상세로 되돌아가지 않게
         selectedConceptId = null;
         statusMsg = '';
         draw();
@@ -668,6 +703,7 @@
       }
     }
 
+    if (currentView === 'detail') draw(); // 상세로 열 때는 바로 "불러오는 중"을 보인다
     loadConcepts();
   }
 

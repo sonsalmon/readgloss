@@ -100,9 +100,10 @@
     return out;
   }
 
-  // 패널 위에 뜬 사전 카드(content.js 의 readgloss-card, 저장된 문장에서 더블클릭해 연 것)나 확인 메시지(readgloss-toast)를 눌러도 패널은 닫지 않는다.
+  // 패널 위에 뜬 사전 카드(content.js 의 readgloss-card, 저장된 문장에서 더블클릭해 연 것), 확인 메시지(readgloss-toast), 개념 칸(readgloss-concept-form), 개념 카드(readgloss-concept-card)를 눌러도 패널은 닫지 않는다.
   const isCardPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-card');
   const isToastPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-toast');
+  const isConceptPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-concept-form' || n?.localName === 'readgloss-concept-card');
 
   // 전체 번역 퀵 메뉴 문구. 전체 번역의 상태만 보고 정한다(손으로 번역한 문단은 메뉴 상태에 영향을 주지 않는다).
   // running -> 진행 중·멈추기, 한 번 돌리고 아직 안 걷음(started) -> 걷기, 그 밖 -> 시작. blocked 면 잠깐 안내.
@@ -125,6 +126,7 @@
   globalThis.readglossPanelCore = {
     getPath, patchFor, sortTabs, mountPane, levelIndex, levelAt, RANGES, CHOICES, TOGGLES, sliderPatch, sliderValue,
     cleanSite, addSite, removeSite, resetPatch, clampTop, dragTop, mergePatch, themeAttr, isCardPath, isToastPath,
+    isConceptPath,
     pageTranslateMenu, pageTranslateAction, MAX_SITES,
   };
 
@@ -545,12 +547,13 @@
   }
   fab.setAttribute('aria-label', 'readgloss 패널 열기');
 
+  // 바깥 클릭: 패널 안, 사전 카드, 확인 메시지, 개념 칸·카드를 눌러도 닫지 않는다.
   document.addEventListener('mousedown', (e) => {
     const path = e.composedPath();
-    if (isOpen && !path.includes(host) && !C.isCardPath(path) && !C.isToastPath(path)) closePanel({ restoreFocus: false });
+    if (isOpen && !path.includes(host) && !C.isCardPath(path) && !C.isConceptPath(path) && !C.isToastPath(path)) closePanel({ restoreFocus: false });
   }, true);
-  // 사전 카드가 이 Escape 로 닫혔으면(content.js 가 표시를 남긴다) 패널은 그대로 둔다. 확인 메시지(메모) 안에서 누른 Escape 도 무시한다.
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && isOpen && !e.readglossCardClosed && !C.isToastPath(e.composedPath()) && closePanel(), true);
+  // 사전 카드가 이 Escape 로 닫혔으면(content.js 가 표시를 남긴다) 패널은 그대로 둔다. 확인 메시지(메모)나 개념 칸·카드 안에서 누른 Escape 도 무시한다.
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && isOpen && !e.readglossCardClosed && !C.isConceptPath(e.composedPath()) && !C.isToastPath(e.composedPath()) && closePanel(), true);
   window.addEventListener('readgloss:open-panel', (e) => openPanel(e.detail?.tab));
   try {
     chrome.runtime.onMessage.addListener((msg, sender) => {

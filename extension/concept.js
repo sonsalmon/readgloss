@@ -353,13 +353,18 @@
     const initialName = (seed.name || '').trim().slice(0, 80);
     const scrapId = seed.scrapId || null;
 
-    // 할 일 짐작(guess)
-    let guessedTask = null;
-    try {
-      const g = await send({ type: 'scraps', op: 'guess', url: location.href });
-      if (g && g.task) guessedTask = g.task;
-    } catch {
-      // 짐작 실패는 무시
+    // 할 일(task): seed에 task가 있으면 그것을 쓰고 guess를 하지 않는다.
+    let task = null;
+    if (seed && 'task' in seed) {
+      task = seed.task ?? null;
+    } else {
+      // 할 일 짐작(guess): ask:true면 task 없이(null) 보낸다.
+      try {
+        const g = await send({ type: 'scraps', op: 'guess', url: location.href });
+        if (g && g.task && !g.ask) task = g.task;
+      } catch {
+        // 짐작 실패는 무시
+      }
     }
 
     // 관련 개념 자동완성을 위한 기존 개념 목록
@@ -692,7 +697,7 @@
         aliases,
         definition,
         related: [...relatedSet],
-        task: guessedTask,
+        task,
         scrapId,
       });
 

@@ -12,7 +12,10 @@ await import('../extension/selection-core.js');
 await import('../extension/scrap-core.js');
 const { buildTree } = globalThis.readglossScrap;
 
-export const HEADER_COMMENT = '<!-- 자동 생성 — 고치려면 확장 스크랩북에서 -->';
+// 스크랩 문서 머리 주석.
+export const SCRAP_HEADER_COMMENT = '<!-- 자동 생성 — 고치려면 확장 스크랩북에서 -->';
+// 개념 문서 머리 주석(export-concepts.mjs 가 쓴다). 이름은 기존 시험(test/export-concepts.test.mjs)이 가져다 쓰는 그대로 둔다.
+export const HEADER_COMMENT = '<!-- 자동 생성 — 고치려면 확장 개념 탭에서 -->';
 
 // 페이지 파일 이름: 제목을 소문자, 영숫자·한글 아닌 것은 하이픈, 80자
 export function slugifyPage(title) {
@@ -27,20 +30,20 @@ export function slugifyPage(title) {
   return res.slice(0, 80).replace(/-+$/, '');
 }
 
-// 스크랩 목록과 할 일 매핑 -> Map<상대경로, 내용>
-export function renderScrapDocs(scraps, tasks = {}) {
-  const tree = buildTree(scraps, tasks);
-  const docs = new Map();
+// 할 일 id + 주소 -> 페이지 키. 주소는 정규화해서 맞춘다(스크랩 주소 원문과 페이지 주소가 다를 수 있다).
+export function pageKey(task, url) {
+  return `${task}|${globalThis.readglossSelection.normalizeUrl(url)}`;
+}
+
+// 스크랩 데이터로부터 페이지 파일 이름 매핑 생성: Map<pageKey(할 일, 주소), "<할 일>/<파일 이름>">
+export function pageFileNames(scraps) {
+  const tree = buildTree(scraps, {});
+  const map = new Map();
 
   for (const node of tree) {
     if (node.task !== null) {
       const taskId = node.task;
-      const taskTitle = node.title;
-
-      // 같은 할 일 안에서 이름 겹침 방지: 이미 쓴 최종 이름 집합으로 판정하고, 붙인 뒤에도 80자 이하
       const usedSlugs = new Set();
-      const pagesWithSlugs = [];
-
       for (const page of node.pages) {
         const baseSlug = slugifyPage(page.title);
         let slug = baseSlug;
@@ -49,11 +52,33 @@ export function renderScrapDocs(scraps, tasks = {}) {
           slug = `${baseSlug.slice(0, 80 - suffix.length).replace(/-+$/, '')}${suffix}`;
         }
         usedSlugs.add(slug);
-        pagesWithSlugs.push({ ...page, slug });
+        map.set(pageKey(taskId, page.url), `${taskId}/${slug}`);
       }
+    }
+  }
+
+  return map;
+}
+
+// 스크랩 목록과 할 일 매핑 -> Map<상대경로, 내용>
+export function renderScrapDocs(scraps, tasks = {}) {
+  const tree = buildTree(scraps, tasks);
+  const fileNames = pageFileNames(scraps);
+  const docs = new Map();
+
+  for (const node of tree) {
+    if (node.task !== null) {
+      const taskId = node.task;
+      const taskTitle = node.title;
+
+      const pagesWithSlugs = node.pages.map((page) => {
+        const fullPath = fileNames.get(pageKey(taskId, page.url));
+        const slug = fullPath ? fullPath.slice(taskId.length + 1) : slugifyPage(page.title);
+        return { ...page, slug };
+      });
 
       // 1. 할 일 문서: <id>.md
-      const taskLines = [HEADER_COMMENT, '', `# ${taskTitle}`, ''];
+      const taskLines = [SCRAP_HEADER_COMMENT, '', `# ${taskTitle}`, ''];
       for (const page of pagesWithSlugs) {
         const indent = '  '.repeat(page.depth);
         taskLines.push(`${indent}- [[${taskId}/${page.slug}]]`);
@@ -62,7 +87,7 @@ export function renderScrapDocs(scraps, tasks = {}) {
 
       // 2. 페이지 문서들: <id>/<slug>.md
       for (const page of pagesWithSlugs) {
-        const pageLines = [HEADER_COMMENT, '', `# ${page.title}`, '', page.url, ''];
+        const pageLines = [SCRAP_HEADER_COMMENT, '', `# ${page.title}`, '', page.url, ''];
 
         for (const sec of page.sections) {
           if (Array.isArray(sec.headings) && sec.headings.length > 0) {
@@ -93,7 +118,7 @@ export function renderScrapDocs(scraps, tasks = {}) {
       }
     } else {
       // 3. 인박스: inbox.md 한 파일
-      const inboxLines = [HEADER_COMMENT, '', '# 인박스', ''];
+      const inboxLines = [SCRAP_HEADER_COMMENT, '', '# 인박스', ''];
 
       for (const page of node.pages) {
         inboxLines.push(`## ${page.title}`, '', page.url, '');
@@ -224,7 +249,7 @@ export function writeIfChanged(dir, map) {
       try {
         const text = readFileSync(fullPath, 'utf8');
         const firstLine = text.split('\n')[0].trim();
-        if (firstLine === HEADER_COMMENT) {
+        if (firstLine.startsWith('<!-- 자동 생성')) {
           unlinkSync(fullPath);
           removed.push(normRel);
         }

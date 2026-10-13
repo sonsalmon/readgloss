@@ -457,6 +457,7 @@
                     globalThis.readglossConceptPage?.openForm({
                       name: item.quote?.exact || '',
                       scrapId: item.id,
+                      task: item.task ?? null,
                       anchor: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
                     });
                   },

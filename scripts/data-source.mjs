@@ -101,3 +101,76 @@ export function loadData(dataDir) {
 
   return { words, mydict, scraps };
 }
+
+// readgloss.db를 읽기 전용으로 연다. 파일이 없거나 migrated_at이 없으면 null, 열기·읽기 실패면 던진다.
+export function openReadDb(dataDir) {
+  const dbFile = join(dataDir, 'readgloss.db');
+  if (!existsSync(dbFile)) return null;
+
+  let raw = null;
+  try {
+    raw = new DatabaseSync(dbFile, { readOnly: true });
+    const metaRow = raw.prepare("SELECT value FROM meta WHERE key = 'migrated_at'").get();
+    if (!metaRow || !metaRow.value) {
+      raw.close();
+      return null;
+    }
+  } catch (e) {
+    if (raw) {
+      try {
+        raw.close();
+      } catch {}
+    }
+    throw new Error(`readgloss.db 를 열거나 읽을 수 없어요: ${dbFile} (${e?.message ?? e})`);
+  }
+
+  const stmtGet = raw.prepare('SELECT id, kind, key, data, ts FROM nodes WHERE id = ?');
+  const stmtByKind = raw.prepare('SELECT id, kind, key, data, ts FROM nodes WHERE kind = ?');
+  const stmtByKey = raw.prepare('SELECT id, kind, key, data, ts FROM nodes WHERE kind = ? AND key = ? LIMIT 1');
+  const stmtOutAll = raw.prepare('SELECT src, dst, kind, ts FROM edges WHERE src = ?');
+  const stmtOutKind = raw.prepare('SELECT src, dst, kind, ts FROM edges WHERE src = ? AND kind = ?');
+  const stmtInAll = raw.prepare('SELECT src, dst, kind, ts FROM edges WHERE dst = ?');
+  const stmtInKind = raw.prepare('SELECT src, dst, kind, ts FROM edges WHERE dst = ? AND kind = ?');
+
+  const safeJsonParse = (str) => {
+    if (typeof str !== 'string') return null;
+    try {
+      return JSON.parse(str);
+    } catch {
+      return str;
+    }
+  };
+  const mapNode = (row) => (row ? { id: row.id, kind: row.kind, key: row.key, data: safeJsonParse(row.data), ts: row.ts } : null);
+  const mapEdge = (row) => ({ src: row.src, dst: row.dst, kind: row.kind, ts: row.ts });
+
+  return {
+    file: dbFile,
+    readOnly: true,
+    raw,
+    get(id) {
+      if (typeof id !== 'string' || !id) return null;
+      return mapNode(stmtGet.get(id));
+    },
+    byKind(kind) {
+      if (typeof kind !== 'string' || !kind) return [];
+      return stmtByKind.all(kind).map(mapNode);
+    },
+    byKey(kind, key) {
+      if (typeof kind !== 'string' || typeof key !== 'string') return null;
+      return mapNode(stmtByKey.get(kind, key));
+    },
+    out(src, kind) {
+      if (typeof src !== 'string') return [];
+      const rows = kind !== undefined && kind !== null ? stmtOutKind.all(src, kind) : stmtOutAll.all(src);
+      return rows.map(mapEdge);
+    },
+    in(dst, kind) {
+      if (typeof dst !== 'string') return [];
+      const rows = kind !== undefined && kind !== null ? stmtInKind.all(dst, kind) : stmtInAll.all(dst);
+      return rows.map(mapEdge);
+    },
+    close() {
+      raw.close();
+    },
+  };
+}

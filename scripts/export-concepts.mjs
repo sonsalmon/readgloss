@@ -1,17 +1,19 @@
 // scripts/export-concepts.mjs
 // 개념 문서를 대상 폴더에 내보낸다.
 // 사용: node scripts/export-concepts.mjs --to <폴더> [--data <폴더(기본 data/)>] [--learning <폴더>]
-import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openDb } from '../bridge/db.mjs';
 import { createConcepts } from '../bridge/concepts.mjs';
 import { loadLearning } from '../bridge/task-guess.mjs';
-import { HEADER_COMMENT, slugifyPage, writeIfChanged } from './export-scraps.mjs';
+import { openReadDb, loadData } from './data-source.mjs';
+import { HEADER_COMMENT, slugifyPage, writeIfChanged, pageFileNames, pageKey } from './export-scraps.mjs';
 
-// 개념 목록 -> Map<상대경로, 내용>
-export function renderConceptDocs(concepts) {
+// 개념 문서 머리 주석(고치려면 개념 탭에서). export-scraps.mjs 의 HEADER_COMMENT 와 같은 값.
+export const CONCEPT_HEADER_COMMENT = HEADER_COMMENT;
+
+// 개념 목록 -> Map<상대경로, 내용>. pageFiles 는 pageFileNames 결과(없으면 제목으로 링크).
+export function renderConceptDocs(concepts, pageFiles = null) {
   const docs = new Map();
   const usedSlugs = new Set();
   const conceptsWithSlug = [];
@@ -35,7 +37,7 @@ export function renderConceptDocs(concepts) {
   }
 
   for (const c of conceptsWithSlug) {
-    const lines = [HEADER_COMMENT, '', `# ${c.name}`, ''];
+    const lines = [CONCEPT_HEADER_COMMENT, '', `# ${c.name}`, ''];
 
     // 별칭 (있을 때만)
     if (Array.isArray(c.aliases) && c.aliases.length > 0) {
@@ -67,8 +69,13 @@ export function renderConceptDocs(concepts) {
       lines.push('## 나온 곳', '');
       for (const app of c.appears) {
         const taskTitle = app.taskTitle || (app.task ? app.task : '인박스');
-        const pageSlug = slugifyPage(app.title || 'page');
-        const pageLink = app.task ? `../scraps/${app.task}/${pageSlug}` : '../scraps/inbox';
+        let pageLink;
+        if (app.task) {
+          const matched = pageFiles?.get(pageKey(app.task, app.url));
+          pageLink = matched ? `../scraps/${matched}` : `../scraps/${app.task}/${slugifyPage(app.title || 'page')}`;
+        } else {
+          pageLink = '../scraps/inbox';
+        }
         const exact80 = (app.exact || '').slice(0, 80);
         lines.push(`- ${taskTitle} · [[${pageLink}]] — "${exact80}"`);
       }
@@ -105,19 +112,33 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exit(2);
   }
 
-  const dbFile = join(dataDir, 'readgloss.db');
-  if (!existsSync(dbFile)) {
-    console.error(`오류: db 파일이 없습니다 (${dbFile}).`);
+  let db = null;
+  try {
+    db = openReadDb(dataDir);
+  } catch (err) {
+    console.error(err.message || String(err));
     process.exit(1);
   }
 
-  const db = openDb(dbFile);
-  const learning = loadLearning(learningDir);
-  const conceptsModule = createConcepts({ db, learning });
-  const concepts = conceptsModule.list();
-  db.close();
+  if (!db) {
+    console.log('개념 저장소가 아직 없어요');
+    process.exit(0);
+  }
 
-  const map = renderConceptDocs(concepts);
+  let concepts;
+  let data;
+  try {
+    const learning = loadLearning(learningDir);
+    concepts = createConcepts({ db, learning }).list();
+    db.close();
+    data = loadData(dataDir);
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+
+  const pageFiles = pageFileNames(Object.values(data.scraps.scraps));
+  const map = renderConceptDocs(concepts, pageFiles);
   const { written, removed } = writeIfChanged(toDir, map);
 
   console.log(`개념 문서 내보내기 완료: ${written.length}개 작성, ${removed.length}개 삭제 (${toDir})`);
