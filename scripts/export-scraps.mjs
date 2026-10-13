@@ -4,8 +4,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, unlinkSync
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createScraps } from '../bridge/scraps.mjs';
 import { loadLearning } from '../bridge/task-guess.mjs';
+import { loadData } from './data-source.mjs';
 
 // 순수 함수 모듈 로드
 await import('../extension/selection-core.js');
@@ -271,8 +271,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exit(1);
   }
 
-  const scrapsStore = createScraps({ file: scrapsFile });
-  const scraps = scrapsStore.all();
+  const { scraps: scrapsData } = loadData(dataDir);
+  const scraps = Object.values(scrapsData?.scraps ?? {});
 
   const { nodes } = loadLearning(learningDir);
   const tasks = Object.fromEntries(nodes.map((n) => [n.id, n.card_title]));

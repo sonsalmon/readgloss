@@ -101,27 +101,118 @@ function load(file) {
   return {};
 }
 
-export function createWords({ file, now = Date.now }) {
-  const raw = load(file);
-  // Map 을 써서 constructor 같은 이름도 평범한 키로 다룬다.
-  const known = new Map(Object.entries(isObj(raw.known) ? raw.known : {}).filter(([k, v]) => isLemma(k) && isObj(v)).map(([k, v]) => [k, { ts: ts(v) }]));
-  const saved = new Map(Object.entries(isObj(raw.saved) ? raw.saved : {}).filter(([k, v]) => isLemma(k) && isObj(v)).map(([k, v]) => [k, { ...info(v), ...withMemo(memoOf(v)), ts: ts(v) }]));
-  let history = (Array.isArray(raw.history) ? raw.history : [])
-    .filter((h) => isObj(h) && isLemma(h.lemma))
-    .map((h) => ({ lemma: h.lemma, ...info(h), ts: ts(h) }))
-    .filter((h, i, a) => a.findIndex((x) => x.lemma === h.lemma) === i)
-    .slice(0, MAX_HISTORY);
+export function createWords({ file, db, now = Date.now }) {
+  const known = new Map();
+  const saved = new Map();
+  let history = [];
+  const phrases = new Map();
 
-  // 구·문장 단어장: id -> { text, translation, kind, sentence?, context?, url?, title?, ts }. 옛 항목은 kind 가 없어 sentence 로 읽는다.
-  const phrases = new Map(
-    Object.entries(isObj(raw.phrases) ? raw.phrases : {})
-      .filter(([k, v]) => PHRASE_ID.test(k) && isObj(v) && typeof v.text === 'string' && v.text)
-      .map(([k, v]) => [k, { text: str(v.text, PHRASE.text), translation: str(v.translation, PHRASE.translation) ?? '', kind: KINDS.includes(v.kind) ? v.kind : 'sentence', ...(typeof v.sentence === 'string' && v.sentence && { sentence: v.sentence.slice(0, PHRASE.sentence) }), ...(isObj(v.context) && { context: v.context }), ...(v.url && { url: str(v.url, PHRASE.url) }), ...(v.title && { title: str(v.title, PHRASE.title) }), ...withMemo(memoOf(v)), ts: ts(v) }]),
-  );
+  if (db) {
+    const wordNodes = db.byKind('word');
+    for (const w of wordNodes) {
+      const d = w.data;
+      if (isObj(d)) {
+        if (isObj(d.known)) known.set(w.key, { ts: ts(d.known) });
+        if (isObj(d.saved)) saved.set(w.key, { ...info(d.saved), ...withMemo(memoOf(d.saved)), ts: ts(d.saved) });
+        if (isObj(d.history) && isLemma(d.history.lemma)) {
+          history.push({ lemma: d.history.lemma, ...info(d.history), ts: ts(d.history) });
+        }
+      }
+    }
+    history.sort((a, b) => b.ts - a.ts);
+    history = history.filter((h, i, a) => a.findIndex((x) => x.lemma === h.lemma) === i).slice(0, MAX_HISTORY);
+
+    const phraseNodes = db.byKind('phrase');
+    for (const p of phraseNodes) {
+      const v = p.data;
+      if (PHRASE_ID.test(p.id) && isObj(v) && typeof v.text === 'string' && v.text) {
+        phrases.set(p.id, {
+          text: str(v.text, PHRASE.text),
+          translation: str(v.translation, PHRASE.translation) ?? '',
+          kind: KINDS.includes(v.kind) ? v.kind : 'sentence',
+          ...(typeof v.sentence === 'string' && v.sentence && { sentence: v.sentence.slice(0, PHRASE.sentence) }),
+          ...(isObj(v.context) && { context: v.context }),
+          ...(v.url && { url: str(v.url, PHRASE.url) }),
+          ...(v.title && { title: str(v.title, PHRASE.title) }),
+          ...withMemo(memoOf(v)),
+          ts: ts(v),
+        });
+      }
+    }
+  } else {
+    const raw = load(file);
+    for (const [k, v] of Object.entries(isObj(raw.known) ? raw.known : {})) {
+      if (isLemma(k) && isObj(v)) known.set(k, { ts: ts(v) });
+    }
+    for (const [k, v] of Object.entries(isObj(raw.saved) ? raw.saved : {})) {
+      if (isLemma(k) && isObj(v)) saved.set(k, { ...info(v), ...withMemo(memoOf(v)), ts: ts(v) });
+    }
+    history = (Array.isArray(raw.history) ? raw.history : [])
+      .filter((h) => isObj(h) && isLemma(h.lemma))
+      .map((h) => ({ lemma: h.lemma, ...info(h), ts: ts(h) }))
+      .filter((h, i, a) => a.findIndex((x) => x.lemma === h.lemma) === i)
+      .slice(0, MAX_HISTORY);
+    for (const [k, v] of Object.entries(isObj(raw.phrases) ? raw.phrases : {})) {
+      if (PHRASE_ID.test(k) && isObj(v) && typeof v.text === 'string' && v.text) {
+        phrases.set(k, {
+          text: str(v.text, PHRASE.text),
+          translation: str(v.translation, PHRASE.translation) ?? '',
+          kind: KINDS.includes(v.kind) ? v.kind : 'sentence',
+          ...(typeof v.sentence === 'string' && v.sentence && { sentence: v.sentence.slice(0, PHRASE.sentence) }),
+          ...(isObj(v.context) && { context: v.context }),
+          ...(v.url && { url: str(v.url, PHRASE.url) }),
+          ...(v.title && { title: str(v.title, PHRASE.title) }),
+          ...withMemo(memoOf(v)),
+          ts: ts(v),
+        });
+      }
+    }
+  }
 
   const all = () => ({ known: Object.fromEntries(known), saved: Object.fromEntries(saved), history: history.map((h) => ({ ...h })), phrases: Object.fromEntries(phrases) });
 
+  function persistWord(lemma) {
+    if (!db) return;
+    const s = saved.get(lemma) || null;
+    const k = known.get(lemma) || null;
+    const h = history.find((x) => x.lemma === lemma) || null;
+    const id = `word:${lemma}`;
+    if (!s && !k && !h) {
+      db.del(id);
+    } else {
+      const tsMax = Math.max(s?.ts || 0, k?.ts || 0, h?.ts || 0);
+      db.put({
+        id,
+        kind: 'word',
+        key: lemma,
+        data: {
+          ...(s && { saved: s }),
+          ...(k && { known: k }),
+          ...(h && { history: h }),
+        },
+        ts: tsMax,
+      });
+    }
+  }
+
+  function persistPhrase(id) {
+    if (!db) return;
+    const p = phrases.get(id);
+    if (!p) {
+      db.del(id);
+    } else {
+      db.put({
+        id,
+        kind: 'phrase',
+        key: p.text,
+        data: p,
+        ts: p.ts,
+      });
+    }
+  }
+
   function persist() {
+    if (!file) return;
     mkdirSync(dirname(file), { recursive: true });
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(all()));
@@ -144,22 +235,52 @@ export function createWords({ file, now = Date.now }) {
         if (memo) next.memo = memo;
         else delete next.memo;
         target.set(key, next);
-        persist();
+        if (db) {
+          if (lemma !== undefined) persistWord(lemma);
+          else persistPhrase(id);
+        } else {
+          persist();
+        }
         return lemma !== undefined ? all() : { id, phrases: Object.fromEntries(phrases) };
       }
       if (op === 'save-phrase' || op === 'unsave-phrase') {
         const key = op === 'save-phrase' ? phraseId(text) : id;
         if (op === 'save-phrase') phrases.set(key, { text, translation, kind, ...(sentence && { sentence }), ...(context && { context }), ...(url && { url }), ...(title && { title }), ...withMemo(phrases.get(key)?.memo), ts: now() }); // 다시 저장해도 메모는 남긴다
         else phrases.delete(key);
-        persist();
+        if (db) persistPhrase(key);
+        else persist();
         return { id: key, phrases: Object.fromEntries(phrases) };
       }
-      if (op === 'known') known.set(lemma, { ts: now() });
-      else if (op === 'unknown') known.delete(lemma);
-      else if (op === 'save') saved.set(lemma, { word, gloss, sentence, url, ...withMemo(saved.get(lemma)?.memo), ts: now() }); // 다시 저장해도 메모는 남긴다
-      else if (op === 'unsave') saved.delete(lemma);
-      else history = [{ lemma, word, gloss, sentence, url, ts: now() }, ...history.filter((h) => h.lemma !== lemma)].slice(0, MAX_HISTORY);
-      persist();
+      if (op === 'known') {
+        known.set(lemma, { ts: now() });
+        if (db) persistWord(lemma);
+        else persist();
+      } else if (op === 'unknown') {
+        known.delete(lemma);
+        if (db) persistWord(lemma);
+        else persist();
+      } else if (op === 'save') {
+        saved.set(lemma, { word, gloss, sentence, url, ...withMemo(saved.get(lemma)?.memo), ts: now() }); // 다시 저장해도 메모는 남긴다
+        if (db) persistWord(lemma);
+        else persist();
+      } else if (op === 'unsave') {
+        saved.delete(lemma);
+        if (db) persistWord(lemma);
+        else persist();
+      } else {
+        const oldHistory = history;
+        history = [{ lemma, word, gloss, sentence, url, ts: now() }, ...history.filter((h) => h.lemma !== lemma)].slice(0, MAX_HISTORY);
+        if (db) {
+          persistWord(lemma);
+          for (const old of oldHistory) {
+            if (!history.some((h) => h.lemma === old.lemma)) {
+              persistWord(old.lemma);
+            }
+          }
+        } else {
+          persist();
+        }
+      }
       return all();
     },
   };

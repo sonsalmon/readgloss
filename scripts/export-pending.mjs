@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dateOf, exportDay } from './export-day.mjs';
+import { loadData } from './data-source.mjs';
 
 const readJson = (file) => {
   try {
@@ -30,8 +31,9 @@ export function pendingDays(dataDir, today = dateOf(Date.now())) {
     }
   };
 
-  // 1. words.json (saved, phrases)
-  const words = readJson(join(dataDir, 'words.json'));
+  const { words, mydict, scraps: scrapsData } = loadData(dataDir);
+
+  // 1. words (saved, phrases)
   if (words.saved && typeof words.saved === 'object') {
     for (const v of Object.values(words.saved)) {
       if (v) checkTs(v.ts);
@@ -43,16 +45,14 @@ export function pendingDays(dataDir, today = dateOf(Date.now())) {
     }
   }
 
-  // 2. mydict.json (entries)
-  const mydict = readJson(join(dataDir, 'mydict.json'));
+  // 2. mydict (entries)
   if (mydict.entries && typeof mydict.entries === 'object') {
     for (const v of Object.values(mydict.entries)) {
       if (v) checkTs(v.ts);
     }
   }
 
-  // 3. scraps.json (scraps)
-  const scrapsData = readJson(join(dataDir, 'scraps.json'));
+  // 3. scraps (scraps)
   if (scrapsData.scraps && typeof scrapsData.scraps === 'object') {
     for (const v of Object.values(scrapsData.scraps)) {
       if (v) checkTs(v.ts);
@@ -66,7 +66,7 @@ export function exportPending(dataDir, today = dateOf(Date.now())) {
   const days = pendingDays(dataDir, today);
   if (days.length === 0) return '';
 
-  const scrapsData = readJson(join(dataDir, 'scraps.json'));
+  const { scraps: scrapsData } = loadData(dataDir);
   const allScraps = scrapsData.scraps && typeof scrapsData.scraps === 'object'
     ? Object.values(scrapsData.scraps).filter((s) => s && Number.isFinite(s.ts))
     : [];

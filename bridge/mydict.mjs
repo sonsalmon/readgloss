@@ -76,18 +76,36 @@ function load(file) {
 // 저장된 항목 -> 응답 모양. 빈 exp·note·url·title 은 뺀다.
 const view = (e) => ({ ko: e.ko, ...(e.exp && { exp: e.exp }), ...(e.note && { note: e.note }), ...(e.url && { url: e.url }), ...(e.title && { title: e.title }), ts: e.ts });
 
-export function createMydict({ file, now = Date.now }) {
+export function createMydict({ file, db, now = Date.now }) {
   // Map 이라 constructor 같은 키도 평범한 키로 다룬다.
   const map = new Map();
-  for (const [k, v] of Object.entries(load(file))) {
-    if (normalizeKey(k) === k && isObj(v) && typeof v.ko === 'string' && v.ko) {
-      map.set(k, { ko: str(v.ko, LIMIT.ko), exp: str(v.exp, LIMIT.exp), note: str(v.note, LIMIT.note), url: str(v.url, LIMIT.url), title: str(v.title, LIMIT.title), ts: Number.isFinite(v.ts) ? v.ts : 0 });
+
+  if (db) {
+    const nodes = db.byKind('mydict');
+    for (const n of nodes) {
+      if (normalizeKey(n.key) === n.key && isObj(n.data) && typeof n.data.ko === 'string' && n.data.ko) {
+        map.set(n.key, {
+          ko: str(n.data.ko, LIMIT.ko),
+          exp: str(n.data.exp, LIMIT.exp),
+          note: str(n.data.note, LIMIT.note),
+          url: str(n.data.url, LIMIT.url),
+          title: str(n.data.title, LIMIT.title),
+          ts: Number.isFinite(n.data.ts) ? n.data.ts : (n.ts ?? 0),
+        });
+      }
+    }
+  } else if (file) {
+    for (const [k, v] of Object.entries(load(file))) {
+      if (normalizeKey(k) === k && isObj(v) && typeof v.ko === 'string' && v.ko) {
+        map.set(k, { ko: str(v.ko, LIMIT.ko), exp: str(v.exp, LIMIT.exp), note: str(v.note, LIMIT.note), url: str(v.url, LIMIT.url), title: str(v.title, LIMIT.title), ts: Number.isFinite(v.ts) ? v.ts : 0 });
+      }
     }
   }
 
   const all = () => ({ entries: Object.fromEntries([...map].map(([k, e]) => [k, view(e)])) });
 
   function persist() {
+    if (!file) return;
     mkdirSync(dirname(file), { recursive: true });
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(all()));
@@ -135,9 +153,16 @@ export function createMydict({ file, now = Date.now }) {
     // parseMydictOp 를 통과한 요청만 받는다. 바뀐 전체 상태를 돌려준다.
     // ponytail: 메모리를 먼저 바꾸고 쓴다. 디스크 쓰기가 실패하면 이 실행 동안만 메모리와 파일이 어긋난다(파일은 rename 으로 안 깨진다).
     apply(op) {
-      if (op.op === 'delete') map.delete(op.key);
-      else map.set(op.key, { ko: op.ko, exp: op.exp, note: op.note, url: op.url, title: op.title, ts: now() });
-      persist();
+      if (op.op === 'delete') {
+        map.delete(op.key);
+        if (db) db.del(`mydict:${op.key}`);
+        else persist();
+      } else {
+        const entry = { ko: op.ko, exp: op.exp, note: op.note, url: op.url, title: op.title, ts: now() };
+        map.set(op.key, entry);
+        if (db) db.put({ id: `mydict:${op.key}`, kind: 'mydict', key: op.key, data: entry, ts: entry.ts });
+        else persist();
+      }
       return all();
     },
   };

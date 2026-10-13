@@ -201,8 +201,33 @@ function load(file, now) {
   return new Map();
 }
 
-export function createScraps({ file, now = Date.now }) {
-  const scraps = load(file, now);
+export function createScraps({ file, db, now = Date.now }) {
+  const scraps = new Map();
+
+  if (db) {
+    const nodes = db.byKind('scrap');
+    for (const n of nodes) {
+      if (n.data && n.data.id === n.id && isValidStoredScrap(n.data)) {
+        scraps.set(n.id, {
+          id: n.data.id,
+          task: n.data.task,
+          url: n.data.url,
+          title: n.data.title,
+          headings: [...n.data.headings],
+          quote: { exact: n.data.quote.exact, prefix: n.data.quote.prefix ?? '', suffix: n.data.quote.suffix ?? '' },
+          pos: n.data.pos,
+          translation: n.data.translation,
+          memo: n.data.memo,
+          ts: n.data.ts,
+        });
+      }
+    }
+  } else if (file) {
+    const loaded = load(file, now);
+    for (const [k, v] of loaded) {
+      scraps.set(k, v);
+    }
+  }
 
   const copy = (s) => ({
     id: s.id,
@@ -219,7 +244,42 @@ export function createScraps({ file, now = Date.now }) {
 
   const all = () => Array.from(scraps.values()).map(copy);
 
+  function syncScrapDb(scrap) {
+    if (!db) return;
+    db.put({
+      id: scrap.id,
+      kind: 'scrap',
+      key: scrap.url,
+      data: scrap,
+      ts: scrap.ts,
+    });
+    const currentEdges = db.out(scrap.id, 'in_task');
+    if (scrap.task) {
+      const taskId = `task:${scrap.task}`;
+      if (!db.get(taskId)) {
+        db.put({
+          id: taskId,
+          kind: 'task',
+          key: scrap.task,
+          data: { id: scrap.task },
+          ts: scrap.ts,
+        });
+      }
+      for (const e of currentEdges) {
+        if (e.dst !== taskId) {
+          db.unlink(scrap.id, e.dst, 'in_task');
+        }
+      }
+      db.link(scrap.id, taskId, 'in_task', scrap.ts);
+    } else {
+      for (const e of currentEdges) {
+        db.unlink(scrap.id, e.dst, 'in_task');
+      }
+    }
+  }
+
   function persist() {
+    if (!file) return;
     mkdirSync(dirname(file), { recursive: true });
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify({ v: 1, scraps: Object.fromEntries(scraps) }));
@@ -260,14 +320,16 @@ export function createScraps({ file, now = Date.now }) {
           ts: existing ? existing.ts : now(),
         };
         scraps.set(id, scrap);
-        persist();
+        if (db) syncScrapDb(scrap);
+        else persist();
         return all();
       }
 
       if (op.op === 'remove') {
         if (!scraps.has(op.id)) return null;
         scraps.delete(op.id);
-        persist();
+        if (db) db.del(op.id);
+        else persist();
         return all();
       }
 
@@ -276,7 +338,17 @@ export function createScraps({ file, now = Date.now }) {
         if (!existing) return null;
         existing.memo = op.memo;
         scraps.set(op.id, existing);
-        persist();
+        if (db) {
+          db.put({
+            id: existing.id,
+            kind: 'scrap',
+            key: existing.url,
+            data: existing,
+            ts: existing.ts,
+          });
+        } else {
+          persist();
+        }
         return all();
       }
 
@@ -285,7 +357,8 @@ export function createScraps({ file, now = Date.now }) {
         if (!existing) return null;
         existing.task = op.task;
         scraps.set(op.id, existing);
-        persist();
+        if (db) syncScrapDb(existing);
+        else persist();
         return all();
       }
 

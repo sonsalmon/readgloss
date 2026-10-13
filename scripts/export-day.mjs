@@ -4,6 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadData } from './data-source.mjs';
 
 const CLIP = 200;
 const pad = (n) => String(n).padStart(2, '0');
@@ -43,12 +44,12 @@ const tr = (p) => p.context?.translation || p.translation;
 export function exportDay(date, dataDir) {
   const on = (v) => Number.isFinite(v?.ts) && dateOf(v.ts) === date;
   const byTs = (a, b) => a.ts - b.ts;
-  const words = readJson(join(dataDir, 'words.json'));
+  const { words, mydict } = loadData(dataDir);
   const saved = pairs(words.saved).filter(([, v]) => on(v)).sort((a, b) => byTs(a[1], b[1]));
   const all = entries(words.phrases).filter(on).sort(byTs);
   const expressions = all.filter((p) => p.kind === 'expression');
   const phrases = all.filter((p) => p.kind !== 'expression');
-  const mine = Object.entries(readJson(join(dataDir, 'mydict.json')).entries ?? {})
+  const mine = Object.entries(mydict.entries ?? {})
     .filter(([, v]) => v && on(v))
     .sort((a, b) => a[1].ts - b[1].ts);
   const counts = {};

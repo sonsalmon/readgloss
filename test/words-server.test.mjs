@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createBridge } from '../bridge/server.mjs';
 import { createDict, parseEntry } from '../bridge/dict.mjs';
+import { loadData } from '../scripts/data-source.mjs';
 
 const EXT = 'abcdefghijklmnopabcdefghijklmnop';
 const MINE = `chrome-extension://${EXT}`;
@@ -91,7 +92,7 @@ test('/words: GET 은 셋 다, POST 는 바뀐 전체 상태를 돌려주고 wor
     const c = await s.words({ op: 'history', lemma: 'payload', word: 'payload', gloss: '수익 하중' });
     assert.deepEqual(c.json().history.map((h) => h.lemma), ['payload']);
     assert.deepEqual((await s.req('GET', '/words', { headers: s.auth })).json(), c.json());
-    assert.deepEqual(JSON.parse(readFileSync(join(s.dir, 'words.json'), 'utf8')), c.json());
+    assert.deepEqual(loadData(s.dir).words, c.json()); // 변경 기록 11: 저장 정본은 readgloss.db
     assert.deepEqual(Object.keys((await s.words({ op: 'unsave', lemma: 'mitigation' })).json().saved), []);
     assert.deepEqual(Object.keys((await s.words({ op: 'unknown', lemma: 'payload' })).json().known), []);
     assert.equal(s.asked.length, 0);

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { start, MINE } from '../fixtures/bridge-harness.mjs';
+import { loadData } from '../scripts/data-source.mjs';
 
 const withBridge = (fn) => async () => {
   const s = await start();
@@ -31,7 +32,7 @@ test('/mydict: GET 은 비어 있다가, set·delete 가 바뀐 전체 { entries
   assert.deepEqual([e.ko, e.exp, e.note, e.url, e.title], ['주성분 분석', 'Principal Component Analysis', '차원 축소', 'https://a.test/p', '글']);
   assert.equal(typeof e.ts, 'number');
   assert.deepEqual((await s.get('/mydict')).json(), r.json());
-  assert.deepEqual(JSON.parse(readFileSync(join(s.dir, 'mydict.json'), 'utf8')), r.json());
+  assert.deepEqual(loadData(s.dir).mydict, r.json()); // 변경 기록 11: 저장 정본은 readgloss.db
   assert.deepEqual((await s.post('/mydict', { op: 'delete', key: 'PCA' })).json(), { entries: {} });
 }));
 

@@ -87,10 +87,16 @@ function sendAiError(res, e, cors) {
 // ask({word, sentence, context?}) / askTranslate(문단, 용어 지정 목록) / askContext(프롬프트 문자열) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
 export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), dbFile = join(dirname(cacheFile), 'readgloss.db'), learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
   const dataDir = dirname(cacheFile);
-  const db = openDb(dbFile);
-  const migration = migrateJson({ db, dataDir, now });
+  const rawDb = openDb(dbFile);
+  const migration = migrateJson({ db: rawDb, dataDir, now });
+  let db = null;
   if (!migration.ok) {
     console.error(`이전 실패: ${migration.error}`);
+    try {
+      rawDb.close();
+    } catch {}
+  } else {
+    db = rawDb;
   }
 
   const token = loadOrCreateToken(tokenFile);
@@ -98,11 +104,11 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
   const lookup = createLookup({ cache: createCache(cacheFile), ask });
   const translate = createTranslate({ cache: createCache(translationsFile), ask: askTranslate });
   const contextTranslate = createContextTranslate({ cache: createCache(contextFile), ask: askContext });
-  const words = createWords({ file: wordsFile });
+  const words = db ? createWords({ db, now }) : createWords({ file: wordsFile, now });
   const glossary = createGlossary();
-  const mydict = createMydict({ file: mydictFile, now });
+  const mydict = db ? createMydict({ db, now }) : createMydict({ file: mydictFile, now });
   const study = createStudy({ file: studyFile, now });
-  const scraps = createScraps({ file: scrapsFile, now });
+  const scraps = db ? createScraps({ db, now }) : createScraps({ file: scrapsFile, now });
   const levels = loadWordLevels();
   const annotate = createAnnotate({ dict, levels, isKnown: words.isKnown, glossary, mydict });
   const mine = `chrome-extension://${extensionId}`;
@@ -450,9 +456,11 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       new Promise((resolve) => {
         dict.close();
         mt.close();
-        try {
-          db.close();
-        } catch {}
+        if (db) {
+          try {
+            db.close();
+          } catch {}
+        }
         server.close(() => resolve());
         server.closeAllConnections();
       }),

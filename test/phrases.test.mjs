@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createWords, parseWordsOp, phraseId } from '../bridge/words.mjs';
 import { start } from '../fixtures/bridge-harness.mjs';
+import { loadData } from '../scripts/data-source.mjs';
 
 const tmp = () => join(mkdtempSync(join(tmpdir(), 'rg-phrases-')), 'words.json');
 const run = (w, v) => w.apply(parseWordsOp(v));
@@ -119,7 +120,7 @@ test('/words save-phrase·unsave-phrase: POST 는 {id, phrases}, GET 은 phrases
     assert.equal(r.json().id, id);
     assert.equal(r.json().phrases[id].translation, '패치를 적용한다.');
     assert.deepEqual((await get()).phrases, r.json().phrases);
-    assert.deepEqual(JSON.parse(readFileSync(join(s.dir, 'words.json'), 'utf8')).phrases, r.json().phrases);
+    assert.deepEqual(loadData(s.dir).words.phrases, r.json().phrases); // 변경 기록 11: 저장 정본은 readgloss.db
     assert.deepEqual(Object.keys((await s.post('/words', { op: 'known', lemma: 'patch' })).json().phrases), [id]);
     for (const bad of [{ op: 'save-phrase', translation: 't' }, { ...body, text: 'x'.repeat(1001) }, { ...body, url: 'file:///x' }, { op: 'unsave-phrase', id: 'nothex' }, { op: 'unsave-phrase' }]) {
       assert.equal((await s.post('/words', bad)).status, 400, JSON.stringify(bad).slice(0, 60));
