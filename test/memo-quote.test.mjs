@@ -94,3 +94,17 @@ test('8. memo-pad.js: quotes 탭 상태 저장 및 복원', () => {
   const restoreRe = /function restoreStateOnLoad\(\)\s*\{[\s\S]*?res\.quotes[\s\S]*?\}/;
   assert.ok(restoreRe.test(memoPadSrc), 'restoreStateOnLoad 에 quotes 복원이 있어야 합니다.');
 });
+
+test('다리: 빈 글은 인용이 있을 때만 저장된다', async () => {
+  const { parseMemoOp } = await import('../bridge/memos.mjs');
+  const base = { op: 'save', url: 'https://a.test/p', title: 't', headings: [], para: null, pos: 0, task: null };
+  assert.equal(parseMemoOp({ ...base, text: '' }), null);
+  assert.equal(parseMemoOp({ ...base, text: '   ' }), null);
+  assert.ok(parseMemoOp({ ...base, text: '', quote: { exact: 'gain access', prefix: '', suffix: '' } }));
+});
+
+test('background: 메모 점프는 인용을 넘기고, 탭 상태는 칸별 drafts·quotes 를 보관한다', () => {
+  const bg = readFileSync(new URL('../extension/background.js', import.meta.url), 'utf8');
+  assert.match(bg, /const pendingMemo = \{ url, id, para: para \?\? null, quote: quote \?\? null/);
+  assert.match(bg, /drafts: obj\(msg\.drafts\), quotes: obj\(msg\.quotes\)/);
+});

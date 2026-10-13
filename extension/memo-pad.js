@@ -915,7 +915,7 @@
     const allowable = canSaveFn ? canSaveFn(rawText, currentQuote) : (Boolean(rawText) || Boolean(currentQuote));
     if (!allowable) return false; // 빈 글이고 인용도 없으면 저장하지 않음
 
-    const text = (rawText || (currentQuote ? ' ' : '')).slice(0, 2000);
+    const text = (rawText || '').slice(0, 2000); // 인용만 있는 메모는 빈 글로 보낸다(다리가 허용)
     const headingsChain = getHeadingChain(currentHeadings, sectionKey);
 
     let para = null;

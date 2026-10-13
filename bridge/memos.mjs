@@ -23,8 +23,11 @@ export function parseMemoOp(v) {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
 
   if (v.op === 'save') {
-    // 1. text (1~2000자 필수)
-    if (typeof v.text !== 'string' || v.text.length < 1 || v.text.length > LIMIT.text) {
+    // 1. text (0~2000자). 빈 글은 인용(quote)이 있을 때만 허용한다(변경 기록 14-4)
+    if (typeof v.text !== 'string' || v.text.length > LIMIT.text) {
+      return null;
+    }
+    if (v.text.trim().length < 1 && !(v.quote && typeof v.quote === 'object' && typeof v.quote.exact === 'string' && v.quote.exact.trim())) {
       return null;
     }
 

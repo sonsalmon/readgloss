@@ -343,12 +343,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // --- 메모 점프(T29b): 다른 페이지 메모로 이동할 때 session storage 에 pendingMemo 저장 후 탭 주소 갱신 ---
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id || msg?.type !== 'memo-jump') return;
-  const { url, id, para, pos } = msg;
+  const { url, id, para, quote, pos } = msg;
   if (!url || sender.tab?.id == null) {
     sendResponse({ error: 'invalid-jump' });
     return;
   }
-  const pendingMemo = { url, id, para: para ?? null, pos: pos ?? 0 };
+  const pendingMemo = { url, id, para: para ?? null, quote: quote ?? null, pos: pos ?? 0 }; // 인용이 있으면 인용 자리로(변경 기록 14-4)
   const storage = chrome.storage.session ?? chrome.storage.local;
   storage.set({ pendingMemo }).then(() => {
     chrome.tabs.update(sender.tab.id, { url });
@@ -380,13 +380,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === 'memo-state-get') {
     storage.get(key).then((data) => {
-      sendResponse(data?.[key] ?? { open: false, text: '' });
-    }).catch(() => sendResponse({ open: false, text: '' }));
+      sendResponse(data?.[key] ?? { open: false, text: '', drafts: {}, quotes: {} });
+    }).catch(() => sendResponse({ open: false, text: '', drafts: {}, quotes: {} }));
     return true; // 비동기 응답
   }
 
   if (msg.type === 'memo-state-set') {
-    const state = { open: !!msg.open, text: typeof msg.text === 'string' ? msg.text : '' };
+    const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+    // 변경 기록 14-3: 쓰던 글·인용은 소제목 칸별로 탭 상태에 둔다
+    const state = { open: !!msg.open, text: typeof msg.text === 'string' ? msg.text : '', drafts: obj(msg.drafts), quotes: obj(msg.quotes) };
     storage.set({ [key]: state }).then(() => {
       sendResponse({ ok: true });
     }).catch(() => sendResponse({ error: 'storage-error' }));
