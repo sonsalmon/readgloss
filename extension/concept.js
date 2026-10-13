@@ -712,9 +712,14 @@
       }
 
       if (res && !res.error) {
+        // 저장 응답은 concept 키 안에 든다(bridge/server.mjs /concepts save 응답)
+        const id = res.concept?.id;
         const anchor = seed.anchor;
         closeForm();
         conceptsCache = null; // 캐시 무효화
+
+        // 개념 저장 직후 패널 등 다른 뷰가 즉시 최신 상태를 반영하도록 이벤트 발송
+        window.dispatchEvent(new CustomEvent('readgloss:concepts-updated', { detail: { id } }));
 
         // 저장 확인 토스트
         globalThis.readglossToast?.show({

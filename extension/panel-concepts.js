@@ -241,23 +241,65 @@
     }
   `;
 
+  // 오래된 비동기 응답 버리기: 요청 번호를 두고 마지막 응답만 유효하게 판정하는 순수 헬퍼
+  function latestOnly(fn) {
+    let latestSeq = 0;
+    if (typeof fn === 'function') {
+      return async function (...args) {
+        const seq = ++latestSeq;
+        const res = await fn(...args);
+        if (seq !== latestSeq) {
+          return { stale: true, seq };
+        }
+        return { stale: false, seq, res };
+      };
+    }
+    return {
+      next() {
+        latestSeq += 1;
+        return latestSeq;
+      },
+      isLatest(seq) {
+        return seq === latestSeq;
+      },
+      current() {
+        return latestSeq;
+      },
+      reset() {
+        latestSeq = 0;
+      },
+    };
+  }
+
   let pendingOpenConceptId = null;
   let rerenderCurrentTab = null;
+  let hasRendered = false;
+  let loadConcepts = null;
 
-  // 패널 열기 시 conceptId 전달 받음. panel.js 의 open-panel 리스너보다 먼저 와야 막 열린 패널이 이 id 를 놓치지 않는다(capture).
-  window.addEventListener('readgloss:open-panel', (e) => {
-    if (e.detail?.conceptId) {
-      pendingOpenConceptId = e.detail.conceptId;
-      if (typeof rerenderCurrentTab === 'function') {
-        rerenderCurrentTab(pendingOpenConceptId);
+  if (typeof window !== 'undefined') {
+    // 패널 열기 시 conceptId 전달 받음. panel.js 의 open-panel 리스너보다 먼저 와야 막 열린 패널이 이 id 를 놓치지 않는다(capture).
+    window.addEventListener('readgloss:open-panel', (e) => {
+      if (e.detail?.conceptId) {
+        pendingOpenConceptId = e.detail.conceptId;
+        if (typeof rerenderCurrentTab === 'function') {
+          rerenderCurrentTab(pendingOpenConceptId);
+        }
+        // 패널이 닫혀 있었으면 panel.js 가 같은 이벤트 안에서 render 를 불러 이 id 를 쓰고 비운다.
+        // 이미 열려 있었으면 render 가 안 불리니, 이벤트가 끝난 뒤 남은 id 를 비워 다음 열기 때 옛 상세가 뜨지 않게 한다.
+        queueMicrotask(() => { pendingOpenConceptId = null; });
       }
-      // 패널이 닫혀 있었으면 panel.js 가 같은 이벤트 안에서 render 를 불러 이 id 를 쓰고 비운다.
-      // 이미 열려 있었으면 render 가 안 불리니, 이벤트가 끝난 뒤 남은 id 를 비워 다음 열기 때 옛 상세가 뜨지 않게 한다.
-      queueMicrotask(() => { pendingOpenConceptId = null; });
-    }
-  }, { capture: true });
+    }, { capture: true });
+
+    // 개념 갱신 이벤트 수신: 탭이 한 번이라도 그려졌으면 즉시 loadConcepts()로 목록을 다시 받아 지금 화면을 다시 그린다
+    window.addEventListener('readgloss:concepts-updated', () => {
+      if (hasRendered && typeof loadConcepts === 'function') {
+        loadConcepts();
+      }
+    });
+  }
 
   function render(pane) {
+    hasRendered = true;
     let conceptsList = [];
     let isLoading = true; // 목록을 받는 중이면 상세 대신 "불러오는 중"을 보인다
     let targetConceptId = pendingOpenConceptId || null; // 열어 달라고 받은 id: 목록을 받은 뒤 상세로 연다
@@ -267,6 +309,9 @@
     let searchQuery = '';
     let statusMsg = '';
     let isError = false;
+
+    // 오래된 비동기 응답 버리기용 요청 번호 관리자
+    const loadSeq = latestOnly();
 
     // 통신 헬퍼
     function send(msg) {
@@ -279,9 +324,13 @@
       });
     }
 
-    async function loadConcepts() {
+    loadConcepts = async function () {
+      const reqId = loadSeq.next();
       isLoading = true;
       let res = await send({ type: 'concepts', op: 'get' });
+      // 다른 요청이 발생했으면 이전 응답은 버린다
+      if (!loadSeq.isLatest(reqId)) return;
+
       if (res && Array.isArray(res.concepts)) {
         conceptsList = res.concepts;
         // 이름순 정렬
@@ -294,6 +343,7 @@
       const openId = targetConceptId;
       if (openId && !conceptsList.some((c) => c.id === openId)) {
         res = await send({ type: 'concepts', op: 'get' });
+        if (!loadSeq.isLatest(reqId)) return;
         if (res && Array.isArray(res.concepts)) {
           conceptsList = res.concepts;
           conceptsList.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -308,7 +358,7 @@
         currentView = 'detail';
       }
       draw();
-    }
+    };
 
     rerenderCurrentTab = (conceptId) => {
       targetConceptId = conceptId;
@@ -717,4 +767,12 @@
     order: 23,
     render,
   });
+
+  // 브라우저 및 테스트(Node) 환경 노출
+  if (typeof globalThis !== 'undefined') {
+    globalThis.readglossConceptRefresh = { latestOnly };
+  }
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { latestOnly };
+  }
 })();
