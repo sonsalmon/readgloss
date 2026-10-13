@@ -24,6 +24,7 @@ import { guessTask, lastTaskToday, loadLearning } from './task-guess.mjs';
 import { dateOf } from '../scripts/export-day.mjs';
 import { openDb, migrateJson } from './db.mjs';
 import { createConcepts, parseConceptOp } from './concepts.mjs';
+import { createMemos, parseMemoOp } from './memos.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
@@ -130,6 +131,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
   const study = createStudy({ file: studyFile, now });
   const scraps = db ? createScraps({ db, now }) : createScraps({ file: scrapsFile, now });
   const concepts = db ? createConcepts({ db, now, learning: () => loadLearning(learningDir) }) : null;
+  const memos = db ? createMemos({ db, now }) : null;
   const levels = loadWordLevels();
   const annotate = createAnnotate({ dict, levels, isKnown: words.isKnown, glossary, mydict });
   const mine = `chrome-extension://${extensionId}`;
@@ -410,6 +412,35 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     return send(res, 200, out, cors);
   }
 
+  // 메모: GET -> { memos }, GET ?url= -> { memos }, POST op save|edit|remove
+  async function handleMemos(req, res, cors) {
+    if (!db || !memos) return send(res, 503, { error: 'no-db' }, cors);
+    if (req.method === 'GET') {
+      const u = new URL(req.url, 'http://x').searchParams.get('url');
+      if (u !== null && u !== undefined) {
+        return send(res, 200, { memos: memos.forUrl(u) }, cors);
+      }
+      return send(res, 200, { memos: memos.list() }, cors);
+    }
+    const { value, status } = await readJson(req, MAX_WORDS_BODY);
+    if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+    const op = parseMemoOp(value);
+    if (!op) return send(res, 400, { error: 'bad-request' }, cors);
+    const out = memos.apply(op);
+    if (!out) return send(res, 404, { error: 'not-found' }, cors);
+    if (op.op === 'save') {
+      try {
+        study.record({ kind: 'memo', text: op.text, url: op.url });
+      } catch {
+        // 기록 실패는 무시
+      }
+      return send(res, 200, { memo: out }, cors);
+    }
+    if (op.op === 'edit') return send(res, 200, { memo: out }, cors);
+    if (op.op === 'remove') return send(res, 200, { ok: true }, cors);
+    return send(res, 200, out, cors);
+  }
+
   async function handle(req, res) {
     // 1. Host 가 고정값이 아니면 거절. 2. Origin 이 있는데 내 확장이 아니면 거절(토큰 유무와 무관).
     if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, { error: 'forbidden' });
@@ -476,6 +507,10 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     if (path === '/concepts') {
       if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleConcepts(req, res, cors);
+    }
+    if (path === '/memos') {
+      if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleMemos(req, res, cors);
     }
     if (path === '/translate') {
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);

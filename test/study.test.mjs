@@ -54,7 +54,7 @@ test('report: 오늘부터 days 일을 최신 날 먼저, 기록 없는 날도 0
   const r = s.report(3);
   assert.deepEqual(r.days.map((d) => d.date), ['2026-10-06', '2026-10-05', '2026-10-04']);
   assert.deepEqual(Object.keys(r.days[0].counts), KINDS);
-  assert.deepEqual(r.days[0].counts, { dict: 2, mt: 1, context: 0, aigloss: 0, paragraph: 0, save: 0, known: 0, mydict: 0, scrap: 0 });
+  assert.deepEqual(r.days[0].counts, { dict: 2, mt: 1, context: 0, aigloss: 0, paragraph: 0, save: 0, known: 0, mydict: 0, scrap: 0, memo: 0 });
   assert.deepEqual(r.days[0].items.map((i) => i.text), ['c', 'a', 'b']); // 최신 먼저, 시각이 같으면 파일 순서
   assert.deepEqual(r.days[1].items, []);
   assert.equal(r.days[2].counts.save, 1);

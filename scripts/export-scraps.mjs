@@ -6,6 +6,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadLearning } from '../bridge/task-guess.mjs';
 import { loadData } from './data-source.mjs';
+import { dateOf } from './export-day.mjs';
 
 // 순수 함수 모듈 로드
 await import('../extension/selection-core.js');
@@ -36,8 +37,12 @@ export function pageKey(task, url) {
 }
 
 // 스크랩 데이터로부터 페이지 파일 이름 매핑 생성: Map<pageKey(할 일, 주소), "<할 일>/<파일 이름>">
-export function pageFileNames(scraps) {
-  const tree = buildTree(scraps, {});
+export function pageFileNames(scraps, memos = []) {
+  const combined = [
+    ...scraps.map((s) => ({ task: s.task ?? null, url: s.url, title: s.title })),
+    ...memos.map((m) => ({ task: m.task ?? null, url: m.url, title: m.title })),
+  ];
+  const tree = buildTree(combined, {});
   const map = new Map();
 
   for (const node of tree) {
@@ -61,10 +66,30 @@ export function pageFileNames(scraps) {
 }
 
 // 스크랩 목록과 할 일 매핑 -> Map<상대경로, 내용>
-export function renderScrapDocs(scraps, tasks = {}) {
-  const tree = buildTree(scraps, tasks);
-  const fileNames = pageFileNames(scraps);
+export function renderScrapDocs(scraps, tasks = {}, memos = []) {
+  const combined = [
+    ...scraps.map((s) => ({ task: s.task ?? null, url: s.url, title: s.title })),
+    ...memos.map((m) => ({ task: m.task ?? null, url: m.url, title: m.title })),
+  ];
+  const tree = buildTree(combined, tasks);
+  const scrapsTree = buildTree(scraps, tasks);
+  const fileNames = pageFileNames(scraps, memos);
   const docs = new Map();
+
+  const scrapPageMap = new Map();
+  for (const node of scrapsTree) {
+    const t = node.task ?? null;
+    for (const p of node.pages) {
+      scrapPageMap.set(pageKey(t, p.url), p);
+    }
+  }
+
+  const memoMap = new Map();
+  for (const m of memos) {
+    const k = pageKey(m.task ?? null, m.url);
+    if (!memoMap.has(k)) memoMap.set(k, []);
+    memoMap.get(k).push(m);
+  }
 
   for (const node of tree) {
     if (node.task !== null) {
@@ -87,28 +112,63 @@ export function renderScrapDocs(scraps, tasks = {}) {
 
       // 2. 페이지 문서들: <id>/<slug>.md
       for (const page of pagesWithSlugs) {
+        const scrapPage = scrapPageMap.get(pageKey(taskId, page.url));
+        const pageMemos = memoMap.get(pageKey(taskId, page.url)) || [];
+
         const pageLines = [SCRAP_HEADER_COMMENT, '', `# ${page.title}`, '', page.url, ''];
 
-        for (const sec of page.sections) {
-          if (Array.isArray(sec.headings) && sec.headings.length > 0) {
-            for (let i = 0; i < sec.headings.length; i++) {
-              const hLevel = '#'.repeat(Math.min(6, i + 2));
-              pageLines.push(`${hLevel} ${sec.headings[i]}`, '');
+        // 기존 스크랩 렌더링 (buildTree가 만든 sections를 그대로 재사용)
+        if (scrapPage) {
+          for (const sec of scrapPage.sections) {
+            if (Array.isArray(sec.headings) && sec.headings.length > 0) {
+              for (let i = 0; i < sec.headings.length; i++) {
+                const hLevel = '#'.repeat(Math.min(6, i + 2));
+                pageLines.push(`${hLevel} ${sec.headings[i]}`, '');
+              }
+            }
+
+            for (const item of sec.items) {
+              const exactLines = String(item?.quote?.exact ?? '')
+                .split('\n')
+                .map((l) => `> ${l}`)
+                .join('\n');
+              pageLines.push(exactLines);
+
+              if (typeof item?.translation === 'string' && item.translation.trim()) {
+                pageLines.push(`번역: ${item.translation.trim()}`);
+              }
+              if (typeof item?.memo === 'string' && item.memo.trim()) {
+                pageLines.push(`메모: ${item.memo.trim()}`);
+              }
+              pageLines.push('');
             }
           }
+        }
 
-          for (const item of sec.items) {
-            const exactLines = String(item?.quote?.exact ?? '')
-              .split('\n')
-              .map((l) => `> ${l}`)
-              .join('\n');
-            pageLines.push(exactLines);
+        // 메모 렌더링
+        if (pageMemos.length > 0) {
+          pageLines.push('## 메모', '');
 
-            if (typeof item?.translation === 'string' && item.translation.trim()) {
-              pageLines.push(`번역: ${item.translation.trim()}`);
+          const sortedMemos = [...pageMemos].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+          const memoSectionMap = new Map();
+          const memoSectionOrder = [];
+          for (const m of sortedMemos) {
+            const heading = Array.isArray(m.headings) && m.headings.length > 0 ? m.headings[m.headings.length - 1] : '';
+            if (!memoSectionMap.has(heading)) {
+              memoSectionMap.set(heading, []);
+              memoSectionOrder.push(heading);
             }
-            if (typeof item?.memo === 'string' && item.memo.trim()) {
-              pageLines.push(`메모: ${item.memo.trim()}`);
+            memoSectionMap.get(heading).push(m);
+          }
+
+          for (const heading of memoSectionOrder) {
+            const items = memoSectionMap.get(heading);
+            if (heading) {
+              pageLines.push(`### ${heading}`, '');
+            }
+            for (const m of items) {
+              const d = dateOf(m.ts);
+              pageLines.push(`- ${m.text} (${d})`);
             }
             pageLines.push('');
           }
@@ -121,28 +181,62 @@ export function renderScrapDocs(scraps, tasks = {}) {
       const inboxLines = [SCRAP_HEADER_COMMENT, '', '# 인박스', ''];
 
       for (const page of node.pages) {
+        const scrapPage = scrapPageMap.get(pageKey(null, page.url));
+        const pageMemos = memoMap.get(pageKey(null, page.url)) || [];
+
         inboxLines.push(`## ${page.title}`, '', page.url, '');
 
-        for (const sec of page.sections) {
-          if (Array.isArray(sec.headings) && sec.headings.length > 0) {
-            for (let i = 0; i < sec.headings.length; i++) {
-              const hLevel = '#'.repeat(Math.min(6, i + 3));
-              inboxLines.push(`${hLevel} ${sec.headings[i]}`, '');
+        if (scrapPage) {
+          for (const sec of scrapPage.sections) {
+            if (Array.isArray(sec.headings) && sec.headings.length > 0) {
+              for (let i = 0; i < sec.headings.length; i++) {
+                const hLevel = '#'.repeat(Math.min(6, i + 3));
+                inboxLines.push(`${hLevel} ${sec.headings[i]}`, '');
+              }
+            }
+
+            for (const item of sec.items) {
+              const exactLines = String(item?.quote?.exact ?? '')
+                .split('\n')
+                .map((l) => `> ${l}`)
+                .join('\n');
+              inboxLines.push(exactLines);
+
+              if (typeof item?.translation === 'string' && item.translation.trim()) {
+                inboxLines.push(`번역: ${item.translation.trim()}`);
+              }
+              if (typeof item?.memo === 'string' && item.memo.trim()) {
+                inboxLines.push(`메모: ${item.memo.trim()}`);
+              }
+              inboxLines.push('');
             }
           }
+        }
 
-          for (const item of sec.items) {
-            const exactLines = String(item?.quote?.exact ?? '')
-              .split('\n')
-              .map((l) => `> ${l}`)
-              .join('\n');
-            inboxLines.push(exactLines);
+        // 메모 렌더링
+        if (pageMemos.length > 0) {
+          inboxLines.push('### 메모', '');
 
-            if (typeof item?.translation === 'string' && item.translation.trim()) {
-              inboxLines.push(`번역: ${item.translation.trim()}`);
+          const sortedMemos = [...pageMemos].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+          const memoSectionMap = new Map();
+          const memoSectionOrder = [];
+          for (const m of sortedMemos) {
+            const heading = Array.isArray(m.headings) && m.headings.length > 0 ? m.headings[m.headings.length - 1] : '';
+            if (!memoSectionMap.has(heading)) {
+              memoSectionMap.set(heading, []);
+              memoSectionOrder.push(heading);
             }
-            if (typeof item?.memo === 'string' && item.memo.trim()) {
-              inboxLines.push(`메모: ${item.memo.trim()}`);
+            memoSectionMap.get(heading).push(m);
+          }
+
+          for (const heading of memoSectionOrder) {
+            const items = memoSectionMap.get(heading);
+            if (heading) {
+              inboxLines.push(`#### ${heading}`, '');
+            }
+            for (const m of items) {
+              const d = dateOf(m.ts);
+              inboxLines.push(`- ${m.text} (${d})`);
             }
             inboxLines.push('');
           }
@@ -303,13 +397,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.error(`오류: ${e?.message ?? e}`);
     process.exit(1);
   }
-  const { scraps: scrapsData } = data;
+  const { scraps: scrapsData, memos = [] } = data;
   const scraps = Object.values(scrapsData?.scraps ?? {});
 
   const { nodes } = loadLearning(learningDir);
   const tasks = Object.fromEntries(nodes.map((n) => [n.id, n.card_title]));
 
-  const map = renderScrapDocs(scraps, tasks);
+  const map = renderScrapDocs(scraps, tasks, memos);
   const { written, removed } = writeIfChanged(toDir, map);
 
   console.log(`스크랩 문서 내보내기 완료: ${written.length}개 작성, ${removed.length}개 삭제 (${toDir})`);

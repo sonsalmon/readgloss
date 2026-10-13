@@ -21,7 +21,7 @@ test('/study: 토큰 401, 메서드 GET 만, days 는 1~60 정수(기본 7), 기
   assert.equal((await s.post('/study', {})).status, 405);
   const r = (await s.get('/study')).json();
   assert.equal(r.days.length, 7);
-  assert.deepEqual(r.days[0], { date: '2026-10-06', counts: { dict: 0, mt: 0, context: 0, aigloss: 0, paragraph: 0, save: 0, known: 0, mydict: 0, scrap: 0 }, items: [] });
+  assert.deepEqual(r.days[0], { date: '2026-10-06', counts: { dict: 0, mt: 0, context: 0, aigloss: 0, paragraph: 0, save: 0, known: 0, mydict: 0, scrap: 0, memo: 0 }, items: [] });
   assert.equal((await s.get('/study?days=60')).json().days.length, 60);
   assert.equal((await s.get('/study?days=1')).json().days.length, 1);
   for (const bad of ['0', '61', '-3', 'abc', '1.5', '', '7x']) assert.equal((await s.get(`/study?days=${bad}`)).status, 400, bad);
@@ -39,7 +39,7 @@ test('이벤트 종류가 각각 기록되고 /study 가 집계한다(text·ko·
   await s.post('/words', { op: 'known', lemma: 'patch', ...p });
   await s.post('/mydict', { op: 'set', key: 'pca', ko: '주성분 분석', ...p });
   const d = await today(s);
-  assert.deepEqual(d.counts, { dict: 1, mt: 0, context: 1, aigloss: 1, paragraph: 1, save: 2, known: 1, mydict: 1, scrap: 0 });
+  assert.deepEqual(d.counts, { dict: 1, mt: 0, context: 1, aigloss: 1, paragraph: 1, save: 2, known: 1, mydict: 1, scrap: 0, memo: 0 });
   const by = (kind) => d.items.filter((i) => i.kind === kind);
   assert.deepEqual([by('dict')[0].text, by('dict')[0].ko, by('dict')[0].url], ['payload', '수익 하중', PAGE.url]);
   assert.deepEqual(by('mt'), []); // /mt 는 공부 기록에 남지 않는다
@@ -85,7 +85,7 @@ test('캐시 적중도 기록하고, 응답 못 한 요청·사전에 없는 단
   await s.post('/mydict', { op: 'set', key: 'a_b', ko: 'x' }); // 400
   await s.post('/annotate', { words: ['payload'] });
   const d = await today(s);
-  assert.deepEqual(d.counts, { dict: 0, mt: 0, context: 0, aigloss: 2, paragraph: 2, save: 0, known: 0, mydict: 0, scrap: 0 });
+  assert.deepEqual(d.counts, { dict: 0, mt: 0, context: 0, aigloss: 2, paragraph: 2, save: 0, known: 0, mydict: 0, scrap: 0, memo: 0 });
   assert.equal(s.asked.lookup.length, 1);
   assert.equal(s.asked.translate.length, 1);
 }));

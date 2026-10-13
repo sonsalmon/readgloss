@@ -65,9 +65,25 @@ export function loadData(dataDir) {
           } catch {}
         }
 
+        // memos
+        const memos = [];
+        const memoRows = raw.prepare("SELECT id, kind, key, data, ts FROM nodes WHERE kind = 'memo'").all();
+        for (const r of memoRows) {
+          try {
+            const d = JSON.parse(r.data);
+            if (d && typeof d === 'object') {
+              memos.push({
+                id: r.id,
+                ...d,
+                ts: Number.isFinite(d.ts) ? d.ts : r.ts,
+              });
+            }
+          } catch {}
+        }
+
         raw.close();
         raw = null;
-        return { words, mydict, scraps };
+        return { words, mydict, scraps, memos };
       }
     } catch (e) {
       throw new Error(`readgloss.db 를 열거나 읽을 수 없어요: ${dbFile} (${e?.message ?? e})`);
@@ -98,8 +114,9 @@ export function loadData(dataDir) {
     v: scrapsRaw.v ?? 1,
     scraps: scrapsRaw.scraps && typeof scrapsRaw.scraps === 'object' ? scrapsRaw.scraps : {},
   };
+  const memos = [];
 
-  return { words, mydict, scraps };
+  return { words, mydict, scraps, memos };
 }
 
 // readgloss.db를 읽기 전용으로 연다. 파일이 없거나 migrated_at이 없으면 null, 열기·읽기 실패면 던진다.

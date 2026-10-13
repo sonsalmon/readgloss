@@ -31,7 +31,7 @@ export function pendingDays(dataDir, today = dateOf(Date.now())) {
     }
   };
 
-  const { words, mydict, scraps: scrapsData } = loadData(dataDir);
+  const { words, mydict, scraps: scrapsData, memos = [] } = loadData(dataDir);
 
   // 1. words (saved, phrases)
   if (words.saved && typeof words.saved === 'object') {
@@ -59,6 +59,13 @@ export function pendingDays(dataDir, today = dateOf(Date.now())) {
     }
   }
 
+  // 4. memos
+  if (Array.isArray(memos)) {
+    for (const m of memos) {
+      if (m) checkTs(m.ts);
+    }
+  }
+
   return Array.from(days).sort();
 }
 
@@ -66,18 +73,23 @@ export function exportPending(dataDir, today = dateOf(Date.now())) {
   const days = pendingDays(dataDir, today);
   if (days.length === 0) return '';
 
-  const { scraps: scrapsData } = loadData(dataDir);
+  const { scraps: scrapsData, memos = [] } = loadData(dataDir);
   const allScraps = scrapsData.scraps && typeof scrapsData.scraps === 'object'
     ? Object.values(scrapsData.scraps).filter((s) => s && Number.isFinite(s.ts))
+    : [];
+  const allMemos = Array.isArray(memos)
+    ? memos.filter((m) => m && Number.isFinite(m.ts))
     : [];
 
   const sections = [];
   for (const day of days) {
     const dayOut = exportDay(day, dataDir);
     const dayScraps = allScraps.filter((s) => dateOf(s.ts) === day);
+    const dayMemos = allMemos.filter((m) => dateOf(m.ts) === day);
 
     const lines = [`### ${day}`, '', dayOut.trimEnd()];
 
+    const extraLines = [];
     if (dayScraps.length > 0) {
       const taskCounts = new Map();
       for (const s of dayScraps) {
@@ -90,14 +102,19 @@ export function exportPending(dataDir, today = dateOf(Date.now())) {
         .sort((a, b) => String(a).localeCompare(String(b)));
       const sortedKeys = taskCounts.has(null) ? [...namedTasks, null] : namedTasks;
 
-      const scrapLines = [];
       for (const k of sortedKeys) {
         const count = taskCounts.get(k);
         const target = k !== null ? `${k}.md` : 'inbox.md';
-        scrapLines.push(`스크랩 ${count}개 → scraps/${target}`);
+        extraLines.push(`스크랩 ${count}개 → scraps/${target}`);
       }
+    }
 
-      lines.push('', ...scrapLines);
+    if (dayMemos.length > 0) {
+      extraLines.push(`메모 ${dayMemos.length}개`);
+    }
+
+    if (extraLines.length > 0) {
+      lines.push('', ...extraLines);
     }
 
     sections.push(lines.join('\n'));
