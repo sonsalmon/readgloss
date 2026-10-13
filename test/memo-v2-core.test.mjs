@@ -274,7 +274,7 @@ test('padKeyV2: Enter=newline, ⌘Enter/ctrl+Enter=save, Escape=fold, 그 밖 nu
   assert.equal(padKeyV2(null), null);
 });
 
-test('clampRect: width 260~640, height 200~vh-40, left·top 당김 (최소 40px 노출, 왼쪽위 0 이상)', () => {
+test('clampRect: width 260~640, height 200~vh-40, left·top 당김 (창 전체가 화면 안, 왼쪽위 0 이상)', () => {
   const viewport = { vw: 1000, vh: 800 };
 
   // 1. 정상 범위 내 값은 그대로 유지
@@ -298,16 +298,16 @@ test('clampRect: width 260~640, height 200~vh-40, left·top 당김 (최소 40px 
   assert.equal(negative.left, 0);
   assert.equal(negative.top, 0);
 
-  // 5. 오른쪽·아래로 넘어가면 화면 안에 최소 40px 보이게 당김 (left <= vw - 40, top <= vh - 40)
-  // vw=1000 -> maxLeft = 960, vh=800 -> maxTop = 760
+  // 5. 오른쪽·아래로 넘어가면 창 전체가 화면 안에 들어오게 당김(10-13 메인 세션: 명세 14-2 "안쪽으로 당긴다" 해석)
+  // 크기를 안 주면 최소 260×200 → maxLeft = 1000-260 = 740, maxTop = 800-200 = 600
   const overflow = clampRect({ left: 990, top: 850 }, viewport);
-  assert.equal(overflow.left, 960);
-  assert.equal(overflow.top, 760);
+  assert.equal(overflow.left, 740);
+  assert.equal(overflow.top, 600);
 
-  // 경계값: 정확히 vw - 40, vh - 40
-  const border = clampRect({ left: 960, top: 760 }, viewport);
-  assert.equal(border.left, 960);
-  assert.equal(border.top, 760);
+  // 경계값: 창 오른쪽·아래 끝이 화면 끝과 같으면 그대로
+  const border = clampRect({ left: 740, top: 600 }, viewport);
+  assert.equal(border.left, 740);
+  assert.equal(border.top, 600);
 });
 
 test('canSave: 글이 공백뿐이고 quote 없으면 false', () => {
