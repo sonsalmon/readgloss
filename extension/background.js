@@ -184,6 +184,38 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true; // 비동기 응답
 });
 
+// --- 개념(T28): content script·패널의 'concepts' 요청을 다리 /concepts 로 전달한다. op:'names' 는 ?names=1, op:'get' 은 GET, 나머지는 POST. ---
+async function concepts(msg, retried = false) {
+  const token = await getToken(retried);
+  if (!token) return { error: 'pair-failed' };
+  const { op, id, name, aliases, definition, related, task, scrapId } = msg;
+  let path = '/concepts';
+  let init;
+  if (op === 'names') {
+    path += '?names=1';
+    init = { headers: { 'X-Bridge-Token': token } };
+  } else if (op === 'get') {
+    init = { headers: { 'X-Bridge-Token': token } };
+  } else {
+    init = {
+      method: 'POST',
+      headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ op, id, name, aliases, definition, related, task, scrapId }),
+    };
+  }
+  const res = await bridgeFetch(path, init);
+  if (res.status === 401 && !retried) return concepts(msg, true);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ...data, error: data.error || `http-${res.status}`, status: res.status };
+  return data;
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'concepts') return;
+  concepts(msg).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
+  return true; // 비동기 응답
+});
+
 // --- 스크랩 점프(T25): 다른 페이지 스크랩으로 이동할 때 session storage 에 pendingScrap 저장 후 탭 주소 갱신 ---
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id || msg?.type !== 'scrap-jump') return;

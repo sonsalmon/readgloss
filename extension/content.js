@@ -362,8 +362,19 @@
       return b;
     };
     const saveBtn = mkWordBtn('save');
+    const conceptBtn = el('button', 'btn', '내 개념으로');
+    conceptBtn.type = 'button';
+    conceptBtn.setAttribute('aria-label', '내 개념으로 저장');
+    conceptBtn.addEventListener('click', () => {
+      if (!current) return;
+      const name = current.lemma || current.word;
+      const anchor = rectOf(current.range);
+      globalThis.readglossConceptPage?.openForm({ name, anchor });
+      getSelection().removeAllRanges();
+      close();
+    });
     const knownBtn = mkWordBtn('known');
-    foot.append(saveBtn, knownBtn, aiBtn);
+    foot.append(saveBtn, conceptBtn, knownBtn, aiBtn);
     ui = { card, tops, mine, acr, term, scroll, ai, aiWide, aiBtn, saveBtn, knownBtn };
     const md = globalThis.readglossMydict;
     const key = globalThis.readglossSelection.mydictKey(current.word); // 키 규칙에 안 맞으면 [내 사전에 추가] 를 숨긴다

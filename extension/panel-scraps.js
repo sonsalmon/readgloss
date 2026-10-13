@@ -449,6 +449,19 @@
                   },
                 }),
                 h('button', {
+                  class: 'scrap-btn',
+                  type: 'button',
+                  text: '내 개념으로',
+                  onclick: (e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    globalThis.readglossConceptPage?.openForm({
+                      name: item.quote?.exact || '',
+                      scrapId: item.id,
+                      anchor: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+                    });
+                  },
+                }),
+                h('button', {
                   class: 'scrap-btn scrap-btn-danger',
                   type: 'button',
                   text: '지우기',

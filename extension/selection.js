@@ -432,9 +432,21 @@
       ui.saveBtn = button('', '', () => togglePhrase());
       ui.saveBtn.setAttribute('aria-disabled', 'true'); // 단어장 상태를 받으면 켠다
       ui.scrapBtn = button('', '', () => toggleScrap());
+      ui.conceptBtn = button('내 개념으로', '내 개념으로 저장', () => {
+        if (!current) return;
+        const anchor = globalThis.readglossToast?.rectOf(current.range);
+        const scrapId = current.scrapId ?? undefined;
+        globalThis.readglossConceptPage?.openForm({
+          name: current.text,
+          scrapId,
+          anchor,
+        });
+        getSelection().removeAllRanges();
+        close();
+      });
       ui.copyBtn = button('복사', '번역문 복사', () => copy());
       const foot = el('div', 'foot');
-      foot.append(ui.ctxBtn, ui.saveBtn, ui.scrapBtn);
+      foot.append(ui.ctxBtn, ui.saveBtn, ui.scrapBtn, ui.conceptBtn);
       const key = core.mydictKey(text); // 키 규칙에 안 맞는 선택(너무 길거나 허용 밖 글자)은 [내 사전에 추가] 를 숨긴다
       if (key) {
         ui.md = createMydict({
