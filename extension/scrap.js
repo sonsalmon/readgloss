@@ -384,6 +384,7 @@
   }
 
   globalThis.readglossScrapPage = {
+    ensureStyle, // 메모장·스크랩북 깜빡임도 이 스타일이 있어야 보인다(스크랩 없는 페이지 포함)
     paint,
     unpaint,
     update,

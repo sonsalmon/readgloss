@@ -181,7 +181,7 @@
   }
 
   // text: 확인 문구. anchor: 붙일 화면 자리(rectOf 결과). onMemo: [메모] 버튼을 눌렀을 때. 메모 저장 성공은 error 칸 없는 응답, 실패는 { error }.
-  function showToast({ text = '', onMemo, anchor } = {}) {
+  function showToast({ text = '', onMemo, anchor, ms } = {}) {
     clearTimeout(toastTimer);
     stopToastKey();
     toastHost?.remove(); // 다시 show 하면 이전 메시지를 대체한다
@@ -301,7 +301,7 @@
     document.documentElement.append(h);
     placeToast();
     armKey();
-    scheduleToast();
+    scheduleToast(ms ?? TOAST_MS); // ms: 짧게 떴다 사라질 확인(예: [나중에] 1.5초, 명세 13-1)
   }
   globalThis.readglossToast = { show: showToast, toastPosition, startsMemo, rectOf };
 

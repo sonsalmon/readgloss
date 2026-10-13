@@ -437,6 +437,7 @@
             const el = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
             el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
             if (typeof CSS !== 'undefined' && CSS.highlights && typeof Highlight !== 'undefined') {
+              globalThis.readglossScrapPage?.ensureStyle?.();
               CSS.highlights.set(FLASH_NAME, new Highlight(range));
               setTimeout(() => {
                 CSS.highlights.delete(FLASH_NAME);

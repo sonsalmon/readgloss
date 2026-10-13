@@ -902,6 +902,7 @@
     if (res?.error === 'exists') {
       globalThis.readglossToast?.show({
         text: '이미 있어요',
+        ms: 1500,
         anchor,
       });
       return;
@@ -912,6 +913,7 @@
       window.dispatchEvent(new CustomEvent('readgloss:concepts-updated', { detail: { id: res.concept?.id } }));
       globalThis.readglossToast?.show({
         text: '나중에 볼 것에 넣었어요',
+        ms: 1500,
         anchor,
       });
       chrome.runtime.sendMessage({ type: 'concepts', op: 'names' }, (r) => {
