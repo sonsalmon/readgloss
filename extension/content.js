@@ -534,6 +534,7 @@
     host?.remove();
     host = ui = null;
   }
+  globalThis.readglossDictCardUi = { close };
 
   async function send(message) {
     try {

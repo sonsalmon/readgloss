@@ -115,6 +115,7 @@
   let shadowRoot = null; // 닫힌 shadow. 밖(content.js)에서는 안의 포커스를 못 보므로 아래 isTyping 으로 묻는다
   // content.js startsMemo 가 쓴다: 카드 안 입력칸(내 사전 등)에 포커스가 있으면 글자 키로 메모 칸을 열지 않는다. 버튼(☆ 등)에 있으면 연다.
   globalThis.readglossSelectionUi = {
+    close,
     isTyping: () => {
       const a = shadowRoot?.activeElement;
       return !!a && (a.localName === 'input' || a.localName === 'textarea' || a.isContentEditable === true);

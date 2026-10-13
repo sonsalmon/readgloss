@@ -75,12 +75,13 @@ test('D: pickCenterBlock 은 가운데를 덮는 블록, 여백이면 가장 가
 });
 
 // E. 다리가 꺼져 있으면 글을 지우지 않고 안내를 보인다.
-test('E: 저장 실패면 글을 지우지 않고 다리 꺼짐 안내를 보이며, ⌥M도 성공일 때만 비운다', () => {
+test('E: 저장 실패면 글을 지우지 않고 다리 꺼짐 안내를 보이며, 선택이 없으면 ⌥M 은 토글한다', () => {
   assert.match(memoPad, /if \(res\?\.memo\) \{\s*ta\.value = '';/, '성공일 때만 비운다');
   assert.match(memoPad, /res\?\.error === 'bridge-off' \? BRIDGE_OFF_TEXT : '저장하지 못했어요'/, '실패 문구');
   assert.match(memoPad, /const BRIDGE_OFF_TEXT = '다리가 꺼져 있어요\. 터미널에서 node ~\/dev\/readgloss\/bridge\/server\.mjs 를 실행해 주세요';/);
-  // 변경 기록 14: ⌥M 은 열기↔접기 토글이고 저장은 ⌘Enter 로만 한다(글을 지우지 않는다)
-  assert.match(memoPad, /if \(cmd === 'memo-open'\) \{\s*if \(isOpen\) \{\s*closePad\(\);/, '⌥M 은 토글');
+  // 변경 기록 14: ⌥M 은 열기↔접기 토글(선택이 없을 때). 선택이 있으면 handleMemoOpen 이 인용으로 처리한다.
+  assert.match(memoPad, /if \(cmd === 'memo-open'\) \{\s*handleMemoOpen\(\);/, '⌥M 은 handleMemoOpen 으로 간다');
+  assert.match(memoPad, /선택이 비었으면 지금처럼 토글\s*if \(isOpen\) \{\s*closePad\(\);\s*\} else \{\s*openPad\(\);\s*\}/, '선택이 없으면 토글');
 });
 
 // 작은 것 1~4
@@ -97,8 +98,8 @@ test('작은 것 3: 접을 때 입력 200ms 타이머를 지운다', () => {
   assert.match(memoPad, /function closePad\(\) \{\s*clearTimeout\(typingTimer\);/);
 });
 
-test('작은 것 4: 둘째 메모부터는 처음 열 때 고른 글을 다시 쓰지 않는다(저장 성공 뒤 고른 글을 비움)', () => {
-  assert.match(memoPad, /savedSelection = null;/);
+test('작은 것 4: 저장 성공 뒤 그 칸 인용을 지운다(둘째 메모부터 고른 글을 다시 붙이지 않는다)', () => {
+  assert.match(memoPad, /if \(res\?\.memo\) \{[\s\S]*?delete quotes\[sectionKey\];/);
 });
 
 // 작은 것 5: 여러 줄 메모가 내보내기 마크다운을 깨지 않는다.

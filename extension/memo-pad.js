@@ -196,7 +196,7 @@
   let shadow = null;
   let isOpen = false;
   let currentMode = 'pad'; // 'pad' | 'list'
-  let savedSelection = null; // 메모장을 열 때 기억한 선택 글
+  let quotes = {}; // 소제목 key별 인용 보관 { [key]: { exact, prefix, suffix } }
   let currentTask = null; // 짐작된 할 일 id
   let currentTaskTitle = ''; // 짐작된 할 일 제목
   let typingTimer = 0;
@@ -373,6 +373,85 @@
     .btn-del:hover {
       color: var(--danger);
       background: var(--danger-bg);
+    }
+    .sec-quote {
+      background: #FAEEDA;
+      color: #633806;
+      border-radius: 6px;
+      padding: 4px 8px;
+      margin: 2px 0 4px 8px;
+      font-size: 12px;
+      line-height: 1.4;
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+      box-sizing: border-box;
+      width: calc(100% - 8px);
+    }
+    @media (prefers-color-scheme: dark) {
+      .sec-quote {
+        background: #412402;
+        color: #FAC775;
+      }
+    }
+    .sec-quote-text {
+      flex: 1;
+      min-width: 0;
+      word-break: break-all;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .sec-quote.expanded .sec-quote-text {
+      display: block;
+      -webkit-line-clamp: unset;
+      overflow: visible;
+    }
+    .sec-quote-del {
+      all: unset;
+      box-sizing: border-box;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      padding: 0 2px;
+      color: inherit;
+      opacity: 0.7;
+      flex-shrink: 0;
+    }
+    .sec-quote-del:hover {
+      opacity: 1;
+    }
+    .sec-memo-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .sec-memo-quote-line {
+      background: #FAEEDA;
+      color: #633806;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 11px;
+      line-height: 1.3;
+      cursor: pointer;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      word-break: break-all;
+      user-select: none;
+    }
+    @media (prefers-color-scheme: dark) {
+      .sec-memo-quote-line {
+        background: #412402;
+        color: #FAC775;
+      }
+    }
+    .sec-memo-quote-line:hover {
+      opacity: 0.85;
     }
     .sec-textarea {
       width: calc(100% - 8px);
@@ -568,6 +647,17 @@
     notice.textContent = text;
     shadow.append(notice);
     setTimeout(() => notice.remove(), 2000);
+  }
+
+  // 메모장 위에 안내 배너 띄우기
+  function showPadToastNotice(text, duration = 1500) {
+    if (!shadow) return;
+    const notice = document.createElement('div');
+    notice.className = 'toast-notice';
+    notice.textContent = text;
+    notice.style.animationDuration = `${duration}ms`;
+    shadow.append(notice);
+    setTimeout(() => notice.remove(), duration);
   }
 
   // 페이지 소제목 모으기: 본문의 h1~h3(우리 노드 및 숨은 요소 제외)
@@ -775,6 +865,7 @@
       type: 'memo-state-set',
       open: isOpen,
       drafts,
+      quotes,
       rect: currentRect,
       text: Object.values(drafts).find(Boolean) || '',
     });
@@ -820,10 +911,11 @@
     const rawText = ta.value.trim();
     const memoCore = globalThis.readglossMemo;
     const canSaveFn = memoCore?.canSave;
-    const allowable = canSaveFn ? canSaveFn(rawText, null) : Boolean(rawText);
-    if (!allowable) return false; // 빈 글은 저장하지 않음
+    const currentQuote = quotes[sectionKey] || null;
+    const allowable = canSaveFn ? canSaveFn(rawText, currentQuote) : (Boolean(rawText) || Boolean(currentQuote));
+    if (!allowable) return false; // 빈 글이고 인용도 없으면 저장하지 않음
 
-    const text = rawText.slice(0, 2000);
+    const text = (rawText || (currentQuote ? ' ' : '')).slice(0, 2000);
     const headingsChain = getHeadingChain(currentHeadings, sectionKey);
 
     let para = null;
@@ -844,7 +936,11 @@
 
     const pageTitle = (document.title || '').slice(0, 300);
     const currentUrl = location.href;
-    const selection = savedSelection || null;
+    const quote = currentQuote ? {
+      exact: currentQuote.exact.slice(0, 1000),
+      prefix: (currentQuote.prefix || '').slice(0, 64),
+      suffix: (currentQuote.suffix || '').slice(0, 64),
+    } : null;
     const task = currentTask || null;
 
     const res = await new Promise((resolve) => {
@@ -857,7 +953,7 @@
         headings: headingsChain,
         para,
         pos,
-        selection,
+        quote,
         task,
       }, resolve);
     });
@@ -866,8 +962,8 @@
       ta.value = '';
       autoResize(ta);
       drafts[sectionKey] = '';
+      delete quotes[sectionKey];
       saveDrafts();
-      savedSelection = null; // 둘째 메모부터는 처음 열 때 고른 글을 다시 쓰지 않음
 
       currentMemos.push(res.memo);
 
@@ -875,6 +971,9 @@
       if (shadow) {
         const secEl = shadow.querySelector(`.sec[data-key="${CSS.escape(sectionKey)}"]`);
         if (secEl) {
+          const qEl = secEl.querySelector('.sec-quote');
+          qEl?.remove();
+
           const memosContainer = secEl.querySelector('.sec-memos');
           if (memosContainer) {
             memosContainer.append(createMemoLine(res.memo, sectionKey));
@@ -902,9 +1001,10 @@
 
     if (curUrl && targetUrl && curUrl === targetUrl) {
       let found = false;
-      if (memo.para && scrapPage?.buildTextIndex && scrapCore?.findQuote && scrapPage?.offsetToRange) {
+      const targetQuote = memo.quote || memo.para;
+      if (targetQuote && scrapPage?.buildTextIndex && scrapCore?.findQuote && scrapPage?.offsetToRange) {
         const { fullText, nodes } = scrapPage.buildTextIndex();
-        const match = scrapCore.findQuote(fullText, memo.para, memo.pos);
+        const match = scrapCore.findQuote(fullText, targetQuote, memo.pos);
         if (match) {
           const range = scrapPage.offsetToRange(nodes, match.start, match.end);
           if (range) {
@@ -931,6 +1031,7 @@
         url: memo.url,
         id: memo.id,
         para: memo.para,
+        quote: memo.quote,
         pos: memo.pos,
       });
     }
@@ -953,6 +1054,18 @@
   }
 
   function createMemoLine(m, sectionKey) {
+    const wrap = document.createElement('div');
+    wrap.className = 'sec-memo-wrap';
+
+    if (m.quote && typeof m.quote.exact === 'string' && m.quote.exact.length > 0) {
+      const qLine = document.createElement('div');
+      qLine.className = 'sec-memo-quote-line';
+      qLine.textContent = `“${m.quote.exact}”`;
+      qLine.title = '인용 자리로 이동';
+      qLine.onclick = () => jumpToMemo(m);
+      wrap.append(qLine);
+    }
+
     const line = document.createElement('div');
     line.className = 'sec-memo-line';
 
@@ -970,12 +1083,13 @@
       removeMemo(m.id, () => {
         const idx = currentMemos.findIndex((item) => item.id === m.id);
         if (idx !== -1) currentMemos.splice(idx, 1);
-        line.remove();
+        wrap.remove();
       });
     };
 
     line.append(textEl, delBtn);
-    return line;
+    wrap.append(line);
+    return wrap;
   }
 
   // 메모장 안에서 그 칸이 보이게 scrollTop 직접 계산 스크롤
@@ -1158,6 +1272,37 @@
       }
       sec.append(memosContainer);
 
+      // 그 칸의 인용이 있으면 쓰는 칸 바로 위에 노란 인용 줄 표시
+      const qData = quotes[s.key];
+      if (qData && typeof qData.exact === 'string' && qData.exact.length > 0) {
+        const quoteEl = document.createElement('div');
+        quoteEl.className = 'sec-quote';
+
+        const quoteText = document.createElement('div');
+        quoteText.className = 'sec-quote-text';
+        quoteText.textContent = `“${qData.exact}”`;
+
+        const quoteDel = document.createElement('button');
+        quoteDel.className = 'sec-quote-del';
+        quoteDel.type = 'button';
+        quoteDel.setAttribute('aria-label', '인용 뺌');
+        quoteDel.textContent = '✕';
+        quoteDel.onclick = (e) => {
+          e.stopPropagation();
+          delete quotes[s.key];
+          saveDrafts();
+          quoteEl.remove();
+        };
+
+        quoteEl.onclick = (e) => {
+          if (e.target === quoteDel) return;
+          quoteEl.classList.toggle('expanded');
+        };
+
+        quoteEl.append(quoteText, quoteDel);
+        sec.append(quoteEl);
+      }
+
       // 맨 끝 쓰는 칸(textarea, 자동 높이)
       const ta = document.createElement('textarea');
       ta.className = 'sec-textarea';
@@ -1333,23 +1478,65 @@
     });
   }
 
+  // 노드가 우리 화면(readgloss-* host 또는 data-readgloss) 안인지 확인
+  function isInsideOurHost(node) {
+    if (!node) return false;
+    let curr = node.nodeType === 1 ? node : node.parentElement;
+    while (curr) {
+      const tag = (curr.localName || curr.tagName || '').toLowerCase();
+      if (tag.startsWith('readgloss-') || curr.hasAttribute?.('data-readgloss')) {
+        return true;
+      }
+      if (curr.getRootNode && curr.getRootNode() instanceof ShadowRoot) {
+        const hostEl = curr.getRootNode().host;
+        const hostTag = (hostEl?.localName || hostEl?.tagName || '').toLowerCase();
+        if (hostTag.startsWith('readgloss-') || hostEl?.hasAttribute?.('data-readgloss')) {
+          return true;
+        }
+      }
+      curr = curr.parentElement;
+    }
+    return false;
+  }
+
+  // 선택 시작 노드보다 앞선 마지막 h1~h3의 key 구하기 (소제목 모으기 결과와 같은 key)
+  function findHeadingKeyForNode(startNode, headings) {
+    if (!Array.isArray(headings) || headings.length === 0) return '_page';
+    let targetKey = null;
+    for (const h of headings) {
+      if (!h.el) continue;
+      if (h.el === startNode || (h.el.compareDocumentPosition(startNode) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+        targetKey = h.key;
+      }
+    }
+    return targetKey || headings[0]?.key || '_page';
+  }
+
   // 메모장 열기
-  function openPad() {
+  function openPad(targetSectionKey) {
     isOpen = true;
     currentMode = 'pad';
     loadAndApplyRect();
-    savedSelection = window.getSelection()?.toString()?.trim()?.slice(0, 1000) || null;
     fetchTaskGuess();
     currentHeadings = collectHeadings();
     lastHeadingsCount = currentHeadings.length;
     setupMutationObserver();
+
+    if (targetSectionKey) {
+      currentActiveKey = targetSectionKey;
+    }
 
     const root = ensureHost();
     renderPadUI(root);
     saveDrafts();
 
     // 초기 활성 칸 계산 및 스크롤/포커스
-    updateActiveSection(true);
+    if (targetSectionKey) {
+      lastTypedAt = 0;
+      applyActiveSection(true);
+    } else {
+      updateActiveSection(true);
+    }
 
     // 열 때 다리 GET /memos?url= 로 메모 불러오기
     chrome.runtime.sendMessage({ type: 'memos', op: 'get', url: location.href }, (res) => {
@@ -1357,6 +1544,9 @@
       currentMemos = Array.isArray(res.memos) ? res.memos : [];
       if (isOpen && currentMode === 'pad') {
         rebuildSectionsUI();
+        if (targetSectionKey) {
+          applyActiveSection(true);
+        }
       }
     });
   }
@@ -1422,6 +1612,9 @@
       if (res.drafts && typeof res.drafts === 'object') {
         drafts = { ...res.drafts };
       }
+      if (res.quotes && typeof res.quotes === 'object') {
+        quotes = { ...res.quotes };
+      }
       // 옛 상태의 text가 있으면 첫 칸 draft로 옮긴다
       if (typeof res.text === 'string' && res.text) {
         const firstKey = currentHeadings[0]?.key || '_page';
@@ -1435,17 +1628,75 @@
     });
   }
 
+  // ⌥M with 고른 글 또는 토글 처리
+  function handleMemoOpen() {
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    const hasSelection = sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.toString().trim().length > 0;
+
+    let isOurHost = false;
+    let range = null;
+    if (hasSelection) {
+      range = sel.getRangeAt(0);
+      isOurHost = isInsideOurHost(range.startContainer) || isInsideOurHost(range.commonAncestorContainer);
+    }
+
+    if (hasSelection && !isOurHost) {
+      // 1. 두 카드 close()
+      globalThis.readglossSelectionUi?.close?.();
+      globalThis.readglossDictCardUi?.close?.();
+
+      // 2. 선택 범위로 quoteForRange 구하기 (반환은 { quote: {exact, prefix, suffix}, pos } | null)
+      const q = globalThis.readglossScrapPage?.quoteForRange?.(range)?.quote;
+      const extracted = q && typeof q.exact === 'string' && q.exact.length > 0
+        ? { exact: q.exact, prefix: q.prefix || '', suffix: q.suffix || '' }
+        : null;
+
+      if (!extracted) {
+        // 인용 없이 열고 메모장 위에 "이 글은 인용할 수 없어요" 1.5초
+        if (!isOpen) {
+          openPad();
+        }
+        showPadToastNotice('이 글은 인용할 수 없어요', 1500);
+        return;
+      }
+
+      // 3. 고른 글이 든 소제목 칸 key 구하기 (닫힌 사이 바뀌었을 수 있어 지금 페이지 기준으로 다시 모은다)
+      currentHeadings = collectHeadings();
+      lastHeadingsCount = currentHeadings.length;
+      const targetKey = findHeadingKeyForNode(range.startContainer, currentHeadings);
+
+      // 4. 그 칸의 인용으로 quotes[key] = {exact, prefix, suffix}
+      quotes[targetKey] = extracted;
+      currentActiveKey = targetKey;
+      saveDrafts();
+
+      // 5. 접혀 있으면 연다. 칸 화면이 열려 있으면 토글하지 않고 그대로 두고 칸을 다시 그린다.
+      //    목록(⌥⇧M) 화면이면 칸 화면으로 바꿔서 인용이 보이게 한다.
+      if (isOpen && currentMode === 'pad') {
+        rebuildSectionsUI();
+        lastTypedAt = 0;
+        applyActiveSection(true);
+      } else {
+        openPad(targetKey);
+      }
+      return;
+    }
+
+    // 선택이 비었으면 지금처럼 토글
+    if (isOpen) {
+      closePad();
+    } else {
+      openPad();
+    }
+  }
+
   // 단축키 커맨드(memo-open, memo-list) 메시지 리스너
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type !== 'memo-command') return;
     const cmd = msg.cmd;
 
     if (cmd === 'memo-open') {
-      if (isOpen) {
-        closePad();
-      } else {
-        openPad();
-      }
+      handleMemoOpen();
     } else if (cmd === 'memo-list') {
       openList();
     }
