@@ -252,3 +252,10 @@ test('소스 검사: extension/memo-pad.js 가 0.8초(800ms) 자동 저장 및 E
   // openForm 연동
   assert.match(padCode, /readglossConceptPage.*openForm/);
 });
+
+test('assignToSections: buildSections 가 이미 넣은 메모는 memos 에 두 번 들어가지 않는다(목차 메모 개수)', () => {
+  const m = { id: 'm1', kind: 'memo', headings: ['A'], ts: 1 };
+  const out = memoCore.assignToSections([{ key: 'h0', text: 'A', memos: [m] }], [m]);
+  assert.equal(out[0].memos.length, 1);
+  assert.equal(out[0].items.length, 1);
+});

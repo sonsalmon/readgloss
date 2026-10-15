@@ -1401,6 +1401,22 @@
     });
   }
 
+  // 커서 자리에 글 넣기 (Ctrl+Z 실행 취소가 되도록 execCommand 우선, fallback은 setRangeText)
+  function insertTextAtCursor(ta, text) {
+    if (!ta) return;
+    ta.focus();
+    let inserted = false;
+    try {
+      inserted = document.execCommand('insertText', false, text);
+    } catch {}
+    if (!inserted) {
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      ta.setRangeText(text, start, end, 'end');
+    }
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
   // 소제목 칸 기준 메모 저장 실행
   async function performSave(sectionKey, ta) {
     if (!ta) return false;
@@ -1437,6 +1453,14 @@
       exact: currentQuote.exact.slice(0, 1000),
       prefix: (currentQuote.prefix || '').slice(0, 64),
       suffix: (currentQuote.suffix || '').slice(0, 64),
+      ...(currentQuote.source === 'tutor' ? {
+        source: 'tutor',
+        tutor: {
+          date: currentQuote.tutor?.date || '',
+          time: currentQuote.tutor?.time || '',
+          title: currentQuote.tutor?.title || '',
+        },
+      } : {}),
     } : null;
     const task = currentTask || null;
 
@@ -1590,9 +1614,30 @@
     if (m.quote && typeof m.quote.exact === 'string' && m.quote.exact.length > 0) {
       const qLine = document.createElement('div');
       qLine.className = 'sec-memo-quote-line';
-      qLine.textContent = `“${m.quote.exact}”`;
-      qLine.title = '인용 자리로 이동';
-      qLine.onclick = () => jumpToMemo(m);
+      if (m.quote.source === 'tutor') {
+        const timeStr = m.quote.tutor?.time || '';
+        let isExpanded = false;
+        const renderText = () => {
+          qLine.textContent = isExpanded ? `❝ 튜터 ${timeStr}\n${m.quote.exact}` : `❝ 튜터 ${timeStr} · ${m.quote.exact.slice(0, 60)}${m.quote.exact.length > 60 ? '…' : ''}`;
+        };
+        renderText();
+        qLine.title = '전문 펼치기/접기';
+        qLine.onclick = () => {
+          isExpanded = !isExpanded;
+          if (isExpanded) {
+            qLine.style.webkitLineClamp = 'unset';
+            qLine.style.whiteSpace = 'pre-wrap';
+          } else {
+            qLine.style.webkitLineClamp = '2';
+            qLine.style.whiteSpace = '';
+          }
+          renderText();
+        };
+      } else {
+        qLine.textContent = `“${m.quote.exact}”`;
+        qLine.title = '인용 자리로 이동';
+        qLine.onclick = () => jumpToMemo(m);
+      }
       wrap.append(qLine);
     }
 
@@ -2282,7 +2327,34 @@
 
           const quoteText = document.createElement('div');
           quoteText.className = 'sec-quote-text';
-          quoteText.textContent = `“${qData.exact}”`;
+
+          const isTutor = qData.source === 'tutor';
+          const timeStr = qData.tutor?.time || '';
+
+          if (isTutor) {
+            let isExpanded = false;
+            const renderQuoteText = () => {
+              quoteText.textContent = isExpanded ? `❝ 튜터 ${timeStr}\n${qData.exact}` : `❝ 튜터 ${timeStr} · ${qData.exact.slice(0, 60)}${qData.exact.length > 60 ? '…' : ''}`;
+            };
+            renderQuoteText();
+            quoteEl.onclick = (e) => {
+              if (e.target === quoteDel) return;
+              isExpanded = !isExpanded;
+              quoteEl.classList.toggle('expanded', isExpanded);
+              if (isExpanded) {
+                quoteText.style.whiteSpace = 'pre-wrap';
+              } else {
+                quoteText.style.whiteSpace = '';
+              }
+              renderQuoteText();
+            };
+          } else {
+            quoteText.textContent = `“${qData.exact}”`;
+            quoteEl.onclick = (e) => {
+              if (e.target === quoteDel) return;
+              quoteEl.classList.toggle('expanded');
+            };
+          }
 
           const quoteDel = document.createElement('button');
           quoteDel.className = 'sec-quote-del';
@@ -2294,11 +2366,6 @@
             delete quotes[s.key];
             saveDrafts();
             quoteEl.remove();
-          };
-
-          quoteEl.onclick = (e) => {
-            if (e.target === quoteDel) return;
-            quoteEl.classList.toggle('expanded');
           };
 
           quoteEl.append(quoteText, quoteDel);
@@ -2320,6 +2387,92 @@
           typingTimer = setTimeout(() => {
             saveDrafts();
           }, 200);
+        });
+
+        ta.addEventListener('paste', async (e) => {
+          const pastedText = e.clipboardData?.getData('text/plain') || '';
+          const cleanText = pastedText.trim().replace(/\s+/g, ' ');
+
+          // 공백 정리해 15자 미만이면 기본 동작
+          if (cleanText.length < 15) return;
+
+          // 15자 이상이면 기본 동작을 막음
+          e.preventDefault();
+
+          // 1. 본문에 그 글이 있는지 검색 (본문 색인·quoteOf 재사용, 공백 정리 비교)
+          let inPage = false;
+          let pageQuote = null;
+          const scrapPage = globalThis.readglossScrapPage;
+          const scrapCore = globalThis.readglossScrap;
+
+          if (scrapPage?.buildTextIndex) {
+            const { fullText } = scrapPage.buildTextIndex();
+            if (fullText) {
+              const words = cleanText.split(' ').map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+              try {
+                const re = new RegExp(words.join('\\s+'));
+                const m = re.exec(fullText);
+                if (m) {
+                  inPage = true;
+                  const start = m.index;
+                  const end = m.index + m[0].length;
+                  const q = scrapCore?.quoteOf ? scrapCore.quoteOf(fullText, start, end) : { exact: m[0], prefix: '', suffix: '' };
+                  pageQuote = {
+                    exact: q.exact.slice(0, 1000),
+                    prefix: (q.prefix || '').slice(0, 64),
+                    suffix: (q.suffix || '').slice(0, 64),
+                  };
+                }
+              } catch {}
+            }
+          }
+
+          if (inPage && pageQuote) {
+            quotes[s.key] = pageQuote;
+            saveDrafts();
+            rebuildSectionsUI();
+            return;
+          }
+
+          // 2. 없으면 tutor-quote를 묻는다 (최대 1.5초, 넘으면 못 찾음)
+          let tutorRes = null;
+          try {
+            const fetchPromise = new Promise((resolve) => {
+              chrome.runtime.sendMessage({ type: 'tutor-quote', text: pastedText }, (res) => {
+                resolve(res);
+              });
+            });
+            const timeoutPromise = new Promise((resolve) => {
+              setTimeout(() => resolve({ found: false, timeout: true }), 1500);
+            });
+            tutorRes = await Promise.race([fetchPromise, timeoutPromise]);
+          } catch {
+            tutorRes = { found: false };
+          }
+
+          const tutorFound = Boolean(tutorRes && tutorRes.found);
+          const memoCore = globalThis.readglossMemo;
+          const decision = memoCore?.classifyPaste
+            ? memoCore.classifyPaste({ text: pastedText, inPage: false, tutorFound })
+            : (tutorFound ? 'tutor' : 'text');
+
+          if (decision === 'tutor') {
+            quotes[s.key] = {
+              exact: cleanText.slice(0, 1000),
+              prefix: '',
+              suffix: '',
+              source: 'tutor',
+              tutor: {
+                date: tutorRes.date,
+                time: tutorRes.time,
+                title: tutorRes.title,
+              },
+            };
+            saveDrafts();
+            rebuildSectionsUI();
+          } else {
+            insertTextAtCursor(ta, pastedText);
+          }
         });
 
         sec.append(ta);

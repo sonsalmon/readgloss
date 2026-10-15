@@ -340,6 +340,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true; // 비동기 응답
 });
 
+// --- 튜터 인용(T37b): content script 의 'tutor-quote' 요청을 다리 /tutor-quote 로 전달한다. ---
+async function tutorQuote(msg, retried = false) {
+  const token = await getToken(retried);
+  if (!token) return { error: 'pair-failed' };
+  const { text } = msg;
+  const res = await bridgeFetch('/tutor-quote', {
+    method: 'POST',
+    headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (res.status === 401 && !retried) return tutorQuote(msg, true);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: data.error || `http-${res.status}` };
+  return data;
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'tutor-quote') return;
+  tutorQuote(msg).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
+  return true; // 비동기 응답
+});
+
+
 // --- 메모 점프(T29b): 다른 페이지 메모로 이동할 때 session storage 에 pendingMemo 저장 후 탭 주소 갱신 ---
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id || msg?.type !== 'memo-jump') return;

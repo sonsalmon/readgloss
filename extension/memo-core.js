@@ -471,7 +471,8 @@
       }
 
       targetSection.items.push(item);
-      if (item.kind === 'memo') {
+      // buildSections 가 이미 넣은 메모와 같은 id 면 두 번 세지 않는다
+      if (item.kind === 'memo' && !targetSection.memos.some((m) => item.id && m.id === item.id)) {
         targetSection.memos.push(item);
       }
     }
@@ -537,6 +538,19 @@
     return msSinceInput >= 1500;
   }
 
+  // 붙여넣은 글 판정 (T37b): 'page' | 'tutor' | 'text'
+  // 공백 정리 뒤 15자 미만이면 기본 동작('text').
+  // 15자 이상일 때: 본문에 있으면 'page', 없으면 튜터에서 찾았을 때 'tutor', 못 찾으면 'text'.
+  function classifyPaste(params) {
+    if (!params || typeof params !== 'object') return 'text';
+    const rawText = typeof params.text === 'string' ? params.text : '';
+    const clean = rawText.trim().replace(/\s+/g, ' ');
+    if (clean.length < 15) return 'text';
+    if (params.inPage) return 'page';
+    if (params.tutorFound) return 'tutor';
+    return 'text';
+  }
+
   globalThis.readglossMemo = {
     normalizeUrl,
     currentHeading,
@@ -563,6 +577,7 @@
     tocLabel,
     textareaHeight,
     shouldSwitchSection,
+    classifyPaste,
   };
 })();
 
