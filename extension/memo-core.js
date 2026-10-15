@@ -350,6 +350,141 @@
     return true;
   }
 
+  // 첫 정의 항목 추출 (마크다운 목록 앞머리 제외)
+  function firstDefinitionItem(def) {
+    if (typeof def !== 'string') return '';
+    const lines = def.split('\n');
+    for (const l of lines) {
+      const cleaned = l.replace(/^\s*[-*]\s*/, '').trim();
+      if (cleaned) return cleaned;
+    }
+    return '';
+  }
+
+  // 모양 줄 텍스트 생성 (3번 명세)
+  // 인용: ❝ + 첫 120자. 개념: ◆ 이름 — 정의 첫 항목. 나중에: ? 이름. 단어: Aa 원형 — 뜻. 구·문장: Aa 글 — 번역.
+  function formatShapeLine(item) {
+    if (!item || typeof item !== 'object') return '';
+    const kind = item.kind;
+    if (kind === 'scrap') {
+      const raw = typeof item.text === 'string' && item.text ? item.text : (item.quote?.exact || '');
+      const clean = raw.replace(/\s+/g, ' ').trim();
+      return `❝ ${clean.slice(0, 120)}`;
+    }
+    if (kind === 'concept') {
+      const name = item.name || '';
+      const first = firstDefinitionItem(item.definition);
+      return first ? `◆ ${name} — ${first}` : `◆ ${name}`;
+    }
+    if (kind === 'later') {
+      return `? ${item.name || ''}`;
+    }
+    if (kind === 'word') {
+      const lemma = item.lemma || item.word || '';
+      const gloss = item.gloss || '';
+      return gloss ? `Aa ${lemma} — ${gloss}` : `Aa ${lemma}`;
+    }
+    if (kind === 'phrase') {
+      const text = item.text || '';
+      const tr = item.translation || '';
+      return tr ? `Aa ${text} — ${tr}` : `Aa ${text}`;
+    }
+    if (kind === 'memo') {
+      return item.text || '';
+    }
+    return '';
+  }
+
+  // 쓰는 칸 첫 줄이 !이름 또는 ?이름(이름 1~80자)일 때 판정 (순수 함수)
+  function parseConceptCommand(text) {
+    if (typeof text !== 'string') return null;
+    const lines = text.split('\n');
+    const firstLine = lines[0].trim();
+    if (!firstLine.startsWith('!') && !firstLine.startsWith('?')) {
+      return null;
+    }
+    const prefix = firstLine[0];
+    const name = firstLine.slice(1).trim().replace(/\s+/g, ' ');
+    if (name.length < 1 || name.length > 80) {
+      return null;
+    }
+    const kind = prefix === '!' ? 'concept' : 'later';
+    const definition = kind === 'concept' ? lines.slice(1).join('\n') : '';
+    return {
+      kind,
+      name,
+      definition,
+    };
+  }
+
+  // 소제목 목록과 다양한 모양의 항목들을 소제목별 칸으로 묶음.
+  // items: {kind:'memo'|'scrap'|'concept'|'later'|'word'|'phrase', headings?:string[], ts, ...}
+  // 각 항목을 headings 마지막 글과 같은 글의 소제목 칸에 넣고(앞뒤 공백 무시), 없거나 못 찾으면 _page 칸.
+  // 칸 안은 ts 오름차순. 메모는 지금 buildSections 규칙을 그대로 따른다(못 찾으면 첫 칸).
+  function assignToSections(sections, items) {
+    if (!Array.isArray(sections)) return [];
+    const norm = (s) => (typeof s === 'string' ? s.trim().replace(/\s+/g, ' ').toLowerCase() : '');
+
+    const outSections = sections.map((s) => ({
+      ...s,
+      items: Array.isArray(s.items) ? [...s.items] : [],
+      memos: Array.isArray(s.memos) ? [...s.memos] : [],
+    }));
+
+    const getOrCreatePageSection = () => {
+      let pageSec = outSections.find((s) => s.key === '_page');
+      if (!pageSec) {
+        pageSec = {
+          key: '_page',
+          text: '이 페이지에서',
+          level: 2,
+          items: [],
+          memos: [],
+        };
+        outSections.push(pageSec);
+      }
+      return pageSec;
+    };
+
+    const itemList = Array.isArray(items) ? items.filter(Boolean) : [];
+
+    for (const item of itemList) {
+      let targetSection = null;
+      if (Array.isArray(item.headings) && item.headings.length > 0) {
+        const lastHeadingText = norm(item.headings[item.headings.length - 1]);
+        if (lastHeadingText) {
+          const found = outSections.find((s) => norm(s.text) === lastHeadingText);
+          if (found) {
+            targetSection = found;
+          }
+        }
+      }
+
+      if (!targetSection) {
+        if (item.kind === 'memo') {
+          // 메모는 buildSections 규칙 준수: 못 찾으면 첫 칸(outSections[0])
+          targetSection = outSections[0] || getOrCreatePageSection();
+        } else {
+          // 스크랩, 개념, 나중에, 단어, 구문장은 _page 칸
+          targetSection = getOrCreatePageSection();
+        }
+      }
+
+      targetSection.items.push(item);
+      if (item.kind === 'memo') {
+        targetSection.memos.push(item);
+      }
+    }
+
+    // 각 칸 안 항목들을 ts 오름차순 정렬
+    for (const sec of outSections) {
+      sec.items.sort((a, b) => (Number(a?.ts) || 0) - (Number(b?.ts) || 0));
+      sec.memos.sort((a, b) => (Number(a?.ts) || 0) - (Number(b?.ts) || 0));
+    }
+
+    return outSections;
+  }
+
   globalThis.readglossMemo = {
     normalizeUrl,
     currentHeading,
@@ -370,6 +505,9 @@
     canSave,
     dockWidth,
     shouldReturnFocus,
+    assignToSections,
+    parseConceptCommand,
+    formatShapeLine,
   };
 })();
 

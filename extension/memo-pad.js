@@ -453,6 +453,10 @@
   let editingMemo = null; // 다시 열기로 가져온 메모 { id, sectionKey } — 그 칸의 ⌘Enter 가 고침(edit)으로 보낸다
   let currentHeadings = []; // [{ key, text, level, el }]
   let currentMemos = []; // 이 페이지의 저장된 메모 목록
+  let currentPageItems = []; // 이 페이지의 모든 모양 항목 목록 (메모, 스크랩, 개념, 나중에, 단어, 구문장)
+  let activeConceptEditId = null; // 인라인 편집기가 열려 있는 개념 id
+  let conceptSaveTimers = {}; // 개념 id별 0.8초 자동 저장 타이머
+  let pendingConceptSaves = {}; // 개념 id별 대기 중인 저장 콜백
   let currentActiveKey = '_page'; // 현재 활성화된 소제목 key
   let lastTypedAt = 0; // 쓰는 칸에 마지막으로 입력한 시각(ms)
   let lastHeadingsCount = -1; // MutationObserver 개수 비교용
@@ -670,6 +674,80 @@
     .btn-del:hover {
       color: var(--danger);
       background: var(--danger-bg);
+    }
+    .sec-shape-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .sec-shape-line {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 2px 4px;
+      border-radius: 4px;
+      font-size: 11.5px;
+      color: var(--mut);
+      line-height: 1.4;
+      word-break: break-all;
+      user-select: none;
+      cursor: pointer;
+    }
+    .sec-shape-line:hover {
+      background: rgba(0, 0, 0, 0.04);
+      color: var(--fg);
+    }
+    @media (prefers-color-scheme: dark) {
+      .sec-shape-line:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+    }
+    .sec-shape-line.concept-line.active {
+      background: var(--accbg);
+      color: var(--acc);
+      font-weight: 500;
+    }
+    .sec-shape-text {
+      flex: 1;
+      min-width: 0;
+    }
+    .concept-inline-edit {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin: 2px 0 4px 8px;
+      padding: 6px;
+      border-radius: 6px;
+      background: var(--bg);
+      border: 1px solid var(--acc);
+      box-sizing: border-box;
+    }
+    .concept-edit-textarea {
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 48px;
+      border: 1px solid var(--bd);
+      border-radius: 4px;
+      background: var(--card);
+      color: var(--fg);
+      font: inherit;
+      font-size: 12px;
+      line-height: 1.4;
+      padding: 4px 6px;
+      resize: none;
+      outline: none;
+    }
+    .concept-edit-textarea:focus {
+      border-color: var(--acc);
+    }
+    .concept-edit-mut {
+      font-size: 11px;
+      color: var(--mut);
+      user-select: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
     .sec-quote {
       background: #FAEEDA;
@@ -1238,6 +1316,8 @@
     if (res?.memo) {
       const idx = currentMemos.findIndex((m) => m.id === id);
       if (idx !== -1) currentMemos[idx] = res.memo;
+      const pIdx = currentPageItems.findIndex((item) => item.kind === 'memo' && item.id === id);
+      if (pIdx !== -1) currentPageItems[pIdx].text = res.memo.text;
       endEdit();
       ta.value = drafts[sectionKey] || '';
       autoResize(ta);
@@ -1345,6 +1425,15 @@
       saveDrafts();
 
       currentMemos.push(res.memo);
+      currentPageItems.push({
+        kind: 'memo',
+        id: res.memo.id,
+        text: res.memo.text,
+        quote: res.memo.quote,
+        headings: res.memo.headings,
+        ts: res.memo.ts,
+        url: res.memo.url,
+      });
 
       // DOM에 즉시 반영
       if (shadow) {
@@ -1463,6 +1552,8 @@
       removeMemo(m.id, () => {
         const idx = currentMemos.findIndex((item) => item.id === m.id);
         if (idx !== -1) currentMemos.splice(idx, 1);
+        const pIdx = currentPageItems.findIndex((item) => item.kind === 'memo' && item.id === m.id);
+        if (pIdx !== -1) currentPageItems.splice(pIdx, 1);
         wrap.remove();
       });
     };
@@ -1470,6 +1561,411 @@
     line.append(textEl, delBtn);
     wrap.append(line);
     return wrap;
+  }
+
+  // 대기 중인 개념 자동 저장 즉시 전송
+  function flushPendingConceptSave(conceptId) {
+    if (!conceptId) return;
+    if (conceptSaveTimers[conceptId]) {
+      clearTimeout(conceptSaveTimers[conceptId]);
+      delete conceptSaveTimers[conceptId];
+    }
+    if (typeof pendingConceptSaves[conceptId] === 'function') {
+      const saveFn = pendingConceptSaves[conceptId];
+      delete pendingConceptSaves[conceptId];
+      saveFn();
+    }
+  }
+
+  // 개념 그 자리 편집기 닫기 (Esc 또는 같은 줄 다시 누름)
+  function closeConceptInlineEdit(conceptId) {
+    if (!conceptId) return;
+    flushPendingConceptSave(conceptId);
+    if (activeConceptEditId === conceptId) {
+      activeConceptEditId = null;
+    }
+    if (shadow) {
+      const editBox = shadow.querySelector(`.concept-inline-edit[data-id="${CSS.escape(conceptId)}"]`);
+      editBox?.remove();
+      const lineEl = shadow.querySelector(`.sec-shape-line.concept-line[data-id="${CSS.escape(conceptId)}"]`);
+      lineEl?.classList.remove('active');
+    }
+  }
+
+  // 개념 그 자리 편집기 열기 / 토글 (16-3)
+  function toggleConceptInlineEdit(item, lineEl) {
+    if (!item || !lineEl) return;
+    const id = item.id;
+    if (activeConceptEditId === id) {
+      closeConceptInlineEdit(id);
+      return;
+    }
+    if (activeConceptEditId) {
+      closeConceptInlineEdit(activeConceptEditId);
+    }
+
+    activeConceptEditId = id;
+    lineEl.classList.add('active');
+
+    const editBox = document.createElement('div');
+    editBox.className = 'concept-inline-edit';
+    editBox.dataset.id = id;
+
+    const ta = document.createElement('textarea');
+    ta.className = 'concept-edit-textarea';
+    ta.maxLength = 500;
+    ta.placeholder = '개념 정의를 적으세요...';
+
+    const initialDef = item.definition || '';
+    ta.value = globalThis.readglossMdList?.ensureStartsList ? globalThis.readglossMdList.ensureStartsList(initialDef) : initialDef;
+    autoResize(ta);
+
+    // 0.8초 자동 저장 (16-3)
+    const performConceptSave = () => {
+      const cleanDef = globalThis.readglossMdList?.cleanForSave ? globalThis.readglossMdList.cleanForSave(ta.value) : ta.value;
+      const related = Array.isArray(item.related)
+        ? item.related.map((r) => (typeof r === 'string' ? r : r?.name)).filter(Boolean)
+        : [];
+      const saveMsg = {
+        type: 'concepts',
+        op: 'save',
+        id: item.id,
+        name: item.name,
+        aliases: item.aliases || [],
+        tags: item.tags || [],
+        definition: cleanDef,
+        related,
+      };
+      // seen 은 다리 검사(title·sentence 문자열 필수)에 맞춰 채우고, 없으면 보내지 않는다(옛 값 유지)
+      if (item.seen?.url) {
+        saveMsg.seen = {
+          url: item.seen.url,
+          title: item.seen.title || '',
+          sentence: item.seen.sentence || '',
+          ...(Array.isArray(item.seen.headings) ? { headings: item.seen.headings } : {}),
+        };
+      }
+      chrome.runtime.sendMessage(saveMsg, (res) => {
+        if (res?.concept) {
+          item.definition = cleanDef;
+          item.rawConcept = res.concept;
+          item.kind = cleanDef ? 'concept' : 'later';
+          const textEl = lineEl.querySelector('.sec-shape-text');
+          const memoCore = globalThis.readglossMemo;
+          if (textEl && memoCore?.formatShapeLine) {
+            textEl.textContent = memoCore.formatShapeLine(item);
+          }
+          globalThis.readglossLastSave = { kind: 'concept', id: item.id };
+          window.dispatchEvent(new CustomEvent('readgloss:concepts-updated'));
+        }
+      });
+    };
+
+    ta.addEventListener('input', () => {
+      autoResize(ta);
+      clearTimeout(conceptSaveTimers[id]);
+      pendingConceptSaves[id] = performConceptSave;
+      conceptSaveTimers[id] = setTimeout(() => {
+        flushPendingConceptSave(id);
+      }, 800);
+    });
+
+    ta.addEventListener('keydown', (e) => {
+      if (e.isComposing) return;
+      const md = globalThis.readglossMdList;
+      let res = null;
+      if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        res = md?.onEnter ? md.onEnter(ta.value, ta.selectionStart, ta.selectionEnd) : null;
+      } else if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        res = md?.onShiftEnter ? md.onShiftEnter(ta.value, ta.selectionStart, ta.selectionEnd) : null;
+      } else if (e.key === 'Tab' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        res = md?.onTab ? md.onTab(ta.value, ta.selectionStart, ta.selectionEnd, false) : null;
+      } else if (e.key === 'Tab' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        res = md?.onTab ? md.onTab(ta.value, ta.selectionStart, ta.selectionEnd, true) : null;
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeConceptInlineEdit(id);
+        return;
+      }
+
+      if (res) {
+        e.preventDefault();
+        ta.value = res.value;
+        ta.setSelectionRange(res.selStart, res.selEnd);
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+
+    const mutInfo = document.createElement('div');
+    mutInfo.className = 'concept-edit-mut';
+    mutInfo.textContent = '0.8초 자동 저장 · Esc 닫기';
+
+    editBox.append(ta, mutInfo);
+    lineEl.after(editBox);
+
+    setTimeout(() => {
+      ta.focus();
+      const len = ta.value.length;
+      ta.setSelectionRange(len, len);
+    }, 0);
+  }
+
+  // 모양 줄 렌더링 (메모 줄과 같은 목록, 시간 순서, 작고 옅게, 메모 줄과 구별)
+  function createShapeLine(item, sectionKey) {
+    if (item.kind === 'memo') {
+      return createMemoLine(item, sectionKey);
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'sec-shape-wrap';
+
+    const line = document.createElement('div');
+    line.className = 'sec-shape-line';
+
+    const memoCore = globalThis.readglossMemo;
+    const textEl = document.createElement('div');
+    textEl.className = 'sec-shape-text';
+    textEl.textContent = memoCore?.formatShapeLine ? memoCore.formatShapeLine(item) : (item.text || item.name || '');
+
+    if (item.kind === 'concept' || item.kind === 'later') {
+      line.classList.add('concept-line');
+      line.dataset.id = item.id;
+      line.dataset.conceptId = item.id;
+      line.onclick = () => toggleConceptInlineEdit(item, line);
+    } else if (item.kind === 'scrap') {
+      line.onclick = () => jumpToMemo({ quote: item.quote, pos: item.pos, url: item.url });
+    }
+
+    line.append(textEl);
+    wrap.append(line);
+
+    // 이미 열려 있던 편집기면 다시 연결
+    if (activeConceptEditId === item.id) {
+      setTimeout(() => {
+        if (activeConceptEditId === item.id && shadow && !wrap.querySelector('.concept-inline-edit')) {
+          activeConceptEditId = null;
+          toggleConceptInlineEdit(item, line);
+        }
+      }, 0);
+    }
+
+    return wrap;
+  }
+
+  // !이름 / ?이름 커맨드 처리 (16-3)
+  function handleConceptCommand(sectionKey, ta, cmd) {
+    if (!cmd || !ta) return;
+    chrome.runtime.sendMessage({ type: 'concepts', op: 'get' }, (res) => {
+      const conceptsList = Array.isArray(res?.concepts) ? res.concepts : [];
+      const cleanName = cmd.name.trim().toLowerCase();
+      const existing = conceptsList.find((c) => {
+        if (c.name && c.name.trim().toLowerCase() === cleanName) return true;
+        if (Array.isArray(c.aliases)) {
+          return c.aliases.some((a) => a && a.trim().toLowerCase() === cleanName);
+        }
+        return false;
+      });
+
+      if (existing) {
+        // 이미 있는 개념: 새로 만들지 않는다
+        // 그 페이지 칸에 그 개념 줄이 있으면 그 줄 편집을 열고
+        const lineEl = shadow?.querySelector(`.sec-shape-line.concept-line[data-id="${CSS.escape(existing.id)}"]`);
+        if (lineEl) {
+          const item = currentPageItems.find((i) => (i.kind === 'concept' || i.kind === 'later') && i.id === existing.id);
+          if (item) {
+            toggleConceptInlineEdit(item, lineEl);
+            lineEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            return;
+          }
+        }
+        // 없으면 globalThis.readglossConceptPage.openForm 으로 연다
+        globalThis.readglossConceptPage?.openForm?.({
+          id: existing.id,
+          name: existing.name,
+          aliases: existing.aliases || [],
+          tags: existing.tags || [],
+          definition: existing.definition || '',
+          related: Array.isArray(existing.related)
+            ? existing.related.map((r) => (typeof r === 'string' ? r : r?.name)).filter(Boolean)
+            : [],
+        });
+        return;
+      }
+
+      // 없으면 ! -> 개념 저장, ? -> 정의 빈 개념 저장
+      const cleanDef = cmd.kind === 'concept'
+        ? (globalThis.readglossMdList?.cleanForSave ? globalThis.readglossMdList.cleanForSave(cmd.definition) : cmd.definition)
+        : '';
+      const headingsChain = getHeadingChain(currentHeadings, sectionKey);
+      const seen = {
+        url: location.href,
+        title: (document.title || '').slice(0, 300),
+        sentence: '',
+        headings: headingsChain,
+      };
+
+      chrome.runtime.sendMessage({
+        type: 'concepts',
+        op: 'save',
+        name: cmd.name,
+        definition: cleanDef,
+        seen,
+      }, (saveRes) => {
+        if (saveRes?.concept) {
+          ta.value = '';
+          drafts[sectionKey] = '';
+          autoResize(ta);
+          saveDrafts();
+
+          const c = saveRes.concept;
+          const isLater = !c.definition || c.definition.trim() === '';
+          const newItem = {
+            kind: isLater ? 'later' : 'concept',
+            id: c.id,
+            name: c.name || cmd.name,
+            definition: c.definition || cleanDef,
+            aliases: c.aliases || [],
+            tags: c.tags || [],
+            related: c.related || [],
+            seen: c.seen || seen,
+            headings: c.seen?.headings || headingsChain,
+            ts: c.ts || Date.now(),
+            rawConcept: c,
+          };
+          currentPageItems.push(newItem);
+          rebuildSectionsUI();
+          globalThis.readglossLastSave = { kind: 'concept', id: c.id };
+          window.dispatchEvent(new CustomEvent('readgloss:concepts-updated'));
+          showSuccessMeta(isLater ? '나중에 볼 것에 넣었어요' : '개념을 저장했어요');
+        } else {
+          const errMsg = saveRes?.error === 'bridge-off' ? BRIDGE_OFF_TEXT : '저장하지 못했어요';
+          showErrorMeta(errMsg);
+        }
+      });
+    });
+  }
+
+  // 4가지 모양 데이터(메모, 스크랩, 개념, 단어/구) 불러오기 (2번 명세)
+  function loadPageShapesAndMemos(targetSectionKey) {
+    const memoCore = globalThis.readglossMemo;
+    const targetUrl = memoCore?.normalizeUrl ? memoCore.normalizeUrl(location.href) : location.href;
+
+    const pMemos = new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'memos', op: 'get', url: location.href }, (res) => {
+        if (chrome.runtime.lastError || !res || !Array.isArray(res.memos)) resolve([]);
+        else resolve(res.memos);
+      });
+    });
+
+    const pScraps = new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'scraps', op: 'get' }, (res) => {
+        if (chrome.runtime.lastError || !res || !Array.isArray(res.scraps)) resolve([]);
+        else resolve(res.scraps);
+      });
+    });
+
+    const pConcepts = new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'concepts', op: 'get' }, (res) => {
+        if (chrome.runtime.lastError || !res || !Array.isArray(res.concepts)) resolve([]);
+        else resolve(res.concepts);
+      });
+    });
+
+    const pWords = new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'words', op: 'get' }, (res) => {
+        if (chrome.runtime.lastError || !res) resolve({ saved: {}, phrases: {} });
+        else resolve(res);
+      });
+    });
+
+    Promise.all([pMemos, pScraps, pConcepts, pWords]).then(([memosList, scrapsList, conceptsList, wordsObj]) => {
+      currentMemos = Array.isArray(memosList) ? memosList : [];
+
+      const memoItems = currentMemos.map((m) => ({
+        kind: 'memo',
+        id: m.id,
+        text: m.text || '',
+        quote: m.quote || null,
+        headings: m.headings || [],
+        ts: m.ts || 0,
+        url: m.url || '',
+      }));
+
+      const scrapItems = (Array.isArray(scrapsList) ? scrapsList : [])
+        .filter((s) => targetUrl && memoCore?.normalizeUrl && memoCore.normalizeUrl(s.url) === targetUrl)
+        .map((s) => ({
+          kind: 'scrap',
+          id: s.id,
+          quote: s.quote,
+          text: s.quote?.exact || '',
+          headings: s.headings || [],
+          pos: s.pos || 0,
+          ts: s.ts || 0,
+          url: s.url,
+        }));
+
+      const conceptItems = (Array.isArray(conceptsList) ? conceptsList : [])
+        .filter((c) => targetUrl && memoCore?.normalizeUrl && memoCore.normalizeUrl(c.seen?.url) === targetUrl)
+        .map((c) => {
+          const isLater = !c.definition || c.definition.trim() === '' || Boolean(c.later);
+          return {
+            kind: isLater ? 'later' : 'concept',
+            id: c.id,
+            name: c.name || '',
+            definition: c.definition || '',
+            aliases: c.aliases || [],
+            tags: c.tags || [],
+            related: c.related || [],
+            seen: c.seen,
+            headings: c.seen?.headings || [],
+            ts: c.ts || 0,
+            rawConcept: c,
+          };
+        });
+
+      const savedWords = Object.entries(wordsObj?.saved || {})
+        .filter(([, w]) => targetUrl && memoCore?.normalizeUrl && memoCore.normalizeUrl(w.url) === targetUrl)
+        .map(([lemma, w]) => ({
+          kind: 'word',
+          id: `w_${lemma}`,
+          lemma,
+          word: w.word || lemma,
+          gloss: w.gloss || '',
+          sentence: w.sentence || '',
+          headings: w.headings || [],
+          ts: w.ts || 0,
+          url: w.url,
+        }));
+
+      const phraseWords = Object.entries(wordsObj?.phrases || {})
+        .filter(([, p]) => targetUrl && memoCore?.normalizeUrl && memoCore.normalizeUrl(p.url) === targetUrl)
+        .map(([id, p]) => ({
+          kind: 'phrase',
+          id,
+          text: p.text || '',
+          translation: p.translation || '',
+          sentence: p.sentence || '',
+          headings: p.headings || [],
+          ts: p.ts || 0,
+          url: p.url,
+        }));
+
+      currentPageItems = [
+        ...memoItems,
+        ...scrapItems,
+        ...conceptItems,
+        ...savedWords,
+        ...phraseWords,
+      ];
+
+      if (isOpen && currentMode === 'pad') {
+        rebuildSectionsUI();
+        if (targetSectionKey) {
+          applyActiveSection(true);
+        }
+      }
+    });
   }
 
   // 메모장 안에서 그 칸이 보이게 scrollTop 직접 계산 스크롤
@@ -1642,9 +2138,12 @@
 
     const memoCore = globalThis.readglossMemo;
     const pageTitle = (document.title || '').replace(/\s+/g, ' ').trim();
-    const sections = memoCore?.buildSections
+    const baseSections = memoCore?.buildSections
       ? memoCore.buildSections(currentHeadings, currentMemos, pageTitle)
       : [{ key: '_page', text: pageTitle, level: 1, memos: currentMemos }];
+    const sections = memoCore?.assignToSections
+      ? memoCore.assignToSections(baseSections, currentPageItems)
+      : baseSections;
 
     for (const s of sections) {
       const sec = document.createElement('div');
@@ -1662,13 +2161,12 @@
       titleEl.style.paddingLeft = `${indent}px`;
       sec.append(titleEl);
 
-      // 그 아래 저장된 메모 줄들
+      // 그 아래 저장된 항목들 (모든 모양)
       const memosContainer = document.createElement('div');
       memosContainer.className = 'sec-memos';
-      if (Array.isArray(s.memos)) {
-        for (const m of s.memos) {
-          memosContainer.append(createMemoLine(m, s.key));
-        }
+      const itemsToRender = Array.isArray(s.items) && s.items.length > 0 ? s.items : (Array.isArray(s.memos) ? s.memos : []);
+      for (const item of itemsToRender) {
+        memosContainer.append(createShapeLine(item, s.key));
       }
       sec.append(memosContainer);
 
@@ -1735,12 +2233,22 @@
       const key = e.target?.closest?.('.sec')?.dataset?.key || currentActiveKey;
       if (action === 'save') {
         e.preventDefault();
-        performSave(key, box.querySelector(`.sec[data-key="${CSS.escape(key)}"] .sec-textarea`));
+        const ta = box.querySelector(`.sec[data-key="${CSS.escape(key)}"] .sec-textarea`);
+        const cmd = memoCore?.parseConceptCommand ? memoCore.parseConceptCommand(ta?.value || '') : null;
+        if (cmd) {
+          handleConceptCommand(key, ta, cmd);
+        } else {
+          performSave(key, ta);
+        }
       } else if (action === 'newline') {
         if (e.target?.classList?.contains('sec-textarea')) setTimeout(() => autoResize(e.target), 0);
       } else if (action === 'fold') {
         e.preventDefault();
-        closePad();
+        if (activeConceptEditId) {
+          closeConceptInlineEdit(activeConceptEditId);
+        } else {
+          closePad();
+        }
       } else if (e.altKey && e.shiftKey && e.code === 'KeyM') {
         e.preventDefault();
         openListUI(root);
@@ -1946,23 +2454,17 @@
     }
     applyActiveSection(true, true);
 
-    // 열 때 다리 GET /memos?url= 로 메모 불러오기
-    chrome.runtime.sendMessage({ type: 'memos', op: 'get', url: location.href }, (res) => {
-      if (chrome.runtime.lastError || !res) return;
-      currentMemos = Array.isArray(res.memos) ? res.memos : [];
-      if (isOpen && currentMode === 'pad') {
-        rebuildSectionsUI();
-        if (targetSectionKey) {
-          applyActiveSection(true);
-        }
-      }
-    });
+    // 열 때 모든 모양 불러오기 (2번 명세)
+    loadPageShapesAndMemos(targetSectionKey);
   }
 
   // 메모장 접기(닫기)
   function closePad() {
     clearTimeout(typingTimer);
     clearTimeout(returnFocusTimer);
+    if (activeConceptEditId) {
+      closeConceptInlineEdit(activeConceptEditId);
+    }
     if (shadow && currentMode === 'pad') {
       const textareas = shadow.querySelectorAll('.sec-textarea');
       for (const ta of textareas) {
