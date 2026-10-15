@@ -46,6 +46,8 @@
     { path: 'annotation.opacityPct', min: 30, max: 100, step: 5 },
     // 단어 간격은 0~0.3em 을 정수 0~6 단계(0.05em)로 — 소수 슬라이더의 부동소수 오차를 피한다
     { path: 'annotation.gapEm', min: 0, max: 6, step: 1, to: (v) => Math.round(v / 0.05), from: (n) => Math.round(n * 5) / 100 },
+    { path: 'opacityInput', min: 40, max: 100, step: 5 },
+    { path: 'opacityUi', min: 40, max: 100, step: 5 },
   ];
   const CHOICES = [
     { path: 'repeat', options: [['page', '페이지에서 한 번'], ['paragraph', '문단마다 첫 등장'], ['always', '매번']] },
@@ -56,7 +58,7 @@
     { path: 'theme', options: [['auto', '자동'], ['light', '밝게'], ['dark', '어둡게']] },
     { path: 'glossary', options: [['auto', '자동'], ['off', '끄기']] },
   ];
-  const TOGGLES = [{ path: 'enabled' }, { path: 'allowCopy' }, { path: 'selectionTranslate' }, { path: 'floatingButton.show' }];
+  const TOGGLES = [{ path: 'enabled' }, { path: 'allowCopy' }, { path: 'selectionTranslate' }, { path: 'floatingButton.show' }, { path: 'dimWhileReading' }];
 
   // 슬라이더가 준 값(문자열 가능) -> 설정 patch. 범위·단계로 고치고, 숫자가 아니면 null.
   function sliderPatch(spec, raw) {
@@ -122,13 +124,16 @@
   }
   const pageTranslateAction = (s) => (s?.running === true ? 'stop' : s?.started === true ? 'clear' : 'start');
 
+  const studyModeText = (on) => (on ? '공부 모드 끄기' : '공부 모드');
+  const studyModeToggle = (on) => !on;
+
   const themeAttr = (theme) => (theme === 'light' || theme === 'dark' ? theme : null); // auto 는 속성 없음(prefers-color-scheme)
 
   globalThis.readglossPanelCore = {
     getPath, patchFor, sortTabs, mountPane, levelIndex, levelAt, RANGES, CHOICES, TOGGLES, sliderPatch, sliderValue,
     cleanSite, addSite, removeSite, resetPatch, clampTop, dragTop, mergePatch, themeAttr, isCardPath, isToastPath,
     isConceptPath, isMemoPath,
-    pageTranslateMenu, pageTranslateAction, MAX_SITES,
+    pageTranslateMenu, pageTranslateAction, studyModeText, studyModeToggle, MAX_SITES,
   };
 
   if (typeof document === 'undefined' || globalThis.readglossPanelLoaded) return; // node 시험·중복 주입: 여기까지
@@ -371,11 +376,55 @@
     scrapViewItem.hidden = !hasScraps;
   }
 
+  // ---- 공부 모드(퀵 메뉴 [공부 모드], 탭 sessionStorage 에 상태 보관) ----
+  function getStudyMode() {
+    try {
+      return typeof sessionStorage !== 'undefined' && sessionStorage.getItem('readgloss:study-mode') === 'true';
+    } catch {
+      return false;
+    }
+  }
+  function setStudyMode(on) {
+    try {
+      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('readgloss:study-mode', String(on));
+    } catch {}
+  }
+
+  const studyModeItem = h('button', {
+    class: 'mitem',
+    type: 'button',
+    text: C.studyModeText(getStudyMode()),
+    onclick: onStudyModeClick,
+  });
+
+  function updateStudyModeUI() {
+    studyModeItem.textContent = C.studyModeText(getStudyMode());
+  }
+
+  function onStudyModeClick(e) {
+    if (e && e.isTrusted === false) return;
+    const nextOn = !getStudyMode();
+    setStudyMode(nextOn);
+    updateStudyModeUI();
+    try {
+      chrome.runtime.sendMessage({ type: 'study-mode', on: nextOn }).catch(() => {});
+    } catch {}
+    window.dispatchEvent(new CustomEvent('readgloss:study-mode', { detail: { on: nextOn } }));
+  }
+
+  window.addEventListener('readgloss:study-mode', (e) => {
+    if (e.detail && typeof e.detail.on === 'boolean') {
+      setStudyMode(e.detail.on);
+      updateStudyModeUI();
+    }
+  });
+
   const menu = h('div', { class: 'menu' },
     h('div', { class: 'menu-card', role: 'group', 'aria-label': '빠른 메뉴' },
       pageOffItem,
       pageTranslateItem,
       scrapViewItem,
+      studyModeItem,
       h('button', { class: 'mitem', type: 'button', text: '설정', onclick: () => openPanel('settings') }),
       h('button', { class: 'mitem', type: 'button', text: '내 단어', onclick: () => openPanel('words') }),
       h('button', { class: 'mitem', type: 'button', text: '버튼 숨기기', onclick: () => setSettings({ floatingButton: { show: false } }) })));
@@ -572,11 +621,14 @@
     'annotation.sizePct': (n) => `${n}%`,
     'annotation.opacityPct': (n) => `${n}%`,
     'annotation.gapEm': (n) => `${(n * 5) / 100}em`,
+    opacityInput: (n) => `${n}%`,
+    opacityUi: (n) => `${n}%`,
   };
   const LABEL = {
     level: '수준', maxPerParagraph: '문단당 최대', repeat: '반복', 'annotation.position': '위치', 'annotation.sizePct': '크기',
     'annotation.color': '색', 'annotation.opacityPct': '불투명도', 'annotation.weight': '굵기', 'annotation.gapEm': '단어 간격',
     mark: '단어 표시', theme: '테마', glossary: '분야 용어집', enabled: '주석 켜기', allowCopy: '주석 글자 복사 허용', selectionTranslate: '드래그 번역', 'floatingButton.show': '떠 있는 버튼 보이기',
+    opacityInput: '입력 칸 투명도', opacityUi: '나머지 투명도', dimWhileReading: '읽는 동안 흐리게',
   };
   const LEVEL_HINT = {
     A2: 'A2 이상: 거의 모든 단어에 뜻이 붙어요',
@@ -712,6 +764,7 @@
       h('h3', { class: 'sec', text: '주석 모양' }), choice('annotation.position'), slider('annotation.sizePct'), choice('annotation.color', color),
       slider('annotation.opacityPct'), choice('annotation.weight'), slider('annotation.gapEm'),
       h('h3', { class: 'sec', text: '단어 표시' }), choice('mark'),
+      h('h3', { class: 'sec', text: '화면' }), slider('opacityInput'), slider('opacityUi'), toggle('dimWhileReading', '메모할 때만 진해지고, 읽을 때는 설정한 투명도로 보여요.'),
       h('h3', { class: 'sec', text: '기타' }), toggle('allowCopy', '체크하지 않으면 복사할 때 주석 글자가 섞이지 않아요.'), toggle('selectionTranslate', '글을 드래그하면 맥 번역 카드가 떠요. 한 단어는 사전 카드로 열려요.'), choice('theme'), toggle('floatingButton.show', '숨겨도 브라우저 툴바의 readgloss 아이콘으로 패널을 열 수 있어요.'),
       h('h3', { class: 'sec', text: '끌 사이트' }), ...blockNodes,
       h('div', { class: 'reset' }, resetBtn, h('p', { class: 'hint', text: '끌 사이트 목록은 그대로 두고, 분야 용어집을 켤 사이트는 기본 목록으로 돌아가요.' })),
