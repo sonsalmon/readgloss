@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { dateOf } from '../scripts/export-day.mjs';
 import { TASK_FIND_RE, TASK_RE, normalizeUrl } from './scraps.mjs';
 
-const COMMON_HOSTS = new Set([
+export const COMMON_HOSTS = new Set([
   'github.com',
   'www.youtube.com',
   'notebooklm.google.com',
@@ -159,6 +159,100 @@ export function lastTaskToday(scraps, now = Date.now) {
   return typeof last.task === 'string' && TASK_RE.test(last.task) ? last.task : null;
 }
 
+// 기억된 할 일: 스크랩·메모·개념 기록 중 현재 주소와 가장 가까운 할 일을 찾는다.
+// ① 정규화 주소가 같은 기록 중 가장 최근(ts 큰) task.
+// ② 없으면 같은 host이고 경로 앞 조각이 2개 이상 같은 기록(예: /module/77/...) 중
+//    겹친 조각 수가 가장 많은 것, 같으면 가장 최근.
+//    단, host가 COMMON_HOSTS면 ②는 쓰지 않는다.
+// task는 TASK_RE를 만족해야 한다. 없으면 null.
+export function rememberedTask(url, records) {
+  if (!url || typeof url !== 'string') return null;
+  const normUrl = normalizeUrl(url);
+  if (!normUrl) return null;
+  if (!Array.isArray(records) || records.length === 0) return null;
+
+  let targetUrlObj;
+  try {
+    targetUrlObj = new URL(normUrl);
+  } catch {
+    return null;
+  }
+
+  const targetHost = targetUrlObj.host.toLowerCase();
+  const targetSegs = targetUrlObj.pathname.split('/').filter(Boolean);
+
+  // 유효한 레코드만 추린다 (task가 TASK_RE 만족, url 유효)
+  const valid = [];
+  for (const r of records) {
+    if (!r || typeof r !== 'object') continue;
+    if (typeof r.task !== 'string' || !TASK_RE.test(r.task)) continue;
+    if (typeof r.url !== 'string') continue;
+    const rNorm = normalizeUrl(r.url);
+    if (!rNorm) continue;
+    const ts = typeof r.ts === 'number' && Number.isFinite(r.ts) ? r.ts : 0;
+    valid.push({ normUrl: rNorm, task: r.task, ts });
+  }
+
+  if (valid.length === 0) return null;
+
+  // ① 정규화 주소가 같은 기록 중 가장 최근(ts 큰) task
+  let bestExact = null;
+  for (const r of valid) {
+    if (r.normUrl === normUrl) {
+      if (!bestExact || r.ts > bestExact.ts) {
+        bestExact = r;
+      }
+    }
+  }
+  if (bestExact) {
+    return bestExact.task;
+  }
+
+  // ② 없으면 같은 host이고 경로 앞 조각이 2개 이상 같은 기록 중
+  //    겹친 조각 수가 가장 많은 것, 같으면 가장 최근.
+  //    host가 COMMON_HOSTS면 ②는 쓰지 않는다.
+  if (COMMON_HOSTS.has(targetHost) || targetSegs.length < 2) {
+    return null;
+  }
+
+  let bestPrefix = null;
+  let maxOverlap = 1; // 2개 이상 일치해야 하므로 초기값 1 (최소 2 필요)
+
+  for (const r of valid) {
+    let rObj;
+    try {
+      rObj = new URL(r.normUrl);
+    } catch {
+      continue;
+    }
+    if (rObj.host.toLowerCase() !== targetHost) continue;
+
+    const rSegs = rObj.pathname.split('/').filter(Boolean);
+    let overlap = 0;
+    const minLen = Math.min(targetSegs.length, rSegs.length);
+    for (let i = 0; i < minLen; i++) {
+      if (targetSegs[i] === rSegs[i]) {
+        overlap++;
+      } else {
+        break; // 앞 조각이 연속으로 같아야 함
+      }
+    }
+
+    if (overlap >= 2) {
+      if (overlap > maxOverlap) {
+        maxOverlap = overlap;
+        bestPrefix = r;
+      } else if (overlap === maxOverlap) {
+        if (!bestPrefix || r.ts > bestPrefix.ts) {
+          bestPrefix = r;
+        }
+      }
+    }
+  }
+
+  return bestPrefix ? bestPrefix.task : null;
+}
+
 // 할 일 짐작 규칙 (설계서 10-3, 25절)
 export function guessTask({
   url,
@@ -168,10 +262,11 @@ export function guessTask({
   lastToday = null,
   todayTasks = [],
   roadmapOk = true,
+  remembered = null,
 }) {
-  // roadmap 을 못 읽었으면 짐작하지 않고 인박스
+  // roadmap 을 못 읽었으면 짐작하지 않고 인박스(내가 고른 할 일 기억은 roadmap 없이도 쓴다)
   if (!roadmapOk) {
-    return { task: null, ask: false, candidates: [], matches: [] };
+    return { task: remembered || null, ask: false, candidates: [], matches: [] };
   }
   const normUrl = normalizeUrl(url);
   if (!normUrl) {
@@ -229,7 +324,10 @@ export function guessTask({
 
   const thisWeekSet = new Set(Array.isArray(thisWeek) ? thisWeek : []);
 
-  if (matches.length > 0) {
+  if (remembered) {
+    task = remembered;
+    ask = false;
+  } else if (matches.length > 0) {
     ask = false;
     // ① 오늘 마지막 할 일이 맞는 할 일 안에 있으면 그것
     if (lastToday && matches.includes(lastToday)) {

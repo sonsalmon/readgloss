@@ -20,7 +20,7 @@ import { createContextTranslate } from './translate-context.mjs';
 import { createMydict, parseMydictOp } from './mydict.mjs';
 import { createStudy, parseDays } from './study.mjs';
 import { createScraps, normalizeUrl, parseScrapOp, scrapId } from './scraps.mjs';
-import { guessTask, lastTaskToday, loadLearning } from './task-guess.mjs';
+import { guessTask, lastTaskToday, loadLearning, rememberedTask } from './task-guess.mjs';
 import { dateOf } from '../scripts/export-day.mjs';
 import { openDb, migrateJson } from './db.mjs';
 import { createConcepts, parseConceptOp } from './concepts.mjs';
@@ -362,13 +362,33 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
             .filter(Boolean),
         ),
       );
-      const guessed = guessTask({ thisWeek: learning.thisWeek,
+      const allMemos = memos ? memos.list() : [];
+      const allConcepts = concepts ? concepts.list() : [];
+      const records = [];
+      for (const s of allScraps) {
+        if (s.task) records.push({ url: s.url, task: s.task, ts: s.ts });
+      }
+      for (const m of allMemos) {
+        if (m.task) records.push({ url: m.url, task: m.task, ts: m.ts });
+      }
+      for (const c of allConcepts) {
+        if (c.firstTask) {
+          if (c.firstUrl) records.push({ url: c.firstUrl, task: c.firstTask, ts: c.ts });
+          if (c.seen?.url && c.seen.url !== c.firstUrl) {
+            records.push({ url: c.seen.url, task: c.firstTask, ts: c.ts });
+          }
+        }
+      }
+      const remembered = rememberedTask(normUrl, records);
+      const guessed = guessTask({
+        thisWeek: learning.thisWeek,
         url: normUrl,
         nodes: learning.nodes,
         next: learning.next,
         lastToday,
         todayTasks,
         roadmapOk: learning.roadmapOk,
+        remembered,
       });
       return send(res, 200, guessed, cors);
     }
