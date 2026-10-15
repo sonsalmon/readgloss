@@ -60,17 +60,19 @@
   let structStyleEl = null;
 
   const entriesByBlock = new Map(); // block -> [{ node, text, start, end, phrase, range }]
-  const done = new WeakSet();
+  let done = new WeakSet();
 
   let cardHost = null;
+  let currentRequestId = 0;
   let clickTimer = 0;
   let pendingHit = null;
 
-  // 켜짐 판정: structureHints 가 켜져 있고, annotating(전체 켜기, 사이트 허용, 페이지 켬) 조건 만족
+  // 켜짐 판정: structureHints 가 켜져 있고, 사이트 허용 및 페이지 켬 조건 만족(FX-J 5)
   function isEnabled() {
     if (settings.structureHints !== true) return false;
-    if (A?.annotating) {
-      return A.annotating(settings, location.hostname, pageOff);
+    const annotCore = globalThis.readglossAnnotate;
+    if (typeof annotCore?.enabledHere === 'function') {
+      return annotCore.enabledHere(settings, location.hostname, pageOff);
     }
     return settings.enabled === true && pageOff !== true && !S.siteBlocked(settings, location.hostname);
   }
@@ -102,7 +104,8 @@
     const allRanges = [];
     for (const list of entriesByBlock.values()) {
       for (const e of list) {
-        if (e.range && e.node.isConnected) {
+        const isConnected = e.startNode ? e.startNode.isConnected : e.node?.isConnected;
+        if (e.range && isConnected) {
           allRanges.push(e.range);
         }
       }
@@ -110,37 +113,64 @@
     CSS.highlights.set('readgloss-struct', new Highlight(...allRanges));
   }
 
+  // block 에 속한 직속 노드와 경계를 수집한다(FX-J 2)
+  function collectBlockNodes(block) {
+    const nodes = [];
+    function walk(el) {
+      for (let child = el.firstChild; child; child = child.nextSibling) {
+        if (child.nodeType === 1) { // ELEMENT_NODE
+          if (child.matches?.(EXCLUDE)) continue;
+          if (child.matches?.(BLOCK)) {
+            // 자식 BLOCK 요소: 경계 줄바꿈을 넣고, 자식 블록 내부는 순회하지 않는다(FX-J 2)
+            nodes.push({ isBoundary: true, node: child });
+            continue;
+          }
+          if (child.tagName?.toLowerCase() === 'br') {
+            nodes.push({ isBoundary: true, node: child });
+            continue;
+          }
+          walk(child);
+        } else if (child.nodeType === 3) { // TEXT_NODE
+          const p = child.parentElement;
+          if (!p || p.closest(EXCLUDE)) continue;
+          if (p.closest(BLOCK) !== block) continue;
+          if (child.nodeValue) {
+            nodes.push({ node: child, text: child.nodeValue });
+          }
+        }
+      }
+    }
+    walk(block);
+    return nodes;
+  }
+
   function scanBlock(block) {
     if (!block.isConnected) return [];
-    const entries = [];
-    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        if (node.parentElement?.closest(EXCLUDE)) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    });
+    const nodes = collectBlockNodes(block);
+    const { text: fullText, entries: offsetEntries } = core.buildNodeIndex(nodes);
+    if (!fullText) return [];
 
-    let n;
-    while ((n = walker.nextNode())) {
-      const val = n.nodeValue;
-      if (!val) continue;
-      const matches = core.findPhrases(val);
-      for (const m of matches) {
-        try {
-          const range = new Range();
-          range.setStart(n, m.start);
-          range.setEnd(n, m.end);
-          entries.push({
-            node: n,
-            text: val,
-            start: m.start,
-            end: m.end,
-            phrase: m.phrase,
-            range,
-          });
-        } catch {
-          // range 생성 실패 시 건너뜀
-        }
+    const matches = core.findPhrases(fullText);
+    const entries = [];
+    for (const m of matches) {
+      const loc = core.resolveNodeOffsets(offsetEntries, m.start, m.end);
+      if (!loc) continue;
+      try {
+        const range = new Range();
+        range.setStart(loc.startNode, loc.startOffset);
+        range.setEnd(loc.endNode, loc.endOffset);
+        entries.push({
+          startNode: loc.startNode,
+          endNode: loc.endNode,
+          node: loc.startNode,
+          text: fullText,
+          start: m.start,
+          end: m.end,
+          phrase: m.phrase,
+          range,
+        });
+      } catch {
+        // range 생성 실패 시 건너뜀
       }
     }
     return entries;
@@ -231,6 +261,7 @@
     mo?.disconnect();
     io = mo = null;
     entriesByBlock.clear();
+    done = new WeakSet();
     updateHighlights();
     closeCard();
   }
@@ -249,7 +280,8 @@
     for (const [block, list] of entriesByBlock.entries()) {
       if (!block.isConnected) continue;
       for (const entry of list) {
-        if (!entry.node.isConnected) continue;
+        const isConnected = entry.startNode ? entry.startNode.isConnected : entry.node?.isConnected;
+        if (!isConnected || !entry.range) continue;
         const rects = entry.range.getClientRects();
         for (let i = 0; i < rects.length; i++) {
           const r = rects[i];
@@ -260,32 +292,6 @@
       }
     }
     return null;
-  }
-
-  function getBlockPhraseOffset(block, targetNode, nodeStart, nodeEnd) {
-    let full = '';
-    let pStart = -1;
-    let pEnd = -1;
-    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
-      acceptNode(n) {
-        if (n.parentElement?.closest(EXCLUDE)) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    });
-    let n;
-    while ((n = walker.nextNode())) {
-      if (n === targetNode) {
-        pStart = full.length + nodeStart;
-        pEnd = full.length + nodeEnd;
-      }
-      full += n.nodeValue;
-    }
-    if (pStart === -1) {
-      pStart = nodeStart;
-      pEnd = nodeEnd;
-      full = targetNode.nodeValue || '';
-    }
-    return { fullText: full, phraseStart: pStart, phraseEnd: pEnd };
   }
 
   function closeCard() {
@@ -317,12 +323,13 @@
 
   async function openCard({ entry, rect, block }) {
     closeCard();
+    const reqId = ++currentRequestId;
 
-    const { fullText, phraseStart, phraseEnd } = getBlockPhraseOffset(block, entry.node, entry.start, entry.end);
-    const sentence = core.sentenceAround(fullText, phraseStart, phraseEnd);
+    const sentence = core.sentenceAround(entry.text, entry.start, entry.end);
     const phrase = entry.phrase;
 
     cardHost = document.createElement('readgloss-struct-card');
+    const myHost = cardHost;
     cardHost.style.cssText = 'all: initial; position: fixed; z-index: 2147483647;';
     const shadow = cardHost.attachShadow({ mode: 'closed' });
 
@@ -368,10 +375,10 @@
         type: 'structure',
         sentence,
         phrase,
-        title: document.title,
+        title: core.truncateTitle(document.title, 300),
       });
 
-      if (!cardHost) return;
+      if (reqId !== currentRequestId || !cardHost || cardHost !== myHost) return;
 
       if (!res || res.error) {
         body.replaceChildren();
@@ -461,7 +468,7 @@
           translation: res.ko || '',
           kind: 'sentence',
           url: curUrl,
-          title: document.title.slice(0, 200),
+          title: core.truncateTitle(document.title, 200),
         });
         if (saved && !saved.error) {
           saveBtn.textContent = '✓ 문장 저장됨';
@@ -475,26 +482,46 @@
 
       placeCard(card, rect);
     } catch {
-      if (cardHost) {
-        body.replaceChildren();
-        const errEl = document.createElement('div');
-        errEl.className = 'msg';
-        errEl.textContent = '풀이를 가져오지 못했어요';
-        body.append(errEl);
-        placeCard(card, rect);
-      }
+      if (reqId !== currentRequestId || !cardHost || cardHost !== myHost) return;
+      body.replaceChildren();
+      const errEl = document.createElement('div');
+      errEl.className = 'msg';
+      errEl.textContent = '풀이를 가져오지 못했어요';
+      body.append(errEl);
+      placeCard(card, rect);
     }
   }
 
   // ---- 이벤트 리스너(클릭, 더블클릭, Esc, 밖 클릭) ----
   document.addEventListener('click', (e) => {
-    if (cardHost && e.composedPath().includes(cardHost)) return;
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    const inOurUi = path.some((el) => {
+      if (!el || el.nodeType !== 1) return false;
+      const tag = (el.tagName || '').toLowerCase();
+      return tag.startsWith('readgloss-') || Boolean(el.matches?.('[data-readgloss]'));
+    });
 
     const sel = window.getSelection();
-    if (sel && !sel.isCollapsed && sel.toString().trim()) return;
+    const selectionEmpty = !sel || sel.isCollapsed || !sel.toString().trim();
+
+    const targetEl = e.target?.nodeType === 1 ? e.target : e.target?.parentElement;
+    const link = targetEl?.closest?.('a[href]');
+    const inLink = Boolean(link);
 
     const hit = findStructAt(e.clientX, e.clientY);
     if (hit) {
+      const allow = core.shouldOpenOnClick({
+        inLink,
+        altKey: e.altKey,
+        inOurUi,
+        selectionEmpty,
+      });
+      if (!allow) return;
+
+      if (inLink && e.altKey) {
+        e.preventDefault();
+      }
+
       clearTimeout(clickTimer);
       pendingHit = hit;
       clickTimer = setTimeout(() => {
@@ -526,8 +553,8 @@
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && cardHost) {
+      if (e.readglossCardClosed) return;
       e.preventDefault();
-      e.stopPropagation();
       e.readglossCardClosed = true;
       closeCard();
     }

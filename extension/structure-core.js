@@ -104,8 +104,142 @@
     return norm.slice(from, from + MAX_LEN).trim();
   }
 
+  // 블록 내 노드 목록을 이어 붙여 텍스트를 만든다(21-1, FX-J 2).
+  // 노드 경계(다른 BLOCK 또는 br) 사이에는 줄바꿈('\n')을 넣어 sentenceAround 가 문단을 넘지 않게 한다.
+  function blockText(nodes) {
+    if (!Array.isArray(nodes)) return '';
+    let out = '';
+    for (const n of nodes) {
+      if (!n) continue;
+      if (typeof n === 'string') {
+        if (n === '\n') {
+          if (out && !out.endsWith('\n')) out += '\n';
+        } else {
+          out += n;
+        }
+        continue;
+      }
+      const tag = (n.tagName || n.nodeName || '').toLowerCase();
+      const isBr = tag === 'br' || n.isBr === true;
+      const isBlock = n.isBlock === true || (n.nodeType === 1 && tag !== 'br');
+      const isBoundary = n.isBoundary === true || n.separator === true || isBr || isBlock;
+
+      if (isBoundary) {
+        if (out && !out.endsWith('\n')) out += '\n';
+        continue;
+      }
+
+      const val = typeof n.text === 'string'
+        ? n.text
+        : (typeof n.nodeValue === 'string' ? n.nodeValue : '');
+      out += val;
+    }
+    return out;
+  }
+
+  // nodes 배열로부터 전체 텍스트와 각 텍스트 노드의 오프셋 표를 만든다(FX-J 6).
+  function buildNodeIndex(nodes) {
+    if (!Array.isArray(nodes)) return { text: '', entries: [] };
+    let text = '';
+    const entries = [];
+    for (const n of nodes) {
+      if (!n) continue;
+      if (typeof n === 'string') {
+        if (n === '\n') {
+          if (text && !text.endsWith('\n')) {
+            entries.push({ isBoundary: true, start: text.length, end: text.length + 1 });
+            text += '\n';
+          }
+        } else {
+          const start = text.length;
+          text += n;
+          entries.push({ text: n, start, end: text.length, isText: true });
+        }
+        continue;
+      }
+
+      const tag = (n.tagName || n.nodeName || '').toLowerCase();
+      const isBr = tag === 'br' || n.isBr === true;
+      const isBlock = n.isBlock === true || (n.nodeType === 1 && tag !== 'br');
+      const isBoundary = n.isBoundary === true || n.separator === true || isBr || isBlock;
+
+      if (isBoundary) {
+        if (text && !text.endsWith('\n')) {
+          entries.push({ isBoundary: true, node: n.node || n, start: text.length, end: text.length + 1 });
+          text += '\n';
+        }
+        continue;
+      }
+
+      const val = typeof n.text === 'string'
+        ? n.text
+        : (typeof n.nodeValue === 'string' ? n.nodeValue : '');
+      if (val) {
+        const start = text.length;
+        text += val;
+        entries.push({
+          node: n.node || n,
+          text: val,
+          start,
+          end: text.length,
+          isText: true,
+        });
+      }
+    }
+    return { text, entries };
+  }
+
+  // 전체 텍스트의 start~end 범위를 (startNode, startOffset)과 (endNode, endOffset)으로 매핑한다(FX-J 6).
+  function resolveNodeOffsets(entries, start, end) {
+    if (!Array.isArray(entries) || typeof start !== 'number' || typeof end !== 'number' || start >= end) {
+      return null;
+    }
+    const textEntries = entries.filter((e) => e && e.isText && e.node);
+    if (!textEntries.length) return null;
+
+    let startLoc = null;
+    let endLoc = null;
+
+    for (const e of textEntries) {
+      if (!startLoc && start >= e.start && start < e.end) {
+        startLoc = { node: e.node, offset: start - e.start };
+      }
+      if (end > e.start && end <= e.end) {
+        endLoc = { node: e.node, offset: end - e.start };
+      }
+    }
+
+    if (startLoc && endLoc) {
+      return {
+        startNode: startLoc.node,
+        startOffset: startLoc.offset,
+        endNode: endLoc.node,
+        endOffset: endLoc.offset,
+      };
+    }
+    return null;
+  }
+
+  // 제목 자르기(긴 제목 400 방지, FX-J 3)
+  function truncateTitle(title, max = 300) {
+    if (typeof title !== 'string') return '';
+    return title.slice(0, max);
+  }
+
+  // 구조 카드 열기 판정(순수 함수, FX-J 4, 7)
+  function shouldOpenOnClick({ inLink = false, altKey = false, inOurUi = false, selectionEmpty = true } = {}) {
+    if (inOurUi) return false;
+    if (!selectionEmpty) return false;
+    return !inLink || Boolean(altKey);
+  }
+
   globalThis.readglossStructureCore = {
     findPhrases,
     sentenceAround,
+    blockText,
+    buildNodeIndex,
+    resolveNodeOffsets,
+    truncateTitle,
+    shouldOpenOnClick,
   };
 })();

@@ -428,7 +428,7 @@ test('서버 /explain-structure: AI 실패 오류(502)', async () => {
   const s = await startServer(async () => '죄송합니다. 오류가 발생했습니다.');
   try {
     const res = await s.post({
-      sentence: 'Some test sentence.',
+      sentence: 'Some test sentence in which it fails.',
       phrase: 'in which',
     });
     assert.equal(res.status, 502);

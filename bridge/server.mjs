@@ -742,6 +742,12 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
     if (typeof phrase !== 'string' || phrase.length < 1 || phrase.length > 60 || !phrase.trim()) {
       return send(res, 400, { error: 'bad-request' }, cors);
     }
+    // sentence 안에 phrase 가 없으면 400(대소문자·공백 정규화 후 검사)
+    const normSent = sentence.toLowerCase().replace(/\s+/g, ' ');
+    const normPhrase = phrase.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!normSent.includes(normPhrase)) {
+      return send(res, 400, { error: 'bad-request' }, cors);
+    }
     if (title !== undefined && title !== null && (typeof title !== 'string' || title.length > 300)) {
       return send(res, 400, { error: 'bad-request' }, cors);
     }
