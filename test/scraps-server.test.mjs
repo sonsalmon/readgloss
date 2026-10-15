@@ -192,9 +192,13 @@ test('/scraps guess: 학습 폴더가 없으면 오늘 스크랩이 있어도 �
   try {
     const url = 'https://portswigger.net/web-security/access-control';
     await s.scraps({ op: 'save', task: 'S1-04', url, quote: { exact: 'Sample text.' } });
-    const g = await s.scraps({ op: 'guess', url });
+    // 다른 사이트: 오늘 마지막 할 일은 쓰지 않는다
+    const g = await s.scraps({ op: 'guess', url: 'https://example.org/other/page' });
     assert.equal(g.status, 200);
     assert.deepEqual(g.json(), { task: null, ask: false, candidates: [], matches: [] });
+    // 같은 주소: 내가 고른 할 일 기억(T35)은 학습 폴더 없이도 쓴다
+    const same = await s.scraps({ op: 'guess', url });
+    assert.equal(same.json().task, 'S1-04');
   } finally {
     await s.bridge.close();
   }
