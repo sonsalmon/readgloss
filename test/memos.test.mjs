@@ -80,7 +80,7 @@ test('parseMemoOp 상한 및 형식 검사', () => {
   assert.equal(parseMemoOp({ ...valid, url: '' }), null);
 
   // 7. task 형식: TASK_RE 만족 또는 null
-  assert.equal(parseMemoOp({ ...valid, task: 'invalid-task' }), null);
+  assert.equal(parseMemoOp({ ...valid, task: '../x' }), null);
   assert.equal(parseMemoOp({ ...valid, task: 'S1-4' }), null);
   assert.ok(parseMemoOp({ ...valid, task: 'S1-04' }));
   assert.ok(parseMemoOp({ ...valid, task: 'BUF-01' }));

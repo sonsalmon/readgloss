@@ -4,8 +4,8 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-// 할 일 id 형식: S1-04, S1-02b, BUF-01. 여기서만 정의하고 task-guess도 이 값을 쓴다.
-export const TASK_RE = /^(?:S\d-\d{2}[a-z]?|BUF-\d{2})$/;
+// 할 일 id 형식: S1-04, S1-02b, BUF-01, py-scripting 등. 여기서만 정의하고 task-guess도 이 값을 쓴다.
+export const TASK_RE = /^(?:S\d-\d{2}[a-z]?|BUF-\d{2}|[a-z0-9][a-z0-9-]{1,39})$/;
 // 글 안에서 id를 찾는 형식(앞뒤가 영숫자·하이픈이 아닐 때만 — S1-02b를 S1-02로 읽지 않게).
 export const TASK_FIND_RE = /(?<![A-Za-z0-9-])(?:S\d-\d{2}[a-z]?|BUF-\d{2})(?![A-Za-z0-9])/;
 export const SCRAP_ID_RE = /^[0-9a-f]{12}$/;

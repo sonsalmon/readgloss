@@ -1,0 +1,92 @@
+{
+  "meta": {
+    "version": "test-skills",
+    "goal": "시험용 작은 skills.json"
+  },
+  "nodes": [
+    {
+      "id": "py-scripting",
+      "area": "found",
+      "level": "basic",
+      "week": "W1",
+      "name": "파이썬으로 스크립트 짜기",
+      "sources": [
+        {
+          "name": "Python 공식 튜토리얼",
+          "url": "https://docs.python.org/3/tutorial/",
+          "kind": "official"
+        },
+        {
+          "name": "HTB: Introduction to Python 3",
+          "url": "https://academy.hackthebox.com/course/preview/introduction-to-python-3",
+          "kind": "course"
+        }
+      ]
+    },
+    {
+      "id": "web-requests",
+      "area": "web",
+      "level": "basic",
+      "week": "W1",
+      "name": "웹 요청과 HTTP",
+      "sources": [
+        {
+          "name": "PortSwigger Web Security",
+          "url": "https://portswigger.net/web-security",
+          "kind": "course"
+        },
+        {
+          "name": "HTB Web Requests",
+          "url": "https://academy.hackthebox.com/module/details/web-requests",
+          "kind": "course"
+        }
+      ]
+    },
+    {
+      "id": "web-access-control",
+      "area": "web",
+      "level": "core",
+      "week": "W2",
+      "name": "웹 접근 통제 취약점",
+      "sources": [
+        {
+          "name": "PortSwigger Access Control",
+          "url": "https://portswigger.net/web-security/access-control",
+          "kind": "lab"
+        }
+      ]
+    },
+    {
+      "id": "htb-ai-intro",
+      "area": "llm",
+      "level": "core",
+      "week": "W2",
+      "name": "HTB AI 레드팀 입문",
+      "sources": [
+        {
+          "name": "HTB AI Red Teamer Path",
+          "url": "https://academy.hackthebox.com/path/preview/ai-red-teamer",
+          "kind": "course"
+        }
+      ]
+    }
+  ],
+  "weeks": [
+    {
+      "id": "W1",
+      "dates": "2026-10-06~2026-10-11",
+      "node_ids": [
+        "py-scripting",
+        "web-requests"
+      ]
+    },
+    {
+      "id": "W2",
+      "dates": "2026-10-12~2026-10-18",
+      "node_ids": [
+        "web-access-control",
+        "htb-ai-intro"
+      ]
+    }
+  ]
+}

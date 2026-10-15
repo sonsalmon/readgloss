@@ -217,7 +217,7 @@
   }
 
   // bridge/scraps.mjs TASK_RE와 같은 값(classic script라 import 못 해 여기 둔다).
-  const TASK_RE = /^(?:S\d-\d{2}[a-z]?|BUF-\d{2})$/;
+  const TASK_RE = /^(?:S\d-\d{2}[a-z]?|BUF-\d{2}|[a-z0-9][a-z0-9-]{1,39})$/;
   // 다리 /scraps 'save' 요청 모양 생성. headings 최대 3개(가까운 쪽 끝), 각 200자, quote.exact 1000자, prefix/suffix 64자, translation 2000자, title 300자.
   function scrapMessage({ url = '', title = '', headings = [], quote = {}, pos = 0, translation = '', task = null }) {
     const normUrl = normalizeUrl(url);

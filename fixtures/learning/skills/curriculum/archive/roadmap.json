@@ -1,0 +1,18 @@
+{
+  "nodes": [
+    {
+      "id": "S1-03",
+      "card_title": "HTTP를 손으로: 파이썬 스크립트 2개",
+      "resources": [
+        { "url": "https://docs.python.org/3/library/socket.html" }
+      ]
+    },
+    {
+      "id": "S1-04",
+      "card_title": "웹 해킹 첫걸음: 접근 통제가 뚫리는 10가지 장면",
+      "resources": [
+        { "url": "https://portswigger.net/web-security" }
+      ]
+    }
+  ]
+}

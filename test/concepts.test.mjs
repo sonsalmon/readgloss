@@ -48,7 +48,7 @@ test('길이 상한을 넘으면 parseConceptOp는 null', () => {
   assert.equal(parseConceptOp({ ...valid, related: 'not-an-array' }), null);
 
   // task 형식 (S1-04 등 TASK_RE 만족 또는 null)
-  assert.equal(parseConceptOp({ ...valid, task: 'invalid-task' }), null);
+  assert.equal(parseConceptOp({ ...valid, task: '../x' }), null);
   assert.equal(parseConceptOp({ ...valid, task: 'S1-4' }), null);
   assert.ok(parseConceptOp({ ...valid, task: null }));
 

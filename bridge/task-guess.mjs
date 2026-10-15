@@ -13,29 +13,121 @@ const COMMON_HOSTS = new Set([
   'claude.ai',
 ]);
 
-// 학습 폴더 읽기: roadmap.json 및 NOTES.md. 파일마다 없음·깨짐이면 console.error 한 줄.
+function parseRoadmapNodes(raw) {
+  const data = JSON.parse(raw);
+  const list = Array.isArray(data) ? data : Array.isArray(data?.nodes) ? data.nodes : [];
+  return list.map((n) => ({
+    id: String(n.id ?? ''),
+    card_title: String(n.card_title ?? n.title ?? ''),
+    urls: Array.isArray(n.resources)
+      ? n.resources.map((r) => (typeof r === 'string' ? r : r?.url)).filter((u) => typeof u === 'string')
+      : [],
+  }));
+}
+
+function parseSkillsJson(raw, today) {
+  const data = JSON.parse(raw);
+  const list = Array.isArray(data?.nodes) ? data.nodes : [];
+  const nodes = list.map((n) => ({
+    id: String(n.id ?? ''),
+    card_title: String(n.name ?? n.card_title ?? n.title ?? ''),
+    urls: Array.isArray(n.sources)
+      ? n.sources.map((s) => (typeof s === 'string' ? s : s?.url)).filter((u) => typeof u === 'string')
+      : [],
+  }));
+
+  let thisWeek = [];
+  const weeks = Array.isArray(data?.weeks) ? data.weeks : [];
+  for (const w of weeks) {
+    if (typeof w?.dates === 'string') {
+      const [start, end] = w.dates.split('~');
+      if (start && end && today >= start.trim() && today <= end.trim()) {
+        if (Array.isArray(w.node_ids)) {
+          thisWeek = [...w.node_ids];
+        }
+        break;
+      }
+    }
+  }
+
+  return { nodes, thisWeek };
+}
+
+// 없는 파일은 조용히 넘기고, 있는데 못 읽은 파일만 한 줄 남긴다.
+function warnIfBroken(path, e) {
+  if (e?.code !== 'ENOENT') console.error(`[task-guess] ${path} 읽기 실패: ${e.message}`);
+}
+
+// 학습 폴더 읽기: skills.json, roadmap.json, archive/roadmap.json 및 NOTES.md.
 // roadmapOk:false 면 guessTask 가 인박스로 보낸다. NOTES 만 실패하면 next:null 로 계속 짐작한다.
-export function loadLearning(dir) {
+export function loadLearning(dir, now = Date.now) {
   let nodes = [];
   let next = null;
-  let roadmapOk = true;
+  let roadmapOk = false;
+  let thisWeek = [];
+  const tasks = {};
 
+  const today = dateOf(typeof now === 'function' ? now() : now);
+
+  const skillsPath = join(dir, 'curriculum', 'skills.json');
+  const roadmapPath = join(dir, 'curriculum', 'roadmap.json');
+  const archivePath = join(dir, 'curriculum', 'archive', 'roadmap.json');
+
+  // 1. skills.json 시도
   try {
-    const roadmapPath = join(dir, 'curriculum', 'roadmap.json');
-    const raw = readFileSync(roadmapPath, 'utf8');
-    const data = JSON.parse(raw);
-    const list = Array.isArray(data) ? data : Array.isArray(data?.nodes) ? data.nodes : [];
-    nodes = list.map((n) => ({
-      id: String(n.id ?? ''),
-      card_title: String(n.card_title ?? ''),
-      urls: Array.isArray(n.resources)
-        ? n.resources.map((r) => (typeof r === 'string' ? r : r?.url)).filter((u) => typeof u === 'string')
-        : [],
-    }));
+    const raw = readFileSync(skillsPath, 'utf8');
+    const parsed = parseSkillsJson(raw, today);
+    nodes = parsed.nodes;
+    thisWeek = parsed.thisWeek;
+    roadmapOk = true;
+
+    for (const n of nodes) {
+      if (n.id) tasks[n.id] = n.card_title;
+    }
+
+    // skills.json 이 있으면 archive roadmap 도 읽어서 제목 표를 합친다 (옛 id 제목도 나오게)
+    try {
+      const archiveRaw = readFileSync(archivePath, 'utf8');
+      const archiveNodes = parseRoadmapNodes(archiveRaw);
+      const existingIds = new Set(nodes.map((n) => n.id));
+      for (const an of archiveNodes) {
+        if (an.id && !tasks[an.id]) {
+          tasks[an.id] = an.card_title;
+        }
+        // server.mjs 에서 learning.nodes.find 로 옛 id 제목을 찾을 수 있도록 urls: [] 로 덧붙인다
+        if (an.id && !existingIds.has(an.id)) {
+          nodes.push({ id: an.id, card_title: an.card_title, urls: [] });
+        }
+      }
+    } catch (e) {
+      // archive roadmap 이 없거나 실패해도 skills.json 만으로 계속
+      warnIfBroken(archivePath, e);
+    }
   } catch (e) {
-    roadmapOk = false;
-    nodes = [];
-    console.error(`[task-guess] roadmap.json 읽기 실패 (${join(dir, 'curriculum', 'roadmap.json')}): ${e.message}`);
+    // 2. skills.json 이 없거나 실패하면 roadmap.json 시도 (있는데 깨졌으면 한 줄 남긴다)
+    warnIfBroken(skillsPath, e);
+    try {
+      const raw = readFileSync(roadmapPath, 'utf8');
+      nodes = parseRoadmapNodes(raw);
+      roadmapOk = true;
+      for (const n of nodes) {
+        if (n.id) tasks[n.id] = n.card_title;
+      }
+    } catch (roadmapErr) {
+      // 3. 그것도 없으면 archive/roadmap.json 시도 (fallback)
+      try {
+        const raw = readFileSync(archivePath, 'utf8');
+        nodes = parseRoadmapNodes(raw);
+        roadmapOk = true;
+        for (const n of nodes) {
+          if (n.id) tasks[n.id] = n.card_title;
+        }
+      } catch {
+        roadmapOk = false;
+        nodes = [];
+        console.error(`[task-guess] roadmap.json 읽기 실패 (${roadmapPath}): ${roadmapErr.message}`);
+      }
+    }
   }
 
   try {
@@ -51,7 +143,7 @@ export function loadLearning(dir) {
     console.error(`[task-guess] NOTES.md 읽기 실패 (${join(dir, 'NOTES.md')}): ${e.message}`);
   }
 
-  return { nodes, next, roadmapOk };
+  return { nodes, next, roadmapOk, thisWeek, tasks };
 }
 
 // 오늘(서울 날짜) 마지막 스크랩의 task. 없거나 인박스면 null.
@@ -67,8 +159,16 @@ export function lastTaskToday(scraps, now = Date.now) {
   return typeof last.task === 'string' && TASK_RE.test(last.task) ? last.task : null;
 }
 
-// 할 일 짐작 규칙 (설계서 10-3)
-export function guessTask({ url, nodes = [], next = null, lastToday = null, todayTasks = [], roadmapOk = true }) {
+// 할 일 짐작 규칙 (설계서 10-3, 25절)
+export function guessTask({
+  url,
+  nodes = [],
+  next = null,
+  thisWeek = [],
+  lastToday = null,
+  todayTasks = [],
+  roadmapOk = true,
+}) {
   // roadmap 을 못 읽었으면 짐작하지 않고 인박스
   if (!roadmapOk) {
     return { task: null, ask: false, candidates: [], matches: [] };
@@ -127,17 +227,24 @@ export function guessTask({ url, nodes = [], next = null, lastToday = null, toda
   let task = null;
   let ask = false;
 
+  const thisWeekSet = new Set(Array.isArray(thisWeek) ? thisWeek : []);
+
   if (matches.length > 0) {
     ask = false;
     // ① 오늘 마지막 할 일이 맞는 할 일 안에 있으면 그것
     if (lastToday && matches.includes(lastToday)) {
       task = lastToday;
     }
-    // ② 다음 한 걸음 할 일이 맞는 할 일 안에 있으면 그것
+    // ② thisWeek 안의 맞는 할 일 중 경로가 가장 길게 겹치는 것
+    else if (matchedNodes.some((m) => thisWeekSet.has(m.id))) {
+      const bestThisWeek = matchedNodes.find((m) => thisWeekSet.has(m.id));
+      task = bestThisWeek.id;
+    }
+    // ③ (옛 방식) 다음 한 걸음 노드
     else if (next && matches.includes(next)) {
       task = next;
     }
-    // ③ 맞는 할 일의 첫째
+    // ④ 맞는 할 일 중 첫째
     else {
       task = matches[0];
     }

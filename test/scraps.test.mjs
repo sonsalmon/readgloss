@@ -68,7 +68,7 @@ test('상한 넘으면 parseScrapOp null', () => {
   // task 형식 틀림 (S1-4 -> null)
   assert.equal(parseScrapOp({ ...base, task: 'S1-4' }), null);
   assert.equal(parseScrapOp({ ...base, task: 'S01-01' }), null);
-  assert.equal(parseScrapOp({ ...base, task: 'invalid' }), null);
+  assert.equal(parseScrapOp({ ...base, task: 'UPPER' }), null);
 
   // headings 4개 -> null, headings 각 항목 201자 -> null
   assert.equal(parseScrapOp({ ...base, headings: ['1', '2', '3', '4'] }), null);
