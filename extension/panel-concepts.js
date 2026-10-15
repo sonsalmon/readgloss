@@ -621,19 +621,49 @@
       defTextarea.className = 'detail-textarea';
       defTextarea.rows = 4;
       defTextarea.maxLength = 500;
-      defTextarea.value = concept.definition || '';
+      const initialDef = concept.definition || '';
+      defTextarea.value = globalThis.readglossMdList?.ensureStartsList
+        ? globalThis.readglossMdList.ensureStartsList(initialDef)
+        : initialDef;
+
+      // 마크다운 목록 단축키: Enter, Shift+Enter, Tab, Shift+Tab
+      defTextarea.addEventListener('keydown', (e) => {
+        if (e.isComposing) return;
+        const md = globalThis.readglossMdList;
+        if (!md) return;
+
+        let res = null;
+        if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          res = md.onEnter(defTextarea.value, defTextarea.selectionStart, defTextarea.selectionEnd);
+        } else if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          res = md.onShiftEnter(defTextarea.value, defTextarea.selectionStart, defTextarea.selectionEnd);
+        } else if (e.key === 'Tab' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          res = md.onTab(defTextarea.value, defTextarea.selectionStart, defTextarea.selectionEnd, false);
+        } else if (e.key === 'Tab' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          res = md.onTab(defTextarea.value, defTextarea.selectionStart, defTextarea.selectionEnd, true);
+        }
+
+        if (res) {
+          e.preventDefault();
+          defTextarea.value = res.value;
+          defTextarea.setSelectionRange(res.selStart, res.selEnd);
+          defTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      });
+
       defField.append(defLabel, defTextarea);
       parent.append(defField);
 
-      // 별칭 필드
+      // 다른 이름 필드
       const aliasField = document.createElement('div');
       aliasField.className = 'detail-field';
       const aliasLabel = document.createElement('label');
       aliasLabel.className = 'detail-label';
-      aliasLabel.textContent = '별칭 (쉼표로 구분, 최대 5개)';
+      aliasLabel.textContent = '다른 이름 (같은 개념의 다른 이름, 쉼표로 · 최대 5개)';
       const aliasInput = document.createElement('input');
       aliasInput.className = 'detail-input';
       aliasInput.type = 'text';
+      aliasInput.placeholder = '접근 통제, AC';
       aliasInput.value = Array.isArray(concept.aliases) ? concept.aliases.join(', ') : '';
       aliasField.append(aliasLabel, aliasInput);
       parent.append(aliasField);
@@ -736,9 +766,12 @@
       saveBtn.type = 'button';
       saveBtn.textContent = '저장';
       saveBtn.onclick = async () => {
-        const def = defTextarea.value.trim();
-        if (!def || def.length > 500) {
-          statusMsg = '정의는 1~500자여야 해요';
+        const rawDef = defTextarea.value;
+        const def = globalThis.readglossMdList?.cleanForSave
+          ? globalThis.readglossMdList.cleanForSave(rawDef)
+          : rawDef.trim();
+        if (def.length > 500) {
+          statusMsg = '정의는 500자 이하여야 해요';
           isError = true;
           draw();
           return;

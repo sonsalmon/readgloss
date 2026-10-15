@@ -25,7 +25,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["text.js", "settings-core.js", "glossary-core.js", "paragraph-core.js", "annotate-core.js", "content.js", "paragraph.js", "annotate.js", "panel.js", "panel-scraps.js", "panel-concepts.js", "panel-words.js", "panel-study.js", "vendor/approx-string-match.js", "scrap-core.js", "scrap.js", "concept-core.js", "concept.js", "memo-core.js", "memo-pad.js", "selection-core.js", "selection.js"],
+      "js": ["text.js", "settings-core.js", "glossary-core.js", "paragraph-core.js", "annotate-core.js", "content.js", "paragraph.js", "annotate.js", "panel.js", "panel-scraps.js", "panel-concepts.js", "panel-words.js", "panel-study.js", "vendor/approx-string-match.js", "scrap-core.js", "scrap.js", "md-list.js", "concept-core.js", "concept.js", "memo-core.js", "memo-pad.js", "selection-core.js", "selection.js"],
       "all_frames": false
     }
   ]

@@ -627,20 +627,20 @@
     nameIn.value = initialName;
     nameField.append(nameLabel, nameIn);
 
-    // 별칭
+    // 다른 이름
     const aliasField = document.createElement('div');
     aliasField.className = 'field';
     const aliasLabel = document.createElement('label');
     aliasLabel.className = 'label';
-    aliasLabel.textContent = '별칭 (쉼표로 구분, 최대 5개)';
+    aliasLabel.textContent = '다른 이름 (같은 개념의 다른 이름, 쉼표로 · 최대 5개)';
     const aliasIn = document.createElement('input');
     aliasIn.className = 'input';
     aliasIn.type = 'text';
-    aliasIn.placeholder = '별칭1, 별칭2';
+    aliasIn.placeholder = '접근 통제, AC';
     aliasIn.value = Array.isArray(seed.aliases) ? seed.aliases.join(', ') : (seed.aliases || '');
     aliasField.append(aliasLabel, aliasIn);
 
-    // 내 정의
+    // 내 정의 (설명)
     const defField = document.createElement('div');
     defField.className = 'field';
     const defLabel = document.createElement('label');
@@ -651,7 +651,34 @@
     defIn.rows = 3;
     defIn.maxLength = 500;
     defIn.placeholder = '내가 이해한 개념 정의';
-    defIn.value = seed.definition || '';
+    const initialDef = seed.definition || '';
+    defIn.value = globalThis.readglossMdList?.ensureStartsList ? globalThis.readglossMdList.ensureStartsList(initialDef) : initialDef;
+
+    // 마크다운 목록 단축키: Enter, Shift+Enter, Tab, Shift+Tab
+    defIn.addEventListener('keydown', (e) => {
+      if (e.isComposing) return;
+      const md = globalThis.readglossMdList;
+      if (!md) return;
+
+      let res = null;
+      if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        res = md.onEnter(defIn.value, defIn.selectionStart, defIn.selectionEnd);
+      } else if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        res = md.onShiftEnter(defIn.value, defIn.selectionStart, defIn.selectionEnd);
+      } else if (e.key === 'Tab' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        res = md.onTab(defIn.value, defIn.selectionStart, defIn.selectionEnd, false);
+      } else if (e.key === 'Tab' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        res = md.onTab(defIn.value, defIn.selectionStart, defIn.selectionEnd, true);
+      }
+
+      if (res) {
+        e.preventDefault();
+        defIn.value = res.value;
+        defIn.setSelectionRange(res.selStart, res.selEnd);
+        defIn.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+
     defField.append(defLabel, defIn);
 
     // 관련 개념
@@ -766,10 +793,13 @@
         return;
       }
 
-      const definition = defIn.value.trim();
-      if (!definition || definition.length > 500) {
+      const rawDef = defIn.value;
+      const definition = globalThis.readglossMdList?.cleanForSave
+        ? globalThis.readglossMdList.cleanForSave(rawDef)
+        : rawDef.trim();
+      if (definition.length > 500) {
         errEl.hidden = false;
-        errEl.textContent = '내 정의는 1~500자여야 해요';
+        errEl.textContent = '내 정의는 500자 이하여야 해요';
         defIn.focus();
         return;
       }
