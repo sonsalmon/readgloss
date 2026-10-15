@@ -362,7 +362,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
             .filter(Boolean),
         ),
       );
-      const guessed = guessTask({
+      const guessed = guessTask({ thisWeek: learning.thisWeek,
         url: normUrl,
         nodes: learning.nodes,
         next: learning.next,
