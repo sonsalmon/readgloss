@@ -224,11 +224,8 @@ test('5. 소스 검사: bridge/server.mjs scraps guess records와 tutor-quote me
     !serverCode.includes('records.push({ url: c.seen.url, task: c.firstTask'),
     'server.mjs에 c.seen.url을 records에 넣는 코드가 남아있습니다.',
   );
-  assert.ok(
-    serverCode.includes('if (c.firstTask && c.firstUrl) records.push({ url: c.firstUrl, task: c.firstTask, ts: c.ts });') ||
-    serverCode.includes('if (c.firstTask && c.firstUrl) {\n          records.push({ url: c.firstUrl, task: c.firstTask, ts: c.ts });\n        }'),
-    'server.mjs에 firstUrl + firstTask 만 기록으로 쓰는 코드가 올바르게 작성되어야 합니다.',
-  );
+  assert.match(serverCode, /if \(c\.firstTask && c\.firstUrl\)\s*\{?\s*records\.push\(\{ url: c\.firstUrl, task: c\.firstTask, ts: c\.ts \}\)/,
+    'server.mjs에 firstUrl + firstTask 만 기록으로 쓰는 코드가 있어야 합니다(들여쓰기 무관).');
 
   // 5-2. bridge/tutor-quote.mjs 검사
   const tutorQuoteCode = readFileSync(join(process.cwd(), 'bridge', 'tutor-quote.mjs'), 'utf8');

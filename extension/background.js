@@ -470,4 +470,38 @@ chrome.windows?.onRemoved?.addListener((winId) => {
   storage.remove(`study_mode_win_${winId}`).catch(() => {});
 });
 
+// --- 섹션별 공부 시간(T40a): content script 의 'study-time' 요청을 다리 /study-time 으로 전달한다. op:'get' 은 GET ?from=&to=, 나머지는 POST. ---
+async function studyTime(msg, retried = false) {
+  const token = await getToken(retried);
+  if (!token) return { error: 'pair-failed' };
+  const { op, items, from, to } = msg;
+  let path = '/study-time';
+  let init;
+  if (op === 'get') {
+    const q = new URLSearchParams();
+    if (from) q.set('from', from);
+    if (to) q.set('to', to);
+    const qs = q.toString();
+    if (qs) path += `?${qs}`;
+    init = { headers: { 'X-Bridge-Token': token } };
+  } else {
+    init = {
+      method: 'POST',
+      headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ op, items }),
+    };
+  }
+  const res = await bridgeFetch(path, init);
+  if (res.status === 401 && !retried) return studyTime(msg, true);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: data.error || `http-${res.status}` };
+  return data;
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'study-time') return;
+  studyTime(msg).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
+  return true; // 비동기 응답
+});
+
 

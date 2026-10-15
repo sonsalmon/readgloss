@@ -26,6 +26,7 @@ import { openDb, migrateJson } from './db.mjs';
 import { createConcepts, parseConceptOp } from './concepts.mjs';
 import { createMemos, parseMemoOp } from './memos.mjs';
 import { createTutorQuote } from './tutor-quote.mjs';
+import { createStudyTime, parseStudyTimeOp, parseStudyTimeRange } from './study-time.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
@@ -134,6 +135,51 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
   const concepts = db ? createConcepts({ db, now, learning: () => loadLearning(learningDir) }) : null;
   const memos = db ? createMemos({ db, now }) : null;
   const tutorQuote = createTutorQuote({ sessionsDir: tutorSessionsDir, now });
+
+  function guessTaskForUrl(rawUrl) {
+    if (typeof rawUrl !== 'string' || rawUrl.length > 2000) return null;
+    const normUrl = normalizeUrl(rawUrl);
+    if (!normUrl) return null;
+    const learning = loadLearning(learningDir);
+    const allScraps = scraps.all();
+    const lastToday = lastTaskToday(allScraps, now);
+    const today = dateOf(typeof now === 'function' ? now() : now);
+    const todayTasks = Array.from(
+      new Set(
+        allScraps
+          .filter((s) => Number.isFinite(s?.ts) && dateOf(s.ts) === today)
+          .map((s) => s.task)
+          .filter(Boolean),
+      ),
+    );
+    const allMemos = memos ? memos.list() : [];
+    const allConcepts = concepts ? concepts.list() : [];
+    const records = [];
+    for (const s of allScraps) {
+      if (s.task) records.push({ url: s.url, task: s.task, ts: s.ts });
+    }
+    for (const m of allMemos) {
+      if (m.task) records.push({ url: m.url, task: m.task, ts: m.ts });
+    }
+    for (const c of allConcepts) {
+      if (c.firstTask && c.firstUrl) {
+        records.push({ url: c.firstUrl, task: c.firstTask, ts: c.ts });
+      }
+    }
+    const remembered = rememberedTask(normUrl, records);
+    return guessTask({
+      thisWeek: learning.thisWeek,
+      url: normUrl,
+      nodes: learning.nodes,
+      next: learning.next,
+      lastToday,
+      todayTasks,
+      roadmapOk: learning.roadmapOk,
+      remembered,
+    });
+  }
+
+  const studyTime = db ? createStudyTime({ db, guessTaskFor: guessTaskForUrl, now }) : null;
   const levels = loadWordLevels();
   const annotate = createAnnotate({ dict, levels, isKnown: words.isKnown, glossary, mydict });
   const mine = `chrome-extension://${extensionId}`;
@@ -350,45 +396,8 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
     if (value?.op === 'guess') {
       if (typeof value.url !== 'string' || value.url.length > 2000) return send(res, 400, { error: 'bad-request' }, cors);
-      const normUrl = normalizeUrl(value.url);
-      if (!normUrl) return send(res, 400, { error: 'bad-request' }, cors);
-      const learning = loadLearning(learningDir);
-      const allScraps = scraps.all();
-      const lastToday = lastTaskToday(allScraps, now);
-      const today = dateOf(typeof now === 'function' ? now() : now);
-      const todayTasks = Array.from(
-        new Set(
-          allScraps
-            .filter((s) => Number.isFinite(s?.ts) && dateOf(s.ts) === today)
-            .map((s) => s.task)
-            .filter(Boolean),
-        ),
-      );
-      const allMemos = memos ? memos.list() : [];
-      const allConcepts = concepts ? concepts.list() : [];
-      const records = [];
-      for (const s of allScraps) {
-        if (s.task) records.push({ url: s.url, task: s.task, ts: s.ts });
-      }
-      for (const m of allMemos) {
-        if (m.task) records.push({ url: m.url, task: m.task, ts: m.ts });
-      }
-      for (const c of allConcepts) {
-        if (c.firstTask && c.firstUrl) {
-          records.push({ url: c.firstUrl, task: c.firstTask, ts: c.ts });
-        }
-      }
-      const remembered = rememberedTask(normUrl, records);
-      const guessed = guessTask({
-        thisWeek: learning.thisWeek,
-        url: normUrl,
-        nodes: learning.nodes,
-        next: learning.next,
-        lastToday,
-        todayTasks,
-        roadmapOk: learning.roadmapOk,
-        remembered,
-      });
+      const guessed = guessTaskForUrl(value.url);
+      if (!guessed) return send(res, 400, { error: 'bad-request' }, cors);
       return send(res, 200, guessed, cors);
     }
     const op = parseScrapOp(value);
@@ -471,6 +480,26 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     return send(res, 200, result, cors);
   }
 
+  // 공부 시간: POST /study-time (op: add), GET /study-time?from=&to=
+  async function handleStudyTime(req, res, cors) {
+    if (!db || !studyTime) return send(res, 503, { error: 'no-db' }, cors);
+    if (req.method === 'GET') {
+      const u = new URL(req.url, 'http://x');
+      const from = u.searchParams.get('from');
+      const to = u.searchParams.get('to');
+      const range = parseStudyTimeRange(from, to);
+      if (!range) return send(res, 400, { error: 'bad-request' }, cors);
+      const items = studyTime.list(range.from, range.to);
+      return send(res, 200, { items }, cors);
+    }
+    const { value, status } = await readJson(req, MAX_WORDS_BODY);
+    if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+    const op = parseStudyTimeOp(value);
+    if (!op || op.op !== 'add') return send(res, 400, { error: 'bad-request' }, cors);
+    studyTime.add(op.items);
+    return send(res, 200, { ok: true }, cors);
+  }
+
   async function handle(req, res) {
     // 1. Host 가 고정값이 아니면 거절. 2. Origin 이 있는데 내 확장이 아니면 거절(토큰 유무와 무관).
     if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, { error: 'forbidden' });
@@ -549,6 +578,10 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     if (path === '/tutor-quote') {
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleTutorQuote(req, res, cors);
+    }
+    if (path === '/study-time') {
+      if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleStudyTime(req, res, cors);
     }
     return send(res, 404, { error: 'not-found' }, cors);
   }
