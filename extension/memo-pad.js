@@ -201,6 +201,7 @@
   let currentTaskTitle = ''; // 짐작된 할 일 제목
   let typingTimer = 0;
   let drafts = {}; // 소제목 key별 쓰던 글 보관 { [key]: string }
+  let editingMemo = null; // 다시 열기로 가져온 메모 { id, sectionKey } — 그 칸의 ⌘Enter 가 고침(edit)으로 보낸다
   let currentHeadings = []; // [{ key, text, level, el }]
   let currentMemos = []; // 이 페이지의 저장된 메모 목록
   let currentActiveKey = '_page'; // 현재 활성화된 소제목 key
@@ -214,6 +215,7 @@
   // content.js startsMemo 등에서 우리 메모장 입력 여부를 판정할 수 있도록 인터페이스 제공
   globalThis.readglossMemoPadUi = {
     isTyping: () => isOpen && currentMode === 'pad',
+    reopen: (id) => reopenMemo(id),
   };
 
   const STYLE_TEXT = `
@@ -905,9 +907,62 @@
     }
   }
 
+  // 메모 고치기(다시 열기 뒤): 칸 글로 그 메모 글을 바꾼다(다리 op edit)
+  async function performEdit(sectionKey, ta) {
+    const text = (ta.value || '').trim().slice(0, 2000);
+    if (!text) return false; // 빈 글로는 고치지 않는다(다리가 거절한다)
+    const id = editingMemo.id;
+    const res = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'memos', op: 'edit', id, text }, resolve);
+    });
+    if (res?.memo) {
+      const idx = currentMemos.findIndex((m) => m.id === id);
+      if (idx !== -1) currentMemos[idx] = res.memo;
+      editingMemo = null;
+      ta.value = '';
+      drafts[sectionKey] = '';
+      saveDrafts();
+      rebuildSectionsUI();
+      showSuccessMeta('고쳤어요');
+      return true;
+    }
+    const errMsg = res?.error === 'bridge-off' ? BRIDGE_OFF_TEXT : '저장하지 못했어요';
+    showErrorMeta(errMsg);
+    return false;
+  }
+
+  // Ctrl/⌘+Z 로 마지막 메모 다시 열기(15-2): 메모장을 열고 그 메모 글을 소제목 칸 쓰는 칸으로 가져와 고친다
+  function reopenMemo(id) {
+    if (!id) return;
+    chrome.runtime.sendMessage({ type: 'memos', op: 'get', url: location.href }, (res) => {
+      if (chrome.runtime.lastError || !res || !Array.isArray(res.memos)) return;
+      const memo = res.memos.find((m) => m.id === id);
+      if (!memo) {
+        showToastNotice('이 페이지에서 그 메모를 찾지 못했어요');
+        return;
+      }
+      currentMemos = res.memos;
+      openPad();
+      const memoCore = globalThis.readglossMemo;
+      const pageTitle = (document.title || '').replace(/\s+/g, ' ').trim();
+      const sections = memoCore?.buildSections ? memoCore.buildSections(currentHeadings, currentMemos, pageTitle) : [];
+      const key = sections.find((sec) => (sec.memos || []).some((m) => m.id === id))?.key || '_page';
+      editingMemo = { id, sectionKey: key };
+      currentActiveKey = key;
+      drafts[key] = memo.text || '';
+      const ta = shadow?.querySelector(`.sec[data-key="${CSS.escape(key)}"] .sec-textarea`);
+      if (ta) {
+        ta.value = memo.text || '';
+        autoResize(ta);
+      }
+      applyActiveSection(true, true);
+    });
+  }
+
   // 소제목 칸 기준 메모 저장 실행
   async function performSave(sectionKey, ta) {
     if (!ta) return false;
+    if (editingMemo && editingMemo.sectionKey === sectionKey) return performEdit(sectionKey, ta);
     const rawText = ta.value.trim();
     const memoCore = globalThis.readglossMemo;
     const canSaveFn = memoCore?.canSave;
@@ -981,6 +1036,7 @@
         }
       }
 
+      globalThis.readglossLastSave = { kind: 'memo', id: res.memo.id };
       showSuccessMeta('메모했어요');
       return true;
     } else {
@@ -1559,6 +1615,7 @@
   // 메모장 접기(닫기)
   function closePad() {
     clearTimeout(typingTimer);
+    editingMemo = null;
     if (shadow && currentMode === 'pad') {
       const textareas = shadow.querySelectorAll('.sec-textarea');
       for (const ta of textareas) {

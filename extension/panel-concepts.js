@@ -366,6 +366,7 @@
   }
 
   let pendingOpenConceptId = null;
+  let pendingFocusNew = false;
   let rerenderCurrentTab = null;
   let hasRendered = false;
   let loadConcepts = null;
@@ -375,17 +376,23 @@
     window.addEventListener('readgloss:open-panel', (e) => {
       if (e.detail?.conceptId) {
         pendingOpenConceptId = e.detail.conceptId;
+        pendingFocusNew = e.detail?.focusNew === true;
         if (typeof rerenderCurrentTab === 'function') {
-          rerenderCurrentTab(pendingOpenConceptId);
+          rerenderCurrentTab(pendingOpenConceptId, pendingFocusNew);
         }
         // 패널이 닫혀 있었으면 panel.js 가 같은 이벤트 안에서 render 를 불러 이 id 를 쓰고 비운다.
         // 이미 열려 있었으면 render 가 안 불리니, 이벤트가 끝난 뒤 남은 id 를 비워 다음 열기 때 옛 상세가 뜨지 않게 한다.
-        queueMicrotask(() => { pendingOpenConceptId = null; });
+        queueMicrotask(() => {
+          pendingOpenConceptId = null;
+          pendingFocusNew = false;
+        });
       }
     }, { capture: true });
 
     // 개념 갱신 이벤트 수신: 탭이 한 번이라도 그려졌으면 즉시 loadConcepts()로 목록을 다시 받아 지금 화면을 다시 그린다
-    window.addEventListener('readgloss:concepts-updated', () => {
+    window.addEventListener('readgloss:concepts-updated', (e) => {
+      // 상세에서 자동 저장한 것이면 다시 그리지 않는다(입력 중인 칸이 날아간다). 목록은 뒤로 갈 때 받는다.
+      if (e.detail?.fromDetail) return;
       if (hasRendered && typeof loadConcepts === 'function') {
         loadConcepts();
       }
@@ -398,6 +405,9 @@
     let isLoading = true; // 목록을 받는 중이면 상세 대신 "불러오는 중"을 보인다
     let targetConceptId = pendingOpenConceptId || null; // 열어 달라고 받은 id: 목록을 받은 뒤 상세로 연다
     pendingOpenConceptId = null;
+    let focusNewOnLoad = pendingFocusNew;
+    pendingFocusNew = false;
+    let detailKeyHandler = null; // 상세의 Esc·⌘Enter 리스너. 다시 그릴 때 이전 것을 뗀다
     let selectedConceptId = targetConceptId;
     let currentView = targetConceptId ? 'detail' : 'list'; // 'list' | 'detail'
     let filterMode = 'all'; // 'all' | 'defined' | 'later'
@@ -453,12 +463,56 @@
         currentView = 'detail';
       }
       draw();
+
+      if (focusNewOnLoad && currentView === 'detail') {
+        focusNewOnLoad = false;
+        applyDetailFocusNew();
+      }
     };
 
-    rerenderCurrentTab = (conceptId) => {
+    function applyDetailFocusNew(textarea) {
+      const ta = textarea || pane.querySelector('.detail-textarea');
+      if (!ta) return;
+      if (globalThis.readglossMdList?.appendNewItem) {
+        const { value, caret } = globalThis.readglossMdList.appendNewItem(ta.value);
+        ta.value = value;
+        ta.setSelectionRange(caret, caret);
+      }
+      ta.focus({ preventScroll: true });
+    }
+
+    // 패널 닫기: 닫기 이벤트는 없어서 패널 ✕ 버튼을 누른다
+    function requestClosePanel() {
+      const host = document.querySelector('readgloss-ui');
+      host?.shadowRoot?.querySelector('button.close')?.click();
+    }
+
+    // 목록으로: 목록을 새로 받아 그린다(상세에서 자동 저장한 이름·설명이 목록에 보이게)
+    function goToList() {
+      currentView = 'list';
+      targetConceptId = null; // 로딩 중에 누르면 열 예정이던 상세로 되돌아가지 않게
+      selectedConceptId = null;
+      statusMsg = '';
+      loadConcepts();
+    }
+
+    // 16-7 토글용: 지금 상세가 열린 개념 id (이 탭이 떠 있을 때만)
+    globalThis.readglossConceptPanelUi = {
+      getCurrentConceptId: () => (currentView === 'detail' && pane.isConnected ? selectedConceptId : null),
+    };
+
+    rerenderCurrentTab = (conceptId, focusNew) => {
+      // 16-7: 같은 개념이 열려 있으면 여는 움직임(애니메이션)을 다시 하지 않는다
+      if (currentView === 'detail' && selectedConceptId === conceptId) {
+        if (focusNew) {
+          applyDetailFocusNew();
+        }
+        return;
+      }
       targetConceptId = conceptId;
       selectedConceptId = conceptId;
       currentView = 'detail';
+      focusNewOnLoad = focusNew === true;
       statusMsg = '';
       isLoading = true;
       draw(); // 목록을 받는 동안 "불러오는 중"
@@ -646,6 +700,15 @@
         return;
       }
 
+      // 자동 저장 상수 및 상태 관리 (15-3)
+      const AUTO_SAVE_DELAY = 800; // 0.8초 디바운스
+      let autoSaveTimer = 0;
+      let isSaving = false;
+      let pendingSaveAgain = false;
+      let pendingCloseOnSuccess = false;
+      let pendingClosePanelOnSuccess = false;
+      let isDirty = false;
+
       // 상단 뒤로가기
       const nav = document.createElement('div');
       nav.className = 'detail-nav';
@@ -654,13 +717,18 @@
       backBtn.type = 'button';
       backBtn.textContent = '← 목록';
       backBtn.onclick = () => {
-        currentView = 'list';
-        targetConceptId = null; // 로딩 중에 누르면 열 예정이던 상세로 되돌아가지 않게
-        selectedConceptId = null;
-        statusMsg = '';
-        draw();
+        if (isDirty || autoSaveTimer || isSaving) {
+          doSave({ closeOnSuccess: true });
+        } else {
+          goToList();
+        }
       };
-      nav.append(backBtn);
+
+      const saveIndicator = document.createElement('span');
+      saveIndicator.className = 'save-status';
+      saveIndicator.style.cssText = 'font-size: 11.5px; color: var(--rg-muted, #656d76); margin-left: auto;';
+
+      nav.append(backBtn, saveIndicator);
       parent.append(nav);
 
       // 개념 제목
@@ -790,6 +858,7 @@
               }
             }
             renderTags();
+            triggerAutoSave();
           };
           tagRow.append(btn);
         }
@@ -809,6 +878,7 @@
             e.preventDefault();
             activeTags.delete(t);
             renderTags();
+            triggerAutoSave();
           };
           chip.append(delBtn);
           tagRow.append(chip);
@@ -829,6 +899,7 @@
               activeTags.add(cleanT);
               tagInput.value = '';
               renderTags();
+              triggerAutoSave();
               tagInput.focus();
             }
           }
@@ -874,6 +945,7 @@
           delBtn.onclick = () => {
             relatedSet.delete(name);
             renderChips();
+            triggerAutoSave();
           };
           chip.append(delBtn);
           chipList.append(chip);
@@ -901,6 +973,7 @@
             if (relatedSet.size < 10) {
               relatedSet.add(c);
               renderChips();
+              triggerAutoSave();
             }
             relInput.value = '';
             acList.hidden = true;
@@ -936,21 +1009,37 @@
       saveBtn.className = 'btn-action btn-primary';
       saveBtn.type = 'button';
       saveBtn.textContent = '저장';
-      saveBtn.onclick = async () => {
+
+      // 저장 실행 함수: cleanForSave 적용, 진행 중이면 다음으로 미룸, 0.8초 디바운스
+      async function doSave(opts = {}) {
+        clearTimeout(autoSaveTimer);
+        autoSaveTimer = 0;
+
+        if (opts.closeOnSuccess) pendingCloseOnSuccess = true;
+        if (opts.closePanelOnSuccess) pendingClosePanelOnSuccess = true;
+
+        if (isSaving) {
+          pendingSaveAgain = true;
+          return;
+        }
+
         const rawDef = defTextarea.value;
         const def = globalThis.readglossMdList?.cleanForSave
           ? globalThis.readglossMdList.cleanForSave(rawDef)
           : rawDef.trim();
+
         if (def.length > 500) {
-          statusMsg = '정의는 500자 이하여야 해요';
-          isError = true;
-          draw();
+          saveIndicator.textContent = '정의는 500자 이하여야 해요';
+          saveIndicator.style.color = '#d1242f';
           return;
         }
 
         const core = globalThis.readglossConcept;
         const aliases = core?.parseAliases ? core.parseAliases(aliasInput.value) : [];
 
+        isSaving = true;
+        saveIndicator.textContent = '저장 중…';
+        saveIndicator.style.color = 'var(--rg-muted, #656d76)';
         saveBtn.disabled = true;
         saveBtn.textContent = '저장 중…';
 
@@ -965,20 +1054,95 @@
           related: [...relatedSet],
         });
 
+        isSaving = false;
         saveBtn.disabled = false;
         saveBtn.textContent = '저장';
 
         if (res && !res.error) {
-          statusMsg = '저장했어요';
-          isError = false;
-          window.dispatchEvent(new CustomEvent('readgloss:concepts-updated'));
-          await loadConcepts();
+          isDirty = false;
+          globalThis.readglossLastSave = { kind: 'concept', id: concept.id };
+          window.dispatchEvent(new CustomEvent('readgloss:concepts-updated', { detail: { id: concept.id, fromDetail: true } }));
+
+          saveIndicator.textContent = '저장됨';
+          saveIndicator.style.color = 'var(--rg-muted, #656d76)';
+          setTimeout(() => {
+            if (saveIndicator.textContent === '저장됨') {
+              saveIndicator.textContent = '';
+            }
+          }, 1500);
+
+          if (pendingSaveAgain) {
+            pendingSaveAgain = false;
+            doSave();
+            return;
+          }
+
+          if (pendingClosePanelOnSuccess) {
+            pendingClosePanelOnSuccess = false;
+            requestClosePanel();
+            return;
+          }
+
+          if (pendingCloseOnSuccess) {
+            pendingCloseOnSuccess = false;
+            goToList();
+            return;
+          }
         } else {
-          statusMsg = res?.error || '저장하지 못했어요';
-          isError = true;
-          draw();
+          saveIndicator.textContent = res?.error || '저장하지 못했어요';
+          saveIndicator.style.color = '#d1242f';
         }
-      };
+      }
+
+      function triggerAutoSave() {
+        isDirty = true;
+        clearTimeout(autoSaveTimer);
+        autoSaveTimer = setTimeout(() => {
+          doSave();
+        }, AUTO_SAVE_DELAY);
+      }
+
+      // 입력 변경 시 자동 저장 트리거
+      defTextarea.addEventListener('input', triggerAutoSave);
+      aliasInput.addEventListener('input', triggerAutoSave);
+
+      saveBtn.onclick = () => doSave();
+
+      // Esc: 대기 중 저장을 즉시 보내고 상세를 닫는다 (목록으로). ⌘Enter: 즉시 저장 + 패널 닫기 (15-3)
+      function onDetailKeyDown(e) {
+        if (!pane.isConnected) {
+          window.removeEventListener('keydown', onDetailKeyDown, true);
+          return;
+        }
+        if (currentView !== 'detail' || selectedConceptId !== concept.id) return;
+        const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+        const isInsidePanel = path.some((el) => (el?.localName || el?.tagName || '').toLowerCase() === 'readgloss-ui');
+        if (!isInsidePanel) return;
+
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          if (isDirty || autoSaveTimer || isSaving) {
+            doSave({ closeOnSuccess: true });
+          } else {
+            goToList();
+          }
+        } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          e.stopPropagation();
+          doSave({ closePanelOnSuccess: true });
+        }
+      }
+
+      if (detailKeyHandler) window.removeEventListener('keydown', detailKeyHandler, true);
+      detailKeyHandler = onDetailKeyDown;
+      window.addEventListener('keydown', detailKeyHandler, true);
+
+      // focusNew: true로 상세가 열리면 설명 칸 끝에 새 '- '를 넣고 커서 배치 (15-3)
+      if (focusNewOnLoad) {
+        focusNewOnLoad = false;
+        setTimeout(() => applyDetailFocusNew(defTextarea), 0);
+      }
 
       const delBtn = document.createElement('button');
       delBtn.className = 'btn-action btn-danger';

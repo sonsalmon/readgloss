@@ -386,28 +386,81 @@
     }
   }
 
+  // 패널이 열려 있는지 판정
+  function isPanelOpen() {
+    const host = document.querySelector('readgloss-ui');
+    return Boolean(host?.shadowRoot?.querySelector('.root')?.classList.contains('open'));
+  }
+
+  // 패널 닫기: 닫기 이벤트는 없어서 패널 ✕ 버튼(panel.js closePanel)을 누른다
+  function requestClosePanel() {
+    const host = document.querySelector('readgloss-ui');
+    host?.shadowRoot?.querySelector('button.close')?.click();
+  }
+
+  // 표시 클릭이 상세를 열지 판정(순수 함수, 15-3·16-7)
+  // 두 번째 클릭(더블클릭)이면 열지 않고 사전 카드 흐름에 넘긴다. 드래그로 글을 고른 때도 열지 않는다. 링크 안은 ⌥를 누른 때만 연다.
+  function shouldOpenConceptOnClick({ clickCount = 1, selectionEmpty = true, inLink = false, altKey = false } = {}) {
+    if (clickCount >= 2) return false;
+    if (!selectionEmpty) return false;
+    return !inLink || altKey;
+  }
+
+  let pressedConceptId = null; // mousedown 때 누른 표시의 개념 id
+  let pressedWasOpen = false; // mousedown 때 상세가 이 개념으로 이미 열려 있었나
+  let selectedOnMouseUp = false; // mouseup 때 글을 드래그로 골랐나
+  let conceptOpenTimer = 0;
+
+  // window 캡처 단계라 panel.js 의 바깥 mousedown 닫기(document 캡처)보다 먼저 본다. 그 전에 패널 상태를 잡아 둔다.
+  function onWindowMouseDown(e) {
+    const hit = findHit(e.clientX, e.clientY);
+    pressedConceptId = hit?.id ?? null;
+    pressedWasOpen = Boolean(hit) && isPanelOpen() && globalThis.readglossConceptPanelUi?.getCurrentConceptId?.() === hit.id;
+  }
+
+  function onWindowMouseUp() {
+    selectedOnMouseUp = String(window.getSelection?.()?.toString() ?? '') !== '';
+  }
+
   // 칠한 범위 클릭
   function onDocumentClick(e) {
+    // 더블클릭의 두 번째 클릭이면 대기 중인 열기를 취소한다(어디를 눌렀든). 더블클릭은 사전 카드 흐름(content.js)이 받는다.
+    if (e.detail >= 2) {
+      clearTimeout(conceptOpenTimer);
+      conceptOpenTimer = 0;
+    }
+
     const hit = findHit(e.clientX, e.clientY);
     if (!hit) return;
 
     const link = e.target.closest('a[href]');
-    if (!link) {
-      // 링크 안이 아니면 패널 '개념' 탭에서 상세 열기
-      e.preventDefault();
-      e.stopPropagation();
-      closeCard();
-      window.dispatchEvent(new CustomEvent('readgloss:open-panel', { detail: { tab: 'concepts', conceptId: hit.id } }));
-    } else {
-      // 링크 안이면 ⌥(alt)+클릭일 때만 열고 preventDefault
-      if (e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        closeCard();
-        window.dispatchEvent(new CustomEvent('readgloss:open-panel', { detail: { tab: 'concepts', conceptId: hit.id } }));
+    const open = shouldOpenConceptOnClick({
+      clickCount: e.detail,
+      selectionEmpty: !selectedOnMouseUp,
+      inLink: Boolean(link),
+      altKey: e.altKey,
+    });
+    if (!open) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    closeCard();
+
+    // 250ms 기다렸다가 연다. 그 사이 두 번째 클릭이 오면 위에서 취소된다.
+    // 같은 개념이 열려 있었으면 닫는다(16-7 토글). mousedown 에 패널이 이미 닫혔을 수 있어 mousedown 때 잡은 상태를 쓴다.
+    const wasSameOpen = pressedWasOpen && pressedConceptId === hit.id;
+    clearTimeout(conceptOpenTimer);
+    conceptOpenTimer = setTimeout(() => {
+      conceptOpenTimer = 0;
+      if (wasSameOpen) {
+        requestClosePanel();
+        return;
       }
-      // 그 밖 클릭 동작은 막지 않는다
-    }
+      // 새 상세 열기 (focusNew: true)
+      window.dispatchEvent(new CustomEvent('readgloss:open-panel', {
+        detail: { tab: 'concepts', conceptId: hit.id, focusNew: true },
+      }));
+    }, 250);
   }
 
   // --- [내 개념으로] 칸(Form) 열기 (Shadow DOM) ---
@@ -994,6 +1047,8 @@
 
         // 개념 저장 직후 패널 등 다른 뷰가 즉시 최신 상태를 반영하도록 이벤트 발송
         window.dispatchEvent(new CustomEvent('readgloss:concepts-updated', { detail: { id } }));
+        // 방금 저장한 것 기억(Ctrl/⌘+Z로 다시 열기, 15-2). 이벤트 뒤에 둔다(시험이 저장 블록 첫 } 전 발송을 본다)
+        if (id) globalThis.readglossLastSave = { kind: 'concept', id };
 
         // 저장 확인 토스트
         globalThis.readglossToast?.show({
@@ -1088,8 +1143,10 @@
     }
 
     if (res && !res.error) {
+      const id = res.concept?.id;
       conceptsCache = null;
-      window.dispatchEvent(new CustomEvent('readgloss:concepts-updated', { detail: { id: res.concept?.id } }));
+      window.dispatchEvent(new CustomEvent('readgloss:concepts-updated', { detail: { id } }));
+      if (id) globalThis.readglossLastSave = { kind: 'concept', id };
       globalThis.readglossToast?.show({
         text: '나중에 볼 것에 넣었어요',
         ms: 1500,
@@ -1106,6 +1163,52 @@
     }
   }
 
+  // --- 방금 저장한 것 다시 열기 (Ctrl+Z / ⌘Z, 15-2) ---
+  // Ctrl+Z 또는 ⌘Z (수정키 하나만, Shift 없음)
+  function isReopenShortcut(e) {
+    if (!e) return false;
+    // 한글 자판에서도 되도록 물리 키(code)를 먼저 본다
+    const isZ = e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z';
+    if (!isZ || e.shiftKey) return false;
+    const isCtrlOnly = e.ctrlKey && !e.metaKey && !e.altKey;
+    const isMetaOnly = e.metaKey && !e.ctrlKey && !e.altKey;
+    return isCtrlOnly || isMetaOnly;
+  }
+
+  // 이벤트 경로에 input·textarea·select·contenteditable·우리 host(readgloss-*)가 있으면 무시(원래 되돌리기)
+  function shouldIgnoreReopenEvent(path) {
+    if (!Array.isArray(path)) return false;
+    for (const el of path) {
+      if (!el || el.nodeType !== 1) continue;
+      const tag = (el.localName || el.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+      if (el.isContentEditable || (el.hasAttribute?.('contenteditable') && el.getAttribute('contenteditable') !== 'false')) {
+        return true;
+      }
+      if (tag.startsWith('readgloss-')) return true;
+    }
+    return false;
+  }
+
+  function onDocumentKeyDown(e) {
+    if (!isReopenShortcut(e)) return;
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    if (shouldIgnoreReopenEvent(path)) return;
+
+    const last = globalThis.readglossLastSave;
+    if (!last || !last.id) return;
+
+    e.preventDefault();
+
+    if (last.kind === 'concept') {
+      window.dispatchEvent(new CustomEvent('readgloss:open-panel', {
+        detail: { tab: 'concepts', conceptId: last.id, focusNew: true },
+      }));
+    } else if (last.kind === 'memo') {
+      globalThis.readglossMemoPadUi?.reopen?.(last.id);
+    }
+  }
+
   // --- 외부 공개 API ---
   globalThis.readglossConceptPage = {
     paint,
@@ -1115,10 +1218,21 @@
     saveLater,
   };
 
+  globalThis.readglossConceptReopen = {
+    isReopenShortcut,
+    shouldIgnoreReopenEvent,
+    shouldOpenConceptOnClick,
+    isPanelOpen,
+    requestClosePanel,
+  };
+
   // --- 이벤트 리스너 등록 ---
   if (typeof document !== 'undefined') {
     document.addEventListener('mousemove', onMouseMove, true);
+    window.addEventListener('mousedown', onWindowMouseDown, true);
+    window.addEventListener('mouseup', onWindowMouseUp, true);
     document.addEventListener('click', onDocumentClick, true);
+    document.addEventListener('keydown', onDocumentKeyDown); // capture 아님
     window.addEventListener('readgloss:concepts-updated', () => {
       conceptsCache = null;
       chrome.runtime.sendMessage({ type: 'concepts', op: 'names' }, (r) => {
