@@ -184,7 +184,7 @@
       if (!(h.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING)) break; // 문서 순서라 선택을 지나면 끝
       found.push(h);
     }
-    return found.slice(-core.MAX_HEADINGS).map((h) => textOf(h, { isHidden }));
+    return core.clampHeadings(found.slice(-core.MAX_HEADINGS).map((h) => textOf(h, { isHidden })));
   }
   globalThis.readglossSelectionUi = {
     ...(globalThis.readglossSelectionUi || {}),

@@ -224,7 +224,6 @@ test('opacity: 대상 화면 host 태그 목록 검증', () => {
     'readgloss-selection',
     'readgloss-card',
     'readgloss-ui',
-    'readgloss-panel',
     'readgloss-concept-card',
     'readgloss-concept-form',
     'readgloss-toast',

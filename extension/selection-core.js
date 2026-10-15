@@ -272,7 +272,14 @@
     });
   }
 
+  // 저장에 보내는 소제목 사슬: 다리 상한(하나 200자, 3개)에 맞춘다(FX-B)
+  const clampHeadings = (list) => (Array.isArray(list) ? list : [])
+    .map((h) => String(h ?? '').slice(0, 200).trimEnd())
+    .filter(Boolean)
+    .slice(-MAX_HEADINGS);
+
   globalThis.readglossSelection = {
+    clampHeadings,
     MAX_TEXT, MAX_SIDE, MAX_TITLE, MAX_HEADINGS, WIDE_SIDE, WIDE_HEADINGS,
     classify, around, buildContext, pickHeadings, stageButton, mydictKey, firstMeaning, bestMeaning, mydictMessage, phraseMessage, findPhrase, MAX_EXPRESSIONS, expressionRows, noteText, expressionButton, expressionToggle, lookupExtras, isAcronym, expandAcronym, acronymLine,
     normalizeUrl, scrapAskKey, localDateStr, scrapMessage, isTypingPath, isOwnUiPath, waitUpTo,

@@ -583,6 +583,10 @@
                       name: item.quote?.exact || '',
                       scrapId: item.id,
                       task: item.task ?? null,
+                      url: item.url,
+                      title: item.title,
+                      sentence: item.quote?.exact || '',
+                      headings: item.headings || [],
                       anchor: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
                     });
                   },

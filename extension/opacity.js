@@ -8,7 +8,6 @@
     'readgloss-selection',
     'readgloss-card',
     'readgloss-ui',
-    'readgloss-panel',
     'readgloss-concept-card',
     'readgloss-concept-form',
     'readgloss-toast',

@@ -483,6 +483,14 @@
     isTyping: () => false,
   };
 
+  // 순수 함수: seen 전송 여부 판정 (FX-B)
+  // (a) 새 개념을 만들 때(!conceptId -> isNew: true)
+  // (b) seed에 고른 글 범위나 문장이 있을 때(hasRange: true 또는 hasSentence: true)
+  function shouldSendSeen(params) {
+    const { isNew, hasRange, hasSentence } = params || {};
+    return Boolean(isNew || hasRange || hasSentence);
+  }
+
   async function openForm(seed = {}) {
     closeForm();
     closeCard();
@@ -492,7 +500,13 @@
     const scrapId = seed.scrapId || null;
 
     const targetNode = seed.range?.startContainer ?? seed.range ?? (window.getSelection()?.anchorNode ?? document.body);
-    const headings = globalThis.readglossSelectionUi?.headingsFor?.(targetNode) ?? [];
+    const rawHeadings = Array.isArray(seed.headings)
+      ? seed.headings
+      : (globalThis.readglossSelectionUi?.headingsFor?.(targetNode) ?? []);
+    const headings = rawHeadings
+      .slice(-3)
+      .map((h) => (typeof h === 'string' ? h.slice(0, 200).trimEnd() : ''))
+      .filter(Boolean);
 
     // 할 일(task): seed에 task가 있으면 그것을 쓰고 guess를 하지 않는다.
     let task = null;
@@ -1016,9 +1030,14 @@
       saveBtn.disabled = true;
       saveBtn.textContent = '저장 중…';
 
+      const isNew = !conceptId;
+      const hasRange = Boolean(seed.range);
+      const hasSentence = Boolean(seed.sentence && String(seed.sentence).trim().length > 0);
+      const sendSeen = shouldSendSeen({ isNew, hasRange, hasSentence });
+
       const seen = {
-        url: location.href,
-        title: document.title || '',
+        url: seed.url || location.href,
+        title: seed.title !== undefined ? seed.title : (document.title || ''),
         sentence: (seed.sentence || '').slice(0, 300),
         ...(headings.length > 0 ? { headings } : {}),
       };
@@ -1033,7 +1052,7 @@
         related: [...relatedSet],
         task,
         scrapId,
-        seen,
+        ...(sendSeen ? { seen } : {}),
       };
       if (conceptId) {
         payload.id = conceptId;
@@ -1233,6 +1252,7 @@
     closeForm,
     closeCard,
     saveLater,
+    shouldSendSeen,
   };
 
   globalThis.readglossConceptReopen = {
