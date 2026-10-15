@@ -502,11 +502,38 @@
     return outSections;
   }
 
-  // 목차 한 줄 라벨 텍스트 생성 (T36)
-  // 소제목 글 · 메모 N(그 칸 메모 개수, 0이면 생략) · 쓰던 글(drafts)이 있으면 "쓰는 중"
+  // 이 페이지 오늘 시간 시계 형식 포맷팅: mm:ss (한 시간 넘으면 h:mm:ss)
+  function formatClock(seconds) {
+    const total = typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0
+      ? Math.floor(seconds)
+      : 0;
+    const s = total % 60;
+    const m = Math.floor(total / 60) % 60;
+    const h = Math.floor(total / 3600);
+    const pad = (n) => String(n).padStart(2, '0');
+    if (h > 0) {
+      return `${h}:${pad(m)}:${pad(s)}`;
+    }
+    return `${pad(m)}:${pad(s)}`;
+  }
+
+  // 초를 분 라벨 문자열로 변환 (60초 이상이면 'N분', 60초 미만은 '')
+  function minutesLabel(seconds) {
+    if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 60) {
+      return '';
+    }
+    const mins = Math.floor(seconds / 60);
+    return `${mins}분`;
+  }
+
+  // 목차 한 줄 라벨 텍스트 생성 (T36, T40b)
+  // 소제목 글 · N분(60초 이상) · 메모 N(그 칸 메모 개수, 0이면 생략) · 쓰던 글(drafts)이 있으면 "쓰는 중"
   function tocLabel(params) {
     if (!params || typeof params !== 'object') return '';
     const title = typeof params.title === 'string' ? params.title.trim() : '';
+    const minutes = typeof params.minutes === 'number' && Number.isFinite(params.minutes) && params.minutes > 0
+      ? Math.floor(params.minutes)
+      : 0;
     const memoCount = typeof params.memoCount === 'number' && Number.isFinite(params.memoCount) && params.memoCount > 0
       ? params.memoCount
       : 0;
@@ -514,6 +541,7 @@
 
     const parts = [];
     if (title) parts.push(title);
+    if (minutes > 0) parts.push(`${minutes}분`);
     if (memoCount > 0) parts.push(`메모 ${memoCount}`);
     if (hasDraft) parts.push('쓰는 중');
 
@@ -643,6 +671,8 @@
     shouldRestorePasteFocus,
     shouldFocusOnRebuild,
     dockStateToSave,
+    formatClock,
+    minutesLabel,
   };
 })();
 

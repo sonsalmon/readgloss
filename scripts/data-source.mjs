@@ -192,10 +192,11 @@ export function openReadDb(dataDir) {
   };
 }
 
-// 학습노트 내보내기를 위해 단어·메모·스크랩 외에 개념(concept) 목록까지 포함하여 읽는다.
+// 학습노트 내보내기를 위해 단어·메모·스크랩 외에 개념(concept) 및 공부 시간(dwell) 목록까지 포함하여 읽는다.
 export function loadNotesData(dataDir) {
   const base = loadData(dataDir);
   const concepts = [];
+  const dwell = [];
   let db = null;
   try {
     db = openReadDb(dataDir);
@@ -229,9 +230,23 @@ export function loadNotesData(dataDir) {
           appears,
         });
       }
+
+      const dwellNodes = db.byKind('dwell');
+      for (const n of dwellNodes) {
+        if (!n) continue;
+        const d = n.data && typeof n.data === 'object' ? n.data : {};
+        dwell.push({
+          date: typeof d.date === 'string' ? d.date : '',
+          url: typeof d.url === 'string' ? d.url : (typeof n.key === 'string' ? n.key : ''),
+          title: typeof d.title === 'string' ? d.title : '',
+          headings: Array.isArray(d.headings) ? [...d.headings] : [],
+          seconds: typeof d.seconds === 'number' && Number.isFinite(d.seconds) ? d.seconds : 0,
+          task: d.task ?? null,
+        });
+      }
     }
   } catch {
-    // db 읽기 오류 시 빈 concepts 로 fallback
+    // db 읽기 오류 시 빈 concepts, dwell 로 fallback
   } finally {
     if (db) {
       try {
@@ -243,5 +258,6 @@ export function loadNotesData(dataDir) {
   return {
     ...base,
     concepts,
+    dwell,
   };
 }

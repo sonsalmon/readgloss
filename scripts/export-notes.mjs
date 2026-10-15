@@ -12,6 +12,7 @@ import { pageFileNames, pageKey, slugifyPage, writeIfChanged, SCRAP_HEADER_COMME
 
 // 순수 함수 모듈 로드
 await import('../extension/selection-core.js');
+await import('../extension/memo-core.js');
 const normalizeUrl = (u) => globalThis.readglossSelection.normalizeUrl(u);
 
 export const NOTE_HEADER_COMMENT = SCRAP_HEADER_COMMENT;
@@ -357,6 +358,26 @@ export function renderNoteDocs(data, tasks = {}) {
     // 할 일 제목 텍스트 (task: "...")
     const taskStr = task ? `${tasks[task] || task} (${task})` : '인박스';
 
+    // 그 페이지 공부 시간(dwell) 모으기
+    const allDwell = Array.isArray(data?.dwell) ? data.dwell : [];
+    const pageDwells = allDwell.filter((d) => normalizeUrl(d.url) === url);
+    let pageTotalSeconds = 0;
+    for (const d of pageDwells) {
+      if (typeof d.seconds === 'number' && Number.isFinite(d.seconds) && d.seconds > 0) {
+        pageTotalSeconds += d.seconds;
+      }
+    }
+    const pageMinutes = Math.round(pageTotalSeconds / 60);
+
+    // 소제목 사슬별 dwell seconds 합산 (열쇠: headings.join('\0'))
+    const dwellByChain = new Map();
+    for (const d of pageDwells) {
+      if (Array.isArray(d.headings) && d.headings.length > 0) {
+        const key = d.headings.join('\u0000');
+        dwellByChain.set(key, (dwellByChain.get(key) || 0) + (d.seconds || 0));
+      }
+    }
+
     // 앞머리 (YAML frontmatter)
     const fm = [
       '---',
@@ -366,6 +387,9 @@ export function renderNoteDocs(data, tasks = {}) {
       `url: ${JSON.stringify(url)}`,
       `date: ${noteDate}`,
     ];
+    if (pageMinutes > 0) {
+      fm.push(`minutes: ${pageMinutes}`);
+    }
     if (sortedTags.length > 0) {
       fm.push(`tags: [${sortedTags.map((t) => JSON.stringify(t)).join(', ')}]`);
     }
@@ -410,11 +434,17 @@ export function renderNoteDocs(data, tasks = {}) {
       }
     }
 
-    function collectHeadingBlocks(node, blocks) {
+    function collectHeadingBlocks(node, blocks, chain = []) {
       const sortedChildren = [...node.children.values()].sort((a, b) => a.minTs - b.minTs);
       for (const child of sortedChildren) {
+        const currentChain = [...chain, child.name];
+        const chainKey = currentChain.join('\u0000');
+        const sec = dwellByChain.get(chainKey) || 0;
+        const mins = sec >= 60 ? Math.floor(sec / 60) : 0;
+        const titleSuffix = mins > 0 ? ` · ${mins}분` : '';
+
         const hLevel = child.depth === 1 ? '##' : child.depth === 2 ? '###' : '####';
-        const lines = [`${hLevel} ${child.name}`];
+        const lines = [`${hLevel} ${child.name}${titleSuffix}`];
         child.items.sort((a, b) => (a.ts || 0) - (b.ts || 0));
         for (const it of child.items) {
           let rendered = '';
@@ -429,7 +459,7 @@ export function renderNoteDocs(data, tasks = {}) {
           }
         }
         blocks.push(lines.join('\n\n'));
-        collectHeadingBlocks(child, blocks);
+        collectHeadingBlocks(child, blocks, currentChain);
       }
     }
 

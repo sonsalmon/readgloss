@@ -476,6 +476,7 @@
   let observer = null;
   let lastScrollTime = 0;
   let scrollTimeout = 0;
+  let studyTimeTimer = null; // 메모장 상단 오늘 시간 1초 갱신 타이머
 
   // content.js startsMemo 등에서 우리 메모장 입력 여부를 판정할 수 있도록 인터페이스 제공
   globalThis.readglossMemoPadUi = {
@@ -560,6 +561,15 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .meta-time {
+      font-size: 11.5px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      flex-shrink: 0;
+      opacity: 0.9;
+      user-select: none;
+      -webkit-user-select: none;
     }
     .btn-dock {
       all: unset;
@@ -1307,6 +1317,41 @@
   }
 
   const BRIDGE_OFF_TEXT = '다리가 꺼져 있어요. 터미널에서 node ~/dev/readgloss/bridge/server.mjs 를 실행해 주세요';
+
+  // 메모장 위 줄 오늘 공부 시간 표시 갱신 (T40b)
+  function updateStudyTimeUI() {
+    if (!shadow || !isOpen || currentMode !== 'pad') return;
+    const timeEl = shadow.querySelector('.meta-time');
+    if (!timeEl) return;
+    const st = globalThis.readglossStudyTime;
+    if (!st || typeof st.pageSecondsToday !== 'function') {
+      timeEl.textContent = '';
+      timeEl.style.display = 'none';
+      return;
+    }
+    const sec = st.pageSecondsToday();
+    const counting = typeof st.isCounting === 'function' ? st.isCounting() : false;
+    const icon = counting ? '⏱' : '⏸';
+    const memoCore = globalThis.readglossMemo;
+    const clock = memoCore?.formatClock ? memoCore.formatClock(sec) : '';
+    timeEl.textContent = `${icon} ${clock}`;
+    timeEl.style.display = '';
+  }
+
+  // 메모장이 열려 있을 때만 1초마다 갱신하는 타이머 시작
+  function startStudyTimeTimer() {
+    stopStudyTimeTimer();
+    updateStudyTimeUI();
+    studyTimeTimer = setInterval(updateStudyTimeUI, 1000);
+  }
+
+  // 메모장이 닫히면 타이머 멈춤
+  function stopStudyTimeTimer() {
+    if (studyTimeTimer) {
+      clearInterval(studyTimeTimer);
+      studyTimeTimer = null;
+    }
+  }
 
   function updateMetaText(text) {
     if (!shadow) return;
@@ -2297,6 +2342,9 @@
     metaTitle.className = 'meta-title';
     metaTitle.textContent = buildMetaText();
 
+    const metaTime = document.createElement('span');
+    metaTime.className = 'meta-time';
+
     const dockBtn = document.createElement('button');
     dockBtn.type = 'button';
     dockBtn.className = 'btn-dock';
@@ -2309,7 +2357,7 @@
     dockBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
     dockBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 
-    meta.append(metaTitle, dockBtn);
+    meta.append(metaTitle, metaTime, dockBtn);
     attachDragHandle(meta);
 
     // 키 이벤트 격리: 페이지 및 다른 기능으로 새지 않게 함
@@ -2573,7 +2621,7 @@
 
         sec.append(ta);
       } else {
-        // 다른 칸은 목차 한 줄: 소제목 글 · 메모 N · 쓰던 글이 있으면 "쓰는 중"
+        // 다른 칸은 목차 한 줄: 소제목 글 · N분 · 메모 N · 쓰던 글이 있으면 "쓰는 중"
         sec.classList.add('sec-toc-row');
 
         const memoCount = Array.isArray(s.memos)
@@ -2581,8 +2629,13 @@
           : (Array.isArray(s.items) ? s.items.filter((i) => i.kind === 'memo').length : 0);
         const draftText = drafts[s.key] || '';
         const hasDraft = draftText.trim().length > 0;
+
+        const st = globalThis.readglossStudyTime;
+        const headingSec = (st && typeof st.sectionSeconds === 'function') ? st.sectionSeconds(s.text) : 0;
+        const minutes = headingSec >= 60 ? Math.floor(headingSec / 60) : 0;
+
         const fullLabel = memoCore?.tocLabel
-          ? memoCore.tocLabel({ title: s.text || '(제목 없음)', memoCount, hasDraft })
+          ? memoCore.tocLabel({ title: s.text || '(제목 없음)', minutes, memoCount, hasDraft })
           : (s.text || '(제목 없음)');
 
         const tocBtn = document.createElement('button');
@@ -2597,6 +2650,7 @@
         tocBtn.append(titleEl);
 
         const metaParts = [];
+        if (minutes > 0) metaParts.push(`${minutes}분`);
         if (memoCount > 0) metaParts.push(`메모 ${memoCount}`);
         if (hasDraft) metaParts.push('쓰는 중');
         if (metaParts.length > 0) {
@@ -2666,6 +2720,7 @@
     box.append(dockHandle, meta, sectionsContainer, info, resizeHandle);
     if (isDocked) box.classList.add('docked');
     root.append(style, box);
+    updateStudyTimeUI();
   }
 
   // 목록 모드 렌더링
@@ -2860,12 +2915,16 @@
 
     // 열 때 모든 모양 불러오기 (2번 명세)
     loadPageShapesAndMemos(targetSectionKey);
+
+    // 메모장이 열려 있을 때 오늘 공부 시간 1초 갱신 타이머 시작 (T40b)
+    startStudyTimeTimer();
   }
 
   // 메모장 접기(닫기)
   function closePad() {
     clearTimeout(typingTimer);
     clearTimeout(returnFocusTimer);
+    stopStudyTimeTimer();
     if (activeConceptEditId) {
       closeConceptInlineEdit(activeConceptEditId);
     }
@@ -2888,6 +2947,7 @@
   // 목록 모드로 열기
   function openList() {
     clearTimeout(typingTimer);
+    stopStudyTimeTimer();
     if (shadow && currentMode === 'pad') {
       const textareas = shadow.querySelectorAll('.sec-textarea');
       for (const ta of textareas) {
