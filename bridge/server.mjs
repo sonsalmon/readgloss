@@ -374,11 +374,8 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
         if (m.task) records.push({ url: m.url, task: m.task, ts: m.ts });
       }
       for (const c of allConcepts) {
-        if (c.firstTask) {
-          if (c.firstUrl) records.push({ url: c.firstUrl, task: c.firstTask, ts: c.ts });
-          if (c.seen?.url && c.seen.url !== c.firstUrl) {
-            records.push({ url: c.seen.url, task: c.firstTask, ts: c.ts });
-          }
+        if (c.firstTask && c.firstUrl) {
+          records.push({ url: c.firstUrl, task: c.firstTask, ts: c.ts });
         }
       }
       const remembered = rememberedTask(normUrl, records);

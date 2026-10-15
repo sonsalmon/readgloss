@@ -29,7 +29,9 @@ export function textFragmentUrl(url, exact) {
     encodeURIComponent(s)
       .replace(/-/g, '%2D')
       .replace(/,/g, '%2C')
-      .replace(/&/g, '%26');
+      .replace(/&/g, '%26')
+      .replace(/\(/g, '%28')
+      .replace(/\)/g, '%29');
 
   if (words.length <= 8) {
     return `${baseUrl}#:~:text=${encodePart(cleaned)}`;
@@ -53,7 +55,12 @@ function renderMemo(m) {
       for (const l of exact.split('\n')) {
         lines.push(`> ${l}`);
       }
-      lines.push(`> [[tutor-logs/${t.date ?? ''}#${t.time ?? ''} ${t.title ?? ''}]]`);
+      const rawTitle = String(t.title ?? '')
+        .replace(/[\[\]|#^]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const titlePart = rawTitle ? ` ${rawTitle}` : '';
+      lines.push(`> [[tutor-logs/${t.date ?? ''}#${t.time ?? ''}${titlePart}]]`);
     } else {
       const rawUrl = m?.url ?? '';
       const link = rawUrl ? textFragmentUrl(rawUrl, exact) : '';

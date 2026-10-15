@@ -284,7 +284,7 @@ test('server.mjs: 메모에 저장된 task도 guess에서 기억한다', async (
   }
 });
 
-test('server.mjs: 개념(seen / firstTask)에 저장된 task도 guess에서 기억한다', async () => {
+test('server.mjs: 개념의 seen.url 만으로는 할 일을 기억하지 않는다(FX-E — 나중에 다른 페이지에서 본 주소에 옛 할 일이 붙지 않게)', async () => {
   const s = await startServer();
   try {
     // 개념 저장 (나중에 볼 것 / seen.url 과 task)
@@ -314,8 +314,7 @@ test('server.mjs: 개념(seen / firstTask)에 저장된 task도 guess에서 기�
     });
     assert.equal(guessRes.status, 200);
     const data = guessRes.json();
-    assert.equal(data.task, 'S1-22');
-    assert.equal(data.ask, false);
+    assert.equal(data.task, null);
   } finally {
     await s.bridge.close();
   }

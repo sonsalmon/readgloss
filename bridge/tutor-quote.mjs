@@ -12,6 +12,19 @@ function stripTutorLink(text) {
   return text.replace(/^\s*\[[^\]]*\]\([^)]*\)\s*/, '');
 }
 
+// 비교 전에 양쪽 글을 같은 모양으로: 마크다운 표시(**, __, *, _, `, [글](주소) -> 글, 줄머리 #·>·-·1.) 제거 및 공백을 하나로
+export function stripMarkdownForQuote(text) {
+  if (typeof text !== 'string') return '';
+  // 1. [글](주소) -> 글
+  let s = text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  // 2. 줄머리 #, >, - , 1. (숫자.)
+  s = s.replace(/^[ \t]*(?:#{1,6}\s*|>+\s*|-\s+|\d+\.\s+)/gm, '');
+  // 3. **, __, *, _, ` 제거
+  s = s.replace(/(\*\*|__|\*|_|`)/g, '');
+  // 4. 공백을 하나로
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 // 서울 시간대 (UTC+9) YYYY-MM-DD 및 HH:MM 포맷팅
 function formatSeoulDateTime(timestamp) {
   const seoulMs = timestamp + 9 * 60 * 60 * 1000;
@@ -61,92 +74,98 @@ function parseSessionFile(filePath) {
   let lastTab = null;
 
   for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    let obj;
     try {
-      obj = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) continue;
-
-    const role = obj.role;
-    const ts = obj.timestamp;
-
-    if (role === 'user-message-metadata') {
-      pendingMetadata = obj;
-      const attachments = Array.isArray(obj.attachments) ? obj.attachments : [];
-      for (const att of attachments) {
-        if (att && typeof att === 'object' && att.type === 'tab') {
-          lastTab = {
-            name: String(att.name ?? '').trim(),
-            url: String(att.url ?? '').trim(),
-          };
-          break;
-        }
+      const line = rawLine.trim();
+      if (!line) continue;
+      let obj;
+      try {
+        obj = JSON.parse(line);
+      } catch {
+        continue;
       }
-    } else if (role === 'user') {
-      if (ts === undefined || ts === null) continue;
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) continue;
 
-      let sel = null;
-      if (pendingMetadata) {
-        const attachments = Array.isArray(pendingMetadata.attachments) ? pendingMetadata.attachments : [];
+      const role = obj.role;
+      const ts = obj.timestamp;
+
+      if (role === 'user-message-metadata') {
+        pendingMetadata = obj;
+        const attachments = Array.isArray(obj.attachments) ? obj.attachments : [];
         for (const att of attachments) {
-          if (att && typeof att === 'object' && att.type === 'selection') {
-            sel = {
-              text: String(att.text ?? ''),
-              comment: String(att.comment ?? '').trim(),
-              sourceKind: String(att.sourceKind ?? '').trim(),
+          if (att && typeof att === 'object' && att.type === 'tab') {
+            lastTab = {
+              name: String(att.name ?? '').trim(),
+              url: String(att.url ?? '').trim(),
             };
             break;
           }
         }
-      }
+      } else if (role === 'user') {
+        // 기록의 시각이 숫자가 아니면(문자열 등) 그 줄만 건너뛴다
+        if (typeof ts !== 'number' || !Number.isFinite(ts)) continue;
 
-      let rawContent = '';
-      if (Array.isArray(obj.content)) {
-        rawContent = obj.content
-          .filter((c) => c && typeof c === 'object' && c.type === 'text')
-          .map((c) => String(c.text ?? ''))
-          .join('\n');
-      } else if (typeof obj.content === 'string') {
-        rawContent = obj.content;
-      }
-
-      turns.push({
-        timestamp: ts,
-        raw_content: rawContent,
-        selection: sel,
-        tab: lastTab,
-        assistant_replies: [],
-      });
-      pendingMetadata = null;
-    } else if (role === 'assistant') {
-      if (turns.length > 0) {
-        const contentObj = obj.content;
-        if (Array.isArray(contentObj)) {
-          for (const item of contentObj) {
-            if (
-              item &&
-              typeof item === 'object' &&
-              item.type === 'toolCall' &&
-              item.name === 'read_file' &&
-              String(item.arguments?.path ?? '').includes(TUTOR_SKILL)
-            ) {
-              turns[turns.length - 1].tutor = true;
+        let sel = null;
+        if (pendingMetadata) {
+          const attachments = Array.isArray(pendingMetadata.attachments) ? pendingMetadata.attachments : [];
+          for (const att of attachments) {
+            if (att && typeof att === 'object' && att.type === 'selection') {
+              sel = {
+                text: String(att.text ?? ''),
+                comment: String(att.comment ?? '').trim(),
+                sourceKind: String(att.sourceKind ?? '').trim(),
+              };
+              break;
             }
           }
-          const texts = contentObj
-            .filter((item) => item && typeof item === 'object' && item.type === 'text' && item.text)
-            .map((item) => String(item.text));
-          if (texts.length > 0) {
-            turns[turns.length - 1].assistant_replies.push(texts.join('\n\n'));
+        }
+
+        let rawContent = '';
+        if (Array.isArray(obj.content)) {
+          rawContent = obj.content
+            .filter((c) => c && typeof c === 'object' && c.type === 'text')
+            .map((c) => String(c.text ?? ''))
+            .join('\n');
+        } else if (typeof obj.content === 'string') {
+          rawContent = obj.content;
+        }
+
+        turns.push({
+          timestamp: ts,
+          raw_content: rawContent,
+          selection: sel,
+          tab: lastTab,
+          assistant_replies: [],
+        });
+        pendingMetadata = null;
+      } else if (role === 'assistant') {
+        if (turns.length > 0) {
+          const contentObj = obj.content;
+          if (Array.isArray(contentObj)) {
+            for (const item of contentObj) {
+              if (
+                item &&
+                typeof item === 'object' &&
+                item.type === 'toolCall' &&
+                item.name === 'read_file' &&
+                String(item.arguments?.path ?? '').includes(TUTOR_SKILL)
+              ) {
+                turns[turns.length - 1].tutor = true;
+              }
+            }
+            const texts = contentObj
+              .filter((item) => item && typeof item === 'object' && item.type === 'text' && item.text)
+              .map((item) => String(item.text));
+            if (texts.length > 0) {
+              turns[turns.length - 1].assistant_replies.push(texts.join('\n\n'));
+            }
+          } else if (typeof contentObj === 'string' && contentObj.trim()) {
+            turns[turns.length - 1].assistant_replies.push(contentObj.trim());
           }
-        } else if (typeof contentObj === 'string' && contentObj.trim()) {
-          turns[turns.length - 1].assistant_replies.push(contentObj.trim());
         }
       }
+    } catch {
+      // 한 줄 파싱 오류가 다음 줄 파싱을 멈추지 않음
+      continue;
     }
   }
 
@@ -175,6 +194,8 @@ export function createTutorQuote({
     if (typeof rawText !== 'string') return { found: false };
     const text = rawText.trim().replace(/\s+/g, ' ');
     if (text.length < 15 || text.length > 2000) return { found: false };
+    const normTarget = stripMarkdownForQuote(rawText);
+    if (!normTarget) return { found: false };
 
     try {
       if (!existsSync(sessionsDir)) return { found: false };
@@ -187,43 +208,45 @@ export function createTutorQuote({
         return { found: false };
       }
 
-      // 최근 2일(48시간) 안에 바뀐(mtime) 세션 폴더 수집
-      const candidateDirs = [];
+      // 최근 2일(48시간) 안에 바뀐(mtime) 각 세션 폴더 안 messages.jsonl 파일 수집
+      const candidateFiles = [];
       for (const e of entries) {
         if (!e.isDirectory()) continue;
-        const dirPath = join(sessionsDir, e.name);
+        const jsonlPath = join(sessionsDir, e.name, 'messages.jsonl');
         try {
-          const st = statSync(dirPath);
+          const st = statSync(jsonlPath);
           if (nowMs - st.mtimeMs <= TWO_DAYS_MS) {
-            candidateDirs.push({ path: dirPath, mtimeMs: st.mtimeMs });
+            candidateFiles.push({ path: jsonlPath, mtimeMs: st.mtimeMs });
           }
         } catch {
-          // 접근 오류 무시
+          // 파일 없거나 접근 오류 무시
         }
       }
 
-      // 최신 수정 폴더부터 탐색
-      candidateDirs.sort((a, b) => b.mtimeMs - a.mtimeMs);
+      // 최신 수정 파일부터 탐색
+      candidateFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
 
-      for (const dir of candidateDirs) {
-        const jsonlPath = join(dir.path, 'messages.jsonl');
-        if (!existsSync(jsonlPath)) continue;
-
-        const tutorTurns = parseSessionFile(jsonlPath);
-        for (const turn of tutorTurns) {
-          for (const reply of turn.assistant_replies) {
-            const cleanReply = reply.trim().replace(/\s+/g, ' ');
-            if (cleanReply.includes(text)) {
-              const { date, time } = formatSeoulDateTime(turn.timestamp);
-              const title = computeQuestionTitle(turn);
-              return {
-                found: true,
-                date,
-                time,
-                title,
-              };
+      for (const file of candidateFiles) {
+        try {
+          const tutorTurns = parseSessionFile(file.path);
+          for (const turn of tutorTurns) {
+            for (const reply of turn.assistant_replies) {
+              const normReply = stripMarkdownForQuote(reply);
+              if (normReply.includes(normTarget)) {
+                const { date, time } = formatSeoulDateTime(turn.timestamp);
+                const title = computeQuestionTitle(turn);
+                return {
+                  found: true,
+                  date,
+                  time,
+                  title,
+                };
+              }
             }
           }
+        } catch {
+          // 한 파일 오류가 나머지 세션 검색을 멈추지 않음
+          continue;
         }
       }
     } catch {

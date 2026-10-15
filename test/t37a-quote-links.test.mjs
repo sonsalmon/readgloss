@@ -371,7 +371,7 @@ test('tutor-quote find: 찾음 / 못 찾음 / 튜터 세션 아님 / 2일 넘은
   writeFileSync(join(s3Dir, 'messages.jsonl'), s3Lines.join('\n'));
   // mtime을 3일 전으로 강제 변경
   const threeDaysAgoSec = (now - 3 * 24 * 60 * 60 * 1000) / 1000;
-  utimesSync(s3Dir, threeDaysAgoSec, threeDaysAgoSec);
+  utimesSync(join(s3Dir, 'messages.jsonl'), threeDaysAgoSec, threeDaysAgoSec);
 
   const tq = createTutorQuote({ sessionsDir: baseDir, now });
 
