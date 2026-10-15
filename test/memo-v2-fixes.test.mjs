@@ -49,7 +49,8 @@ test('B-1. 메모장을 열면 쓰는 칸에 포커스를 넣는다(같은 칸�
 });
 
 test('B-2. 칸을 다시 그린 뒤에도 쓰는 칸에 포커스를 다시 넣는다', () => {
-  assert.match(padFn('rebuildSectionsUI'), /applyActiveSection\(true, true\);/);
+  // FX-F: 다시 그린 뒤 포커스는 메모장에 커서가 있었거나 기본 포커스 판정이 허용할 때만
+  assert.match(padFn('rebuildSectionsUI'), /applyActiveSection\(shouldFocus, padHadFocus\);/);
 });
 
 test('B-3. applyActiveSection 은 force 인자가 참이면 입력 직후 제한 시간 검사를 건너뛴다', () => {

@@ -567,6 +567,50 @@
     return 'text';
   }
 
+  // 붙여넣기 결과를 넣을 대상 key 판정 (17-1, FX-F 1번)
+  // 시작 때 잡은 key 우선, 없으면 fallback (기본 '_page')
+  function targetKeyOnPaste(capturedKey, fallbackKey) {
+    if (typeof capturedKey === 'string' && capturedKey.length > 0) {
+      return capturedKey;
+    }
+    if (typeof fallbackKey === 'string' && fallbackKey.length > 0) {
+      return fallbackKey;
+    }
+    return '_page';
+  }
+
+  // 붙여넣기 응답 뒤 포커스 복구 여부 판정 (FX-F 2번)
+  // 응답을 기다리는 사이 사용자가 다른 곳(페이지 입력칸, 우리 다른 칸 등)에 커서를 옮겼으면 포커스를 뺏지 않는다.
+  function shouldRestorePasteFocus(params) {
+    if (!params || typeof params !== 'object') return false;
+    const { initialDocActive, currentDocActive, initialShadowActive, currentShadowActive, isPageField, activeKind } = params;
+    if (isPageField) return false;
+    if (activeKind && activeKind !== 'none' && activeKind !== 'other' && activeKind !== 'body') return false;
+    if (initialDocActive && currentDocActive && initialDocActive !== currentDocActive) return false;
+    if (initialShadowActive && currentShadowActive && initialShadowActive !== currentShadowActive) return false;
+    return true;
+  }
+
+  // 칸을 다시 그릴 때(rebuildSectionsUI) 포커스 복귀 여부 판정 (16-6, FX-F 3번)
+  // 메모장 안에 이미 커서가 있었을 때(padHadFocus)만 무조건 되돌리고,
+  // 아니면 기본 포커스 판정(shouldReturnFocus)을 거쳐 허용될 때만 포커스.
+  function shouldFocusOnRebuild(params) {
+    if (!params || typeof params !== 'object') return false;
+    const { padHadFocus, selectionCollapsed, cardOpen, activeKind, padOpen } = params;
+    if (!padOpen) return false;
+    if (padHadFocus) return true;
+    return shouldReturnFocus({ selectionCollapsed, cardOpen, activeKind, padHasFocus: false, padOpen });
+  }
+
+  // 공부 모드 중 붙이기 상태 저장값 계산 (FX-F 7번)
+  // 공부 모드 중에는 폭만 저장하고 on 값은 공부 모드 전 저장값을 유지.
+  function dockStateToSave(params) {
+    if (!params || typeof params !== 'object') return { on: false, width: 360 };
+    const { studyMode, preStudyDockState, isDocked, dockWidthValue } = params;
+    const on = (studyMode && preStudyDockState) ? Boolean(preStudyDockState.docked) : Boolean(isDocked);
+    return { on, width: typeof dockWidthValue === 'number' && Number.isFinite(dockWidthValue) ? dockWidthValue : 360 };
+  }
+
   globalThis.readglossMemo = {
     normalizeUrl,
     currentHeading,
@@ -595,6 +639,10 @@
     textareaHeight,
     shouldSwitchSection,
     classifyPaste,
+    targetKeyOnPaste,
+    shouldRestorePasteFocus,
+    shouldFocusOnRebuild,
+    dockStateToSave,
   };
 })();
 

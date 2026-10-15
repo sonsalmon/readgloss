@@ -127,7 +127,11 @@
 
   function saveDockState() {
     if (chrome?.storage?.local?.set) {
-      chrome.storage.local.set({ memoPadDock: { on: isDocked, width: dockWidthValue } });
+      const memoCore = globalThis.readglossMemo;
+      const state = memoCore?.dockStateToSave
+        ? memoCore.dockStateToSave({ studyMode, preStudyDockState, isDocked, dockWidthValue })
+        : { on: (studyMode && preStudyDockState) ? Boolean(preStudyDockState.docked) : isDocked, width: dockWidthValue };
+      chrome.storage.local.set({ memoPadDock: state });
     }
   }
 
@@ -1786,22 +1790,20 @@
 
     ta.addEventListener('keydown', (e) => {
       if (e.isComposing) return;
-      const md = globalThis.readglossMdList;
-      let res = null;
-      if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        res = md?.onEnter ? md.onEnter(ta.value, ta.selectionStart, ta.selectionEnd) : null;
-      } else if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        res = md?.onShiftEnter ? md.onShiftEnter(ta.value, ta.selectionStart, ta.selectionEnd) : null;
-      } else if (e.key === 'Tab' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        res = md?.onTab ? md.onTab(ta.value, ta.selectionStart, ta.selectionEnd, false) : null;
-      } else if (e.key === 'Tab' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        res = md?.onTab ? md.onTab(ta.value, ta.selectionStart, ta.selectionEnd, true) : null;
-      } else if (e.key === 'Escape') {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        e.stopPropagation();
+        pendingConceptSaves[id] = performConceptSave;
+        closeConceptInlineEdit(id);
+        return;
+      }
+      if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
         closeConceptInlineEdit(id);
         return;
       }
+      const md = globalThis.readglossMdList;
 
       if (res) {
         e.preventDefault();
@@ -2149,6 +2151,11 @@
 
       if (!allowSwitch) return;
 
+      // 칸 전환으로 없어지면 activeConceptEditId를 비운다(대기 중 저장은 즉시 보냄, FX-F 5번)
+      if (activeConceptEditId) {
+        closeConceptInlineEdit(activeConceptEditId);
+      }
+
       currentActiveKey = newKey;
       rebuildSectionsUI();
     }
@@ -2159,6 +2166,10 @@
     if (!shadow || !isOpen || currentMode !== 'pad') return;
     const container = shadow.querySelector('.sections-container');
     const prevScrollTop = container ? container.scrollTop : 0;
+
+    // 다시 그리기 전 메모장 내부 포커스 여부 및 현재 활성 요소 (FX-F 3번)
+    const padHadFocus = checkPadHasFocus();
+    const docActive = document.activeElement;
 
     // 현재 각 textarea의 내용을 drafts에 동기화
     const textareas = shadow.querySelectorAll('.sec-textarea');
@@ -2173,8 +2184,19 @@
     const newContainer = shadow.querySelector('.sections-container');
     if (newContainer) newContainer.scrollTop = prevScrollTop;
 
-    // 다시 그리면 커서가 사라지므로 쓰는 칸에 다시 넣는다(같은 칸이어도)
-    applyActiveSection(true, true);
+    // 포커스 복귀 여부 판정 (16-6, FX-F 3번):
+    // 메모장 안에 이미 커서가 있었을 때만 무조건 되돌리고,
+    // 아니면 기본 포커스 판정(shouldReturnFocus·getActiveKind)을 거쳐 허용될 때만 포커스
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    const selectionCollapsed = sel ? sel.isCollapsed : true;
+    const cardOpen = isCardOpen();
+    const activeKind = getActiveKind(docActive);
+    const memoCore = globalThis.readglossMemo;
+    const shouldFocus = memoCore?.shouldFocusOnRebuild
+      ? memoCore.shouldFocusOnRebuild({ padHadFocus, selectionCollapsed, cardOpen, activeKind, padOpen: isOpen })
+      : (padHadFocus || (selectionCollapsed && !cardOpen && activeKind === 'none'));
+
+    applyActiveSection(shouldFocus, padHadFocus);
   }
 
   // 소제목 목록 변경 감지 (h1~h3 개수가 바뀔 때만, 500ms 묶음)
@@ -2238,6 +2260,10 @@
       } catch {
         window.scrollTo(0, 0);
       }
+    }
+
+    if (targetKey !== currentActiveKey && activeConceptEditId) {
+      closeConceptInlineEdit(activeConceptEditId);
     }
 
     currentActiveKey = targetKey;
@@ -2407,79 +2433,141 @@
           // 15자 이상이면 기본 동작을 막음
           e.preventDefault();
 
-          // 1. 본문에 그 글이 있는지 검색 (본문 색인·quoteOf 재사용, 공백 정리 비교)
-          let inPage = false;
-          let pageQuote = null;
-          const scrapPage = globalThis.readglossScrapPage;
-          const scrapCore = globalThis.readglossScrap;
-
-          if (scrapPage?.buildTextIndex) {
-            const { fullText } = scrapPage.buildTextIndex();
-            if (fullText) {
-              const words = cleanText.split(' ').map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-              try {
-                const re = new RegExp(words.join('\\s+'));
-                const m = re.exec(fullText);
-                if (m) {
-                  inPage = true;
-                  const start = m.index;
-                  const end = m.index + m[0].length;
-                  const q = scrapCore?.quoteOf ? scrapCore.quoteOf(fullText, start, end) : { exact: m[0], prefix: '', suffix: '' };
-                  pageQuote = {
-                    exact: q.exact.slice(0, 1000),
-                    prefix: (q.prefix || '').slice(0, 64),
-                    suffix: (q.suffix || '').slice(0, 64),
-                  };
-                }
-              } catch {}
-            }
-          }
-
-          if (inPage && pageQuote) {
-            quotes[s.key] = pageQuote;
-            saveDrafts();
-            rebuildSectionsUI();
-            return;
-          }
-
-          // 2. 없으면 tutor-quote를 묻는다 (최대 1.5초, 넘으면 못 찾음)
-          let tutorRes = null;
-          try {
-            const fetchPromise = new Promise((resolve) => {
-              chrome.runtime.sendMessage({ type: 'tutor-quote', text: pastedText }, (res) => {
-                resolve(res);
-              });
-            });
-            const timeoutPromise = new Promise((resolve) => {
-              setTimeout(() => resolve({ found: false, timeout: true }), 1500);
-            });
-            tutorRes = await Promise.race([fetchPromise, timeoutPromise]);
-          } catch {
-            tutorRes = { found: false };
-          }
-
-          const tutorFound = Boolean(tutorRes && tutorRes.found);
+          // 1. 시작 시점 상태 캡처: 대상 칸 key 고정 (FX-F 1번)
           const memoCore = globalThis.readglossMemo;
-          const decision = memoCore?.classifyPaste
-            ? memoCore.classifyPaste({ text: pastedText, inPage: false, tutorFound })
-            : (tutorFound ? 'tutor' : 'text');
+          const targetKey = memoCore?.targetKeyOnPaste ? memoCore.targetKeyOnPaste(s.key, currentActiveKey) : s.key;
+          const initialDocActive = document.activeElement;
+          const initialShadowActive = shadow?.activeElement;
+          lastTypedAt = Date.now();
 
-          if (decision === 'tutor') {
-            quotes[s.key] = {
-              exact: cleanText.slice(0, 1000),
-              prefix: '',
-              suffix: '',
-              source: 'tutor',
-              tutor: {
-                date: tutorRes.date,
-                time: tutorRes.time,
-                title: tutorRes.title,
-              },
-            };
-            saveDrafts();
-            rebuildSectionsUI();
-          } else {
-            insertTextAtCursor(ta, pastedText);
+          // 기다리는 동안 lastTypedAt을 갱신해 칸 전환을 막는다 (17-1 "쓰는 중" 규칙)
+          const keepAliveInterval = setInterval(() => {
+            lastTypedAt = Date.now();
+          }, 200);
+
+          // 비동기 응답 뒤 포커스 복원 여부 판정 (FX-F 2번)
+          const canRestoreFocus = () => {
+            const curDocActive = document.activeElement;
+            const curShadowActive = shadow?.activeElement;
+            const isPage = memoCore?.isPageField ? memoCore.isPageField(curDocActive) : false;
+            const activeKind = getActiveKind(curDocActive);
+            if (memoCore?.shouldRestorePasteFocus) {
+              return memoCore.shouldRestorePasteFocus({
+                initialDocActive,
+                currentDocActive: curDocActive,
+                initialShadowActive,
+                currentShadowActive: curShadowActive,
+                isPageField: isPage,
+                activeKind,
+              });
+            }
+            if (isPage || activeKind === 'our-host') return false;
+            if (initialDocActive && curDocActive && initialDocActive !== curDocActive) return false;
+            if (initialShadowActive && curShadowActive && initialShadowActive !== curShadowActive) return false;
+            return true;
+          };
+
+          try {
+            // 1. 본문에 그 글이 있는지 검색 (본문 색인·quoteOf 재사용, 공백 정리 비교)
+            let inPage = false;
+            let pageQuote = null;
+            const scrapPage = globalThis.readglossScrapPage;
+            const scrapCore = globalThis.readglossScrap;
+
+            if (scrapPage?.buildTextIndex) {
+              const { fullText } = scrapPage.buildTextIndex();
+              if (fullText) {
+                const words = cleanText.split(' ').map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+                try {
+                  const re = new RegExp(words.join('\\s+'));
+                  const m = re.exec(fullText);
+                  if (m) {
+                    inPage = true;
+                    const start = m.index;
+                    const end = m.index + m[0].length;
+                    const q = scrapCore?.quoteOf ? scrapCore.quoteOf(fullText, start, end) : { exact: m[0], prefix: '', suffix: '' };
+                    pageQuote = {
+                      exact: q.exact.slice(0, 1000),
+                      prefix: (q.prefix || '').slice(0, 64),
+                      suffix: (q.suffix || '').slice(0, 64),
+                    };
+                  }
+                } catch {}
+              }
+            }
+
+            if (inPage && pageQuote) {
+              const hadQuote = Boolean(quotes[targetKey] && quotes[targetKey].exact);
+              quotes[targetKey] = pageQuote;
+              saveDrafts();
+              rebuildSectionsUI();
+              if (hadQuote) {
+                showPadToastNotice('인용을 바꿨어요', 2000);
+              }
+              return;
+            }
+
+            // 2. 없으면 tutor-quote를 묻는다 (최대 1.5초, 넘으면 못 찾음)
+            let tutorRes = null;
+            try {
+              const fetchPromise = new Promise((resolve) => {
+                chrome.runtime.sendMessage({ type: 'tutor-quote', text: pastedText }, (res) => {
+                  resolve(res);
+                });
+              });
+              const timeoutPromise = new Promise((resolve) => {
+                setTimeout(() => resolve({ found: false, timeout: true }), 1500);
+              });
+              tutorRes = await Promise.race([fetchPromise, timeoutPromise]);
+            } catch {
+              tutorRes = { found: false };
+            }
+
+            const tutorFound = Boolean(tutorRes && tutorRes.found);
+            const decision = memoCore?.classifyPaste
+              ? memoCore.classifyPaste({ text: pastedText, inPage: false, tutorFound })
+              : (tutorFound ? 'tutor' : 'text');
+
+            if (decision === 'tutor') {
+              const hadQuote = Boolean(quotes[targetKey] && quotes[targetKey].exact);
+              quotes[targetKey] = {
+                exact: cleanText.slice(0, 1000),
+                prefix: '',
+                suffix: '',
+                source: 'tutor',
+                tutor: {
+                  date: tutorRes.date,
+                  time: tutorRes.time,
+                  title: tutorRes.title,
+                },
+              };
+              saveDrafts();
+              rebuildSectionsUI();
+              if (hadQuote) {
+                showPadToastNotice('인용을 바꿨어요', 2000);
+              }
+            } else {
+              // 3. 그냥 글: 그 칸 쓰는 칸이 지금 화면에 있으면 거기 커서 자리에, 없으면 drafts 끝에 붙임
+              const targetSec = shadow?.querySelector(`.sec[data-key="${CSS.escape(targetKey)}"]`);
+              const targetTa = targetSec?.querySelector('.sec-textarea');
+              if (targetTa) {
+                if (canRestoreFocus()) {
+                  insertTextAtCursor(targetTa, pastedText);
+                } else {
+                  const start = targetTa.selectionStart ?? targetTa.value.length;
+                  const end = targetTa.selectionEnd ?? targetTa.value.length;
+                  targetTa.setRangeText(pastedText, start, end, 'end');
+                  drafts[targetKey] = targetTa.value;
+                  targetTa.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+              } else {
+                drafts[targetKey] = (drafts[targetKey] || '') + pastedText;
+                saveDrafts();
+              }
+            }
+          } finally {
+            clearInterval(keepAliveInterval);
+            lastTypedAt = Date.now();
           }
         });
 
