@@ -124,10 +124,10 @@ test('소스 검사: marginRight 본문 여백 조정 및 원래 값 복원', ()
   );
 });
 
-test('소스 검사: readgloss:study-mode 이벤트 처리', () => {
+test('소스 검사: setStudyMode 및 globalThis.readglossMemoPad 구현', () => {
   assert.ok(
-    memoPadSource.includes('readgloss:study-mode'),
-    'memo-pad.js에서 readgloss:study-mode 이벤트를 수신해야 합니다.'
+    memoPadSource.includes('readglossMemoPad') && memoPadSource.includes('setStudyMode'),
+    'memo-pad.js에서 readglossMemoPad.setStudyMode를 구현해야 합니다.'
   );
 });
 

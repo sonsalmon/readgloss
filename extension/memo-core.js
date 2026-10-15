@@ -336,6 +336,22 @@
     return 260;
   }
 
+  // 본문 오른쪽 여백 계산 (순수 함수): open && docked 이면 폭(px), 아니면 원래 값
+  function pageMarginFor(params) {
+    if (!params || typeof params !== 'object') return '';
+    const { open, docked, width, original } = params;
+    if (Boolean(open) && Boolean(docked)) {
+      if (typeof width === 'number' && Number.isFinite(width)) {
+        return `${width}px`;
+      }
+      if (typeof width === 'string' && width.trim().length > 0) {
+        return width.endsWith('px') ? width.trim() : `${width.trim()}px`;
+      }
+      return '360px';
+    }
+    return typeof original === 'string' ? original : (original != null ? String(original) : '');
+  }
+
   // 쓰는 칸 기본 포커스 복귀 판정 (순수 함수)
   function shouldReturnFocus(params) {
     if (!params || typeof params !== 'object') return false;
@@ -570,6 +586,7 @@
     isPageField,
     canSave,
     dockWidth,
+    pageMarginFor,
     shouldReturnFocus,
     assignToSections,
     parseConceptCommand,

@@ -121,12 +121,26 @@
   let dockWidthValue = 360; // 붙이기 폭 (기본 360, 260~50vw)
   let originalMarginRight = null; // 붙이기 전 본문 오른쪽 마진
   let preStudyDockState = null; // 공부 모드 전 상태 { open, docked }
+  let studyMode = false; // 공부 모드 진행 여부
+  let isComposing = false; // 한글 조합 중 여부
   let returnFocusTimer = 0; // 쓰는 칸 기본 포커스 타이머
 
   function saveDockState() {
     if (chrome?.storage?.local?.set) {
       chrome.storage.local.set({ memoPadDock: { on: isDocked, width: dockWidthValue } });
     }
+  }
+
+  function syncPageMargin() {
+    if (typeof document === 'undefined' || !document.documentElement) return;
+    if (originalMarginRight === null) {
+      originalMarginRight = document.documentElement.style.marginRight || '';
+    }
+    const memoCore = globalThis.readglossMemo;
+    const target = memoCore?.pageMarginFor
+      ? memoCore.pageMarginFor({ open: isOpen, docked: isDocked, width: dockWidthValue, original: originalMarginRight })
+      : (isOpen && isDocked ? `${dockWidthValue}px` : (originalMarginRight || ''));
+    document.documentElement.style.marginRight = target;
   }
 
   function applyDock(width) {
@@ -136,12 +150,7 @@
     const w = memoCore?.dockWidth ? memoCore.dockWidth(width ?? dockWidthValue, vw) : (width ?? dockWidthValue ?? 360);
     dockWidthValue = w;
 
-    if (originalMarginRight === null && typeof document !== 'undefined') {
-      originalMarginRight = document.documentElement.style.marginRight || '';
-    }
-    if (typeof document !== 'undefined') {
-      document.documentElement.style.marginRight = `${w}px`;
-    }
+    syncPageMargin();
 
     if (host) {
       host.style.position = 'fixed';
@@ -157,10 +166,7 @@
 
   function undockPad() {
     isDocked = false;
-    if (originalMarginRight !== null && typeof document !== 'undefined') {
-      document.documentElement.style.marginRight = originalMarginRight;
-      originalMarginRight = null;
-    }
+    syncPageMargin();
     applyAnchored(savedAnchored);
     saveDockState();
     updateDockUI();
@@ -200,7 +206,9 @@
     if (chrome?.storage?.local?.get) {
       chrome.storage.local.get(['memoPadRect', 'memoPadDock'], (items) => {
         if (!chrome.runtime?.lastError && items?.memoPadDock) {
-          isDocked = Boolean(items.memoPadDock.on);
+          if (!studyMode) {
+            isDocked = Boolean(items.memoPadDock.on);
+          }
           if (typeof items.memoPadDock.width === 'number' && Number.isFinite(items.memoPadDock.width)) {
             dockWidthValue = items.memoPadDock.width;
           }
@@ -223,6 +231,7 @@
         } else {
           applyAnchored(savedAnchored);
         }
+        syncPageMargin();
         if (typeof callback === 'function') callback();
       });
     } else {
@@ -232,6 +241,7 @@
       } else {
         applyAnchored(savedAnchored);
       }
+      syncPageMargin();
       if (typeof callback === 'function') callback();
     }
   }
@@ -329,9 +339,7 @@
       if (host) {
         host.style.width = `${w}px`;
       }
-      if (typeof document !== 'undefined') {
-        document.documentElement.style.marginRight = `${w}px`;
-      }
+      syncPageMargin();
     });
 
     const onPointerUp = (e) => {
@@ -2737,6 +2745,7 @@
   function openPad(targetSectionKey) {
     isOpen = true;
     currentMode = 'pad';
+    syncPageMargin();
     loadAndApplyRect();
     fetchTaskGuess();
     currentHeadings = collectHeadings();
@@ -2779,12 +2788,9 @@
       }
     }
     endEdit(); // 고치는 중 닫으면 그만둔 것이다: 칸을 보관한 초안으로 되돌린다
-    if (isDocked && originalMarginRight !== null && typeof document !== 'undefined') {
-      document.documentElement.style.marginRight = originalMarginRight;
-      originalMarginRight = null;
-    }
     isOpen = false;
     currentMode = 'pad';
+    syncPageMargin();
     removeHost();
     saveDrafts();
   }
@@ -2931,12 +2937,18 @@
   });
 
   // ---------------------------------------------------------------------------
-  // 쓰는 칸 기본 포커스 (T34b)
+  // 쓰는 칸 기본 포커스 (T34b, FX-C)
   // 본문 mouseup·keyup·selectionchange 뒤 0.3초에 조건이 모두 참이면 쓰는 칸으로 포커스 복귀
   // ---------------------------------------------------------------------------
 
   function isCardOpen() {
-    const cardSelectors = ['readgloss-selection', 'readgloss-card', 'readgloss-concept-form'];
+    const cardSelectors = [
+      'readgloss-selection',
+      'readgloss-card',
+      'readgloss-concept-form',
+      'readgloss-concept-card',
+      'readgloss-scrap-bar',
+    ];
     for (const sel of cardSelectors) {
       const el = document.querySelector(sel);
       if (el) {
@@ -2955,18 +2967,31 @@
     if (!activeEl || activeEl === document.body || activeEl === document.documentElement) {
       return 'none';
     }
+    const tag = (activeEl.localName || activeEl.tagName || '').toLowerCase();
+    if (tag === 'iframe') {
+      return 'page-field';
+    }
+    if (activeEl.shadowRoot && !tag.startsWith('readgloss-')) {
+      return 'page-field';
+    }
     const memoCore = globalThis.readglossMemo;
     if (memoCore?.isPageField && memoCore.isPageField(activeEl)) {
       return 'page-field';
     }
-    if (activeEl.isContentEditable === true || /^(INPUT|TEXTAREA|SELECT)$/.test(activeEl.tagName)) {
+    if (activeEl.isContentEditable === true || /^(INPUT|TEXTAREA|SELECT)$/i.test(activeEl.tagName)) {
       return 'page-field';
     }
-    const otherHostTags = ['readgloss-ui', 'readgloss-concept-form', 'readgloss-toast', 'readgloss-concept-card'];
+    const otherHostTags = [
+      'readgloss-ui',
+      'readgloss-concept-form',
+      'readgloss-toast',
+      'readgloss-concept-card',
+      'readgloss-scrap-bar',
+    ];
     let curr = activeEl;
     while (curr) {
-      const tag = (curr.localName || curr.tagName || '').toLowerCase();
-      if (otherHostTags.includes(tag)) {
+      const curTag = (curr.localName || curr.tagName || '').toLowerCase();
+      if (otherHostTags.includes(curTag)) {
         return 'our-host';
       }
       if (curr.getRootNode && curr.getRootNode() instanceof ShadowRoot) {
@@ -2998,10 +3023,10 @@
   }
 
   function scheduleReturnFocus() {
-    if (!isOpen || currentMode !== 'pad') return;
+    if (!isOpen || currentMode !== 'pad' || isComposing) return;
     clearTimeout(returnFocusTimer);
     returnFocusTimer = setTimeout(() => {
-      if (!isOpen || currentMode !== 'pad') return;
+      if (!isOpen || currentMode !== 'pad' || isComposing) return;
       const sel = typeof window !== 'undefined' ? window.getSelection() : null;
       const selectionCollapsed = sel ? sel.isCollapsed : true;
       const cardOpen = isCardOpen();
@@ -3021,43 +3046,63 @@
     document.addEventListener('mouseup', scheduleReturnFocus);
     document.addEventListener('keyup', scheduleReturnFocus);
     document.addEventListener('selectionchange', scheduleReturnFocus);
+    document.addEventListener('compositionstart', () => {
+      isComposing = true;
+    });
+    document.addEventListener('compositionend', () => {
+      isComposing = false;
+      scheduleReturnFocus();
+    });
   }
 
   // ---------------------------------------------------------------------------
-  // 공부 모드(readgloss:study-mode) 이벤트 처리: on이면 열고 붙인다, off면 붙이기 전 상태로
+  // 공부 모드(setStudyMode): on이면 열고 붙인다, off면 붙이기 전 상태로 (저장값 바꾸지 않음)
   // ---------------------------------------------------------------------------
-  if (typeof window !== 'undefined') {
-    window.addEventListener('readgloss:study-mode', (e) => {
-      const on = Boolean(e?.detail?.on);
-      if (on) {
-        if (preStudyDockState === null) {
-          preStudyDockState = { open: isOpen, docked: isDocked };
-        }
-        if (!isOpen) {
-          openPad();
-        }
-        if (!isDocked) {
+  function setStudyMode(on) {
+    const nextOn = Boolean(on);
+    if (nextOn) {
+      studyMode = true;
+      if (preStudyDockState === null) {
+        preStudyDockState = { open: isOpen, docked: isDocked };
+      }
+      if (!isOpen) {
+        openPad();
+      }
+      if (!isDocked) {
+        applyDock(dockWidthValue);
+      }
+      syncPageMargin();
+    } else {
+      studyMode = false;
+      if (preStudyDockState) {
+        const { open: wasOpen, docked: wasDocked } = preStudyDockState;
+        preStudyDockState = null;
+        isDocked = wasDocked;
+        if (!wasDocked) {
+          applyAnchored(savedAnchored);
+          updateDockUI();
+        } else {
           applyDock(dockWidthValue);
-          saveDockState();
+        }
+        if (!wasOpen && isOpen) {
+          closePad();
         }
       } else {
-        if (preStudyDockState) {
-          const { open: wasOpen, docked: wasDocked } = preStudyDockState;
-          preStudyDockState = null;
-          if (!wasDocked && isDocked) {
-            undockPad();
-          }
-          if (!wasOpen && isOpen) {
-            closePad();
-          }
-        } else {
-          if (isDocked) {
-            undockPad();
-          }
+        if (isDocked) {
+          isDocked = false;
+          applyAnchored(savedAnchored);
+          updateDockUI();
         }
       }
-    });
+      syncPageMargin();
+    }
   }
+
+  globalThis.readglossMemoPad = globalThis.readglossMemoPad || {};
+  globalThis.readglossMemoPad.setStudyMode = setStudyMode;
+  globalThis.readglossMemoPad.syncPageMargin = syncPageMargin;
+  globalThis.readglossMemoPad.getActiveKind = getActiveKind;
+  globalThis.readglossMemoPad.isCardOpen = isCardOpen;
 
   // 초기화
   function initMemoPad() {

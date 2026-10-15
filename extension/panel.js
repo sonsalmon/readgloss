@@ -376,18 +376,13 @@
     scrapViewItem.hidden = !hasScraps;
   }
 
-  // ---- 공부 모드(퀵 메뉴 [공부 모드], 탭 sessionStorage 에 상태 보관) ----
+  // ---- 공부 모드(퀵 메뉴 [공부 모드], 모듈 메모리 변수에 보관) ----
+  let studyModeOn = false;
   function getStudyMode() {
-    try {
-      return typeof sessionStorage !== 'undefined' && sessionStorage.getItem('readgloss:study-mode') === 'true';
-    } catch {
-      return false;
-    }
+    return studyModeOn;
   }
   function setStudyMode(on) {
-    try {
-      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('readgloss:study-mode', String(on));
-    } catch {}
+    studyModeOn = Boolean(on);
   }
 
   const studyModeItem = h('button', {
@@ -409,15 +404,8 @@
     try {
       chrome.runtime.sendMessage({ type: 'study-mode', on: nextOn }).catch(() => {});
     } catch {}
-    window.dispatchEvent(new CustomEvent('readgloss:study-mode', { detail: { on: nextOn } }));
+    globalThis.readglossMemoPad?.setStudyMode?.(nextOn);
   }
-
-  window.addEventListener('readgloss:study-mode', (e) => {
-    if (e.detail && typeof e.detail.on === 'boolean') {
-      setStudyMode(e.detail.on);
-      updateStudyModeUI();
-    }
-  });
 
   const menu = h('div', { class: 'menu' },
     h('div', { class: 'menu-card', role: 'group', 'aria-label': '빠른 메뉴' },
