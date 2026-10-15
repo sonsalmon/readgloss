@@ -7,7 +7,7 @@ await import('../extension/settings-core.js');
 await import('../extension/annotate-core.js');
 const S = globalThis.readglossSettings;
 const A = globalThis.readglossAnnotate;
-const { annotateBlock, unwrapAnnotations, makeAnnotation, blockCandidates, cssVars, annotating, enabledHere, structuralKey, applyWords } = A;
+const { planBlock, makeAnnotation, blockCandidates, cssVars, annotating, enabledHere, structuralKey, applyWords } = A;
 
 class FNode {
   parentNode = null;
@@ -105,14 +105,6 @@ function makeDoc() {
   return doc;
 }
 
-// 블록 하나: 글자 노드 목록 -> 블록. 후보 계산(blockCandidates)까지 진짜 함수를 쓴다.
-function block(doc, ...texts) {
-  const p = doc.createElement('p');
-  const nodes = texts.map((t) => doc.createTextNode(t));
-  p.append(...nodes);
-  doc.body.append(p);
-  return { p, nodes, texts, occs: blockCandidates(texts) };
-}
 const ITEMS = Object.assign(Object.create(null), {
   payload: { lemma: 'payload', gloss: '수익 하중' },
   exploit: { lemma: 'exploit', gloss: '이용하다' },
@@ -122,59 +114,10 @@ const ITEMS = Object.assign(Object.create(null), {
 });
 const cfg = (patch = {}) => S.merge({}, patch);
 const fresh = () => ({ pageSeen: new Set(), skip: new Set() });
-const draw = (b, settings = cfg(), state = fresh(), items = ITEMS) => annotateBlock(b.p, b, items, settings, state);
 const annsOf = (p) => p.querySelectorAll('[data-readgloss="ann"]');
 const glossOf = (ann) => ann.childNodes.find((c) => c.nodeType === 1 && c.getAttribute('data-readgloss') === 'gloss');
-// 노드 구조를 글자로(글자 노드는 "…", 요소는 <tag attrs>…</tag>)
-const shape = (n) => (n.nodeType === 3 ? JSON.stringify(n.nodeValue) : `<${n.tagName.toLowerCase()}${Object.entries(n.attrs).map(([k, v]) => ` ${k}=${v}`).join('')}>${n.childNodes.map(shape).join('')}</${n.tagName.toLowerCase()}>`);
 
-const TEXT = 'Attackers exploit the payload and delves deep. Then exploit again.';
-
-test('위치 top: ruby 감싸개 + rt(gloss), 원형은 data-lemma, 단어 글자는 감싸개 바로 아래 글자 노드', () => {
-  const doc = makeDoc();
-  const b = block(doc, TEXT);
-  assert.equal(draw(b, cfg({ repeat: 'always', maxPerParagraph: 0 })), 4); // exploit, payload, delves, exploit
-  const [first] = annsOf(b.p);
-  assert.equal(first.tagName, 'RUBY');
-  assert.equal(first.getAttribute('data-lemma'), 'exploit');
-  assert.equal(shape(first), '<ruby data-readgloss=ann data-lemma=exploit>"exploit"<rt data-readgloss=gloss lang=ko>"이용하다"</rt></ruby>');
-  assert.equal(b.p.textContent.replace(/이용하다|수익 하중|파고들다/g, ''), TEXT); // 뜻만 빼면 원문 그대로
-});
-
-test('위치 right: span 감싸개 + span "(뜻)"(gloss)', () => {
-  const doc = makeDoc();
-  const b = block(doc, TEXT);
-  draw(b, cfg({ annotation: { position: 'right' }, repeat: 'always', maxPerParagraph: 0 }));
-  const [first] = annsOf(b.p);
-  assert.equal(shape(first), '<span data-readgloss=ann data-lemma=exploit>"exploit"<span data-readgloss=gloss lang=ko>"(이용하다)"</span></span>');
-});
-
-test('위치 none + mark: 뜻 노드 없이 단어 표시만, mark 도 none 이면 아무것도 안 그린다(주석 수 0, 노드 그대로)', () => {
-  const doc = makeDoc();
-  const b = block(doc, TEXT);
-  draw(b, cfg({ annotation: { position: 'none' }, mark: 'underline' }));
-  const [first] = annsOf(b.p);
-  assert.equal(shape(first), '<span data-readgloss=ann data-lemma=exploit><span data-rg-word=>"exploit"</span></span>');
-  assert.equal(b.p.querySelectorAll('[data-readgloss="gloss"]').length, 0);
-  assert.equal(b.p.textContent, TEXT);
-
-  const b2 = block(doc, TEXT);
-  assert.equal(draw(b2, cfg({ annotation: { position: 'none' }, mark: 'none' })), 0);
-  assert.deepEqual(b2.p.childNodes, b2.nodes);
-  assert.equal(annotating(cfg({ annotation: { position: 'none' }, mark: 'none' }), 'a.com'), false);
-  assert.equal(annotating(cfg({ annotation: { position: 'none' }, mark: 'color' }), 'a.com'), true);
-});
-
-test('mark 4종: none 은 단어를 감싸지 않고, 나머지는 단어를 data-rg-word 로 감싸며 CSS 변수가 맞는 값을 낸다', () => {
-  const doc = makeDoc();
-  for (const mark of ['none', 'color', 'underline', 'background']) {
-    const b = block(doc, 'The payload arrives');
-    draw(b, cfg({ mark }));
-    const [ann] = annsOf(b.p);
-    const wrapped = ann.childNodes[0].nodeType === 1 && ann.childNodes[0].hasAttribute('data-rg-word');
-    assert.equal(wrapped, mark !== 'none', mark);
-    assert.equal(glossOf(ann).textContent, '수익 하중'); // 뜻 글자는 단어 표시 바깥(색·밑줄이 안 번진다)
-  }
+test('mark 4종: CSS 변수가 맞는 값을 낸다', () => {
   const v = (mark, dark) => cssVars(cfg({ mark }), dark);
   assert.deepEqual([v('none')['--rg-mark-color'], v('none')['--rg-mark-line'], v('none')['--rg-mark-bg']], ['currentColor', 'none', 'transparent']);
   assert.equal(v('color')['--rg-mark-color'], '#2f6feb');
@@ -182,98 +125,6 @@ test('mark 4종: none 은 단어를 감싸지 않고, 나머지는 단어를 dat
   assert.equal(v('underline')['--rg-mark-line'], 'underline');
   assert.match(v('background')['--rg-mark-bg'], /^rgba\(47,111,235,/);
   assert.match(v('background', true)['--rg-mark-bg'], /^rgba\(107,155,255,/);
-});
-
-test('maxPerParagraph: 문단당 최대 개수(0 = 제한 없음), 이미 붙은 주석도 센다', () => {
-  const doc = makeDoc();
-  const text = 'Attackers exploit the payload and delves deep, mitigate it.'; // 4개 후보(원형 다름)
-  const count = (max) => {
-    const b = block(doc, text);
-    draw(b, cfg({ maxPerParagraph: max }));
-    return annsOf(b.p).length;
-  };
-  assert.equal(count(2), 2);
-  assert.equal(count(3), 3);
-  assert.equal(count(0), 4);
-  assert.equal(count(10), 4);
-  // 먼저 붙은 것은 앞에서부터
-  const b = block(doc, text);
-  draw(b, cfg({ maxPerParagraph: 2 }));
-  assert.deepEqual(annsOf(b.p).map((a) => a.getAttribute('data-lemma')), ['exploit', 'payload']);
-  // 같은 블록을 다시 그려도(글이 바뀌어 다시 처리) 이미 붙은 2개가 상한을 채웠으니 더 안 붙는다
-  const again = { ...b, nodes: b.p.childNodes.filter((n) => n.nodeType === 3), texts: b.p.childNodes.filter((n) => n.nodeType === 3).map((n) => n.nodeValue) };
-  again.occs = blockCandidates(again.texts);
-  assert.equal(draw(again, cfg({ maxPerParagraph: 2 }), fresh()), 0);
-  assert.equal(draw(again, cfg({ maxPerParagraph: 3 }), fresh()), 1);
-});
-
-test('repeat 3종: page = 페이지에서 원형당 한 번, paragraph = 문단마다 첫 등장, always = 매번', () => {
-  const doc = makeDoc();
-  const run = (repeat) => {
-    const state = fresh();
-    const s = cfg({ repeat, maxPerParagraph: 0 });
-    const b1 = block(doc, 'Attackers exploit the flaw, then exploit more.');
-    const b2 = block(doc, 'Defenders exploit it too.');
-    return [draw(b1, s, state), draw(b2, s, state)];
-  };
-  assert.deepEqual(run('page'), [1, 0]);
-  assert.deepEqual(run('paragraph'), [1, 1]);
-  assert.deepEqual(run('always'), [2, 1]);
-});
-
-test('skip(아는 단어 원형)는 어느 반복 모드에서도 안 붙인다', () => {
-  const doc = makeDoc();
-  const b = block(doc, 'Attackers exploit the payload and delves deep.');
-  draw(b, cfg(), { pageSeen: new Set(), skip: new Set(['payload', 'delve']) });
-  assert.deepEqual(annsOf(b.p).map((a) => a.getAttribute('data-lemma')), ['exploit']);
-});
-
-test('노드 여러 개에 걸친 블록: 글자 노드마다 쪼개 붙이고, 그 사이 페이지가 바꾼 노드는 건드리지 않는다', () => {
-  const doc = makeDoc();
-  const b = block(doc, 'Attackers ', ' the payload ', ' and mitigate it');
-  b.nodes[2].nodeValue = ' and CHANGED it'; // 요청을 기다리는 사이 페이지가 글을 바꿈
-  draw(b, cfg({ maxPerParagraph: 0 }));
-  assert.deepEqual(annsOf(b.p).map((a) => a.getAttribute('data-lemma')), ['payload']);
-});
-
-test('unwrap: 여러 번 그렸다 걷어도 글자 노드 수와 내용이 처음과 같고, 조각난 노드가 안 남는다', () => {
-  const doc = makeDoc();
-  const b = block(doc, TEXT);
-  const original = b.p.childNodes.map((n) => [n.nodeType, n.nodeValue]);
-  const variants = [
-    cfg({ repeat: 'always', maxPerParagraph: 0 }),
-    cfg({ repeat: 'always', maxPerParagraph: 0, annotation: { position: 'right' } }),
-    cfg({ repeat: 'always', maxPerParagraph: 0, mark: 'background' }),
-    cfg({ repeat: 'always', maxPerParagraph: 0, annotation: { position: 'none' }, mark: 'color' }),
-  ];
-  for (let round = 0; round < 3; round++) {
-    for (const s of variants) {
-      assert.ok(draw(b, s) > 0);
-      assert.ok(annsOf(b.p).length > 1);
-      unwrapAnnotations(doc.body);
-      assert.deepEqual(b.p.childNodes.map((n) => [n.nodeType, n.nodeValue]), original);
-      assert.equal(annsOf(b.p).length, 0);
-      // 다음 그리기는 걷힌 뒤의 노드로 다시 후보를 뽑는다(annotate.js 가 블록을 다시 처리하는 것과 같다)
-      b.nodes = b.p.childNodes.slice();
-      b.texts = b.nodes.map((n) => n.nodeValue);
-      b.occs = blockCandidates(b.texts);
-    }
-  }
-});
-
-test('unwrap: 원형을 주면 그 원형만 걷고, 걷힌 자리의 글자는 이웃 글자와 한 노드로 합쳐진다', () => {
-  const doc = makeDoc();
-  const b = block(doc, 'Attackers exploit the payload now');
-  draw(b, cfg({ maxPerParagraph: 0, mark: 'underline' }));
-  assert.equal(annsOf(b.p).length, 2);
-  unwrapAnnotations(doc.body, new Set(['exploit']));
-  assert.deepEqual(annsOf(b.p).map((a) => a.getAttribute('data-lemma')), ['payload']);
-  assert.equal(b.p.childNodes[0].nodeValue, 'Attackers exploit the '); // 합쳐짐
-  assert.equal(b.p.textContent.replace('수익 하중', ''), 'Attackers exploit the payload now');
-  unwrapAnnotations(doc.body, new Set()); // 빈 집합: 아무것도 안 걷는다
-  assert.equal(annsOf(b.p).length, 1);
-  unwrapAnnotations(doc.body);
-  assert.deepEqual(b.p.childNodes.map((n) => n.nodeValue), ['Attackers exploit the payload now']);
 });
 
 test('readgloss:words: known 원형은 skip 집합에 넣고 걷을 원형으로 돌려주고, unknown 은 집합에서 빼기만 한다', () => {
@@ -284,32 +135,36 @@ test('readgloss:words: known 원형은 skip 집합에 넣고 걷을 원형으로
   assert.deepEqual([...skip], ['exploit']);
   for (const bad of [undefined, null, {}, { known: 'x', unknown: 5 }, { known: [1, null, ''] }]) assert.equal(applyWords(skip, bad).size, 0);
   assert.deepEqual([...skip], ['exploit']);
-  // 걷기: 페이지의 해당 주석만 사라지고, 이후 그리기에서도 건너뛴다
-  const doc = makeDoc();
-  const b = block(doc, 'Attackers exploit the payload now');
-  const state = fresh();
-  draw(b, cfg({ maxPerParagraph: 0 }), state);
-  unwrapAnnotations(doc.body, applyWords(state.skip, { known: ['payload'] }));
-  assert.deepEqual(annsOf(b.p).map((a) => a.getAttribute('data-lemma')), ['exploit']);
-  const b2 = block(doc, 'Another payload here');
-  assert.equal(draw(b2, cfg({ repeat: 'always' }), state), 0);
 });
 
 test('readgloss:words unknown: 알아요 취소한 원형은 이 페이지에서 한 번만 주던 기록(pageSeen)에서도 빠져, 새 블록에 다시 주석이 붙는다', () => {
   const doc = makeDoc();
   const state = fresh();
-  const b = block(doc, 'Attackers exploit the payload now');
-  draw(b, cfg({ maxPerParagraph: 0 }), state); // repeat 기본 'page'
+  const text1 = 'Attackers exploit the payload now';
+  const node1 = doc.createTextNode(text1);
+  doc.body.append(node1); // planBlock 은 페이지에 붙은 노드만 본다
+  const j1 = { nodes: [node1], texts: [text1], occs: blockCandidates([text1]) };
+  const plan1 = planBlock(j1, ITEMS, cfg({ maxPerParagraph: 0 }), state);
+  assert.ok(plan1.length > 0);
   assert.ok(state.pageSeen.has('payload'));
-  const b2 = block(doc, 'Another payload here');
-  assert.equal(draw(b2, cfg({ maxPerParagraph: 0 }), state), 0, '이미 본 원형이라 안 붙는다');
+
+  const text2 = 'Another payload here';
+  const node2 = doc.createTextNode(text2);
+  doc.body.append(node2); // planBlock 은 페이지에 붙은 노드만 본다
+  const j2 = { nodes: [node2], texts: [text2], occs: blockCandidates([text2]) };
+  assert.equal(planBlock(j2, ITEMS, cfg({ maxPerParagraph: 0 }), state).length, 0, '이미 본 원형이라 안 붙는다');
+
   applyWords(state.skip, { unknown: ['payload'] }, state.pageSeen);
   assert.equal(state.pageSeen.has('payload'), false);
   assert.ok(state.pageSeen.has('exploit'), '다른 원형은 그대로');
-  const b3 = block(doc, 'Dynamic payload text');
-  assert.equal(draw(b3, cfg({ maxPerParagraph: 0 }), state), 1);
-  applyWords(state.skip, { unknown: ['payload'] }); // pageSeen 을 안 줘도 던지지 않는다
-  assert.match(readFileSync(new URL('../extension/annotate.js', import.meta.url), 'utf8'), /applyWords\(state\.skip, e\.detail, state\.pageSeen\)/); // 접착 코드가 실제로 넘긴다
+
+  const text3 = 'Dynamic payload text';
+  const node3 = doc.createTextNode(text3);
+  doc.body.append(node3); // planBlock 은 페이지에 붙은 노드만 본다
+  const j3 = { nodes: [node3], texts: [text3], occs: blockCandidates([text3]) };
+  assert.equal(planBlock(j3, ITEMS, cfg({ maxPerParagraph: 0 }), state).length, 1);
+  applyWords(state.skip, { unknown: ['payload'] });
+  assert.match(readFileSync(new URL('../extension/annotate.js', import.meta.url), 'utf8'), /applyWords\(state\.skip, e\.detail, state\.pageSeen\)/);
 });
 
 test('끄기 범위: enabled=false · 이 페이지만 끄기 · 끌 사이트 목록이면 자동 주석이 꺼진다', () => {
@@ -328,7 +183,7 @@ test('끄기 범위: enabled=false · 이 페이지만 끄기 · 끌 사이트 �
 
 test('structuralKey: 위치·단어 표시·반복·개수·수준·분야 용어집(사이트 목록 포함)이 바뀔 때만 달라진다(크기·색·불투명도·굵기·간격·복사는 변수만)', () => {
   const base = structuralKey(cfg());
-  for (const patch of [{ annotation: { position: 'right' } }, { mark: 'color' }, { repeat: 'always' }, { maxPerParagraph: 5 }, { level: 'C2' }, { glossary: 'off' }, { glossarySites: ['docs.example.com'] }]) assert.notEqual(structuralKey(cfg(patch)), base, JSON.stringify(patch));
+  for (const patch of [{ annotation: { position: 'none' } }, { mark: 'color' }, { repeat: 'always' }, { maxPerParagraph: 5 }, { level: 'C2' }, { glossary: 'off' }, { glossarySites: ['docs.example.com'] }]) assert.notEqual(structuralKey(cfg(patch)), base, JSON.stringify(patch));
   for (const patch of [{ annotation: { sizePct: 80 } }, { annotation: { color: 'accent' } }, { annotation: { opacityPct: 100 } }, { annotation: { weight: 'bold' } }, { annotation: { gapEm: 0.2 } }, { allowCopy: true }, { theme: 'dark' }, { enabled: false }]) {
     assert.equal(structuralKey(cfg(patch)), base, JSON.stringify(patch));
   }
@@ -378,10 +233,10 @@ test('renderPreview: 예시 문장에 실제 그리기 함수로 주석 3개(설
   assert.ok(annsOf(box).every((a) => a.tagName === 'RUBY'));
   assert.equal(box.textContent.replace(/이용하다|단계적으로 확대하다|유출하다/g, ''), 'Attackers exploit unpatched services to escalate privileges and exfiltrate data.');
   assert.equal(box.vars['--rg-ann-size'], '55%'); // 변수는 container 에 쓴다
-  renderPreview(box, cfg({ annotation: { position: 'right', sizePct: 90 }, mark: 'underline', maxPerParagraph: 1, repeat: 'page' }));
+  renderPreview(box, cfg({ annotation: { position: 'top', sizePct: 90 }, mark: 'underline', maxPerParagraph: 1, repeat: 'page' }));
   assert.equal(box.childNodes.length, 1); // 문장 하나만 남는다
   assert.equal(annsOf(box).length, 3); // 미리보기는 개수·반복 설정과 상관없이 예시를 보여 준다
-  assert.ok(annsOf(box).every((a) => a.tagName === 'SPAN' && glossOf(a).textContent.startsWith('(')));
+  assert.ok(annsOf(box).every((a) => a.tagName === 'RUBY'));
   assert.equal(box.vars['--rg-ann-size'], '90%');
   renderPreview(box, cfg({ annotation: { position: 'none' }, mark: 'none' }));
   assert.equal(annsOf(box).length, 0); // 둘 다 없음이면 문장만

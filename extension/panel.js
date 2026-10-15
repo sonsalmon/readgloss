@@ -51,14 +51,14 @@
   ];
   const CHOICES = [
     { path: 'repeat', options: [['page', '페이지에서 한 번'], ['paragraph', '문단마다 첫 등장'], ['always', '매번']] },
-    { path: 'annotation.position', options: [['top', '단어 위'], ['right', '단어 오른쪽'], ['none', '없음']] },
+    { path: 'annotation.position', options: [['top', '단어 위'], ['none', '없음']] },
     { path: 'annotation.color', options: [['text', '본문색'], ['accent', '강조색'], ['custom', '직접']] },
     { path: 'annotation.weight', options: [['light', '얇게'], ['normal', '보통'], ['bold', '굵게']] },
     { path: 'mark', options: [['none', '없음'], ['color', '글자색'], ['underline', '점선 밑줄'], ['background', '옅은 배경']] },
     { path: 'theme', options: [['auto', '자동'], ['light', '밝게'], ['dark', '어둡게']] },
     { path: 'glossary', options: [['auto', '자동'], ['off', '끄기']] },
   ];
-  const TOGGLES = [{ path: 'enabled' }, { path: 'allowCopy' }, { path: 'selectionTranslate' }, { path: 'floatingButton.show' }, { path: 'dimWhileReading' }];
+  const TOGGLES = [{ path: 'enabled' }, { path: 'selectionTranslate' }, { path: 'floatingButton.show' }, { path: 'dimWhileReading' }];
 
   // 슬라이더가 준 값(문자열 가능) -> 설정 patch. 범위·단계로 고치고, 숫자가 아니면 null.
   function sliderPatch(spec, raw) {

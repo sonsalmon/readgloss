@@ -14,7 +14,7 @@
   });
   const ENUMS = {
     level: LEVELS, repeat: ['page', 'paragraph', 'always'], mark: ['none', 'color', 'underline', 'background'], theme: ['auto', 'light', 'dark'], glossary: ['auto', 'off'],
-    position: ['top', 'right', 'none'], color: ['text', 'accent', 'custom'], weight: ['light', 'normal', 'bold'],
+    position: ['top', 'none'], color: ['text', 'accent', 'custom'], weight: ['light', 'normal', 'bold'],
   };
   const MAX_SITES = 200;
 
@@ -42,7 +42,7 @@
       maxPerParagraph: num(r.maxPerParagraph, 0, 10, D.maxPerParagraph),
       repeat: pickEnum(r.repeat, ENUMS.repeat, D.repeat),
       annotation: {
-        position: pickEnum(a.position, ENUMS.position, DA.position),
+        position: pickEnum(a.position === 'right' ? 'top' : a.position, ENUMS.position, DA.position),
         sizePct: num(a.sizePct, 40, 100, DA.sizePct),
         color: pickEnum(a.color, ENUMS.color, DA.color),
         customColor: typeof a.customColor === 'string' && /^#[0-9a-f]{6}$/i.test(a.customColor) ? a.customColor.toLowerCase() : DA.customColor,

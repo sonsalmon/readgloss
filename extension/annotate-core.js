@@ -207,6 +207,63 @@
     return spans.length;
   }
 
+  // DOM 을 바꾸지 않고 주석 위치와 정보를 계획한다: job = { nodes, texts, occs }, items, settings, state, existingCount.
+  // 돌려주는 값: [{ node, start, end, lemma, gloss }] (node = 텍스트 노드, start·end = 그 노드 안 글자 위치).
+  function planBlock(job, items, settings, state, existingCount = 0) {
+    const { position } = settings?.annotation ?? {};
+    if (position === 'none' && settings?.mark === 'none') return [];
+    const { nodes, texts, occs } = job;
+    const count = typeof existingCount === 'number'
+      ? existingCount
+      : (Array.isArray(existingCount) ? existingCount.length : 0);
+    const limit = settings.maxPerParagraph === 0 ? Infinity : Math.max(0, settings.maxPerParagraph - count);
+    if (limit <= 0) return [];
+    // 그 사이 페이지가 글을 바꾼 노드는 건드리지 않는다
+    const live = occs.filter((o) => nodes[o.node]?.isConnected && nodes[o.node]?.nodeValue === texts[o.node]);
+    const seen = settings.repeat === 'page'
+      ? state?.pageSeen
+      : settings.repeat === 'paragraph'
+        ? (Array.isArray(existingCount)
+          ? new Set(existingCount.map((e) => e.lemma).filter(Boolean))
+          : new Set())
+        : null;
+    const spans = chooseSpans(live, items, seen, { skip: state?.skip, limit });
+    return spans.map((sp) => ({
+      node: nodes[sp.node],
+      start: sp.start,
+      end: sp.end,
+      lemma: sp.lemma,
+      gloss: sp.gloss,
+    }));
+  }
+
+  // 위치 계산: 단어 사각형(rect) 위 가운데(가로 = 사각형 가운데 − 글자 폭/2, 세로 = 사각형 top − 글자 높이 − 1px)
+  function labelBox(rect, labelW, labelH) {
+    const width = rect.width ?? ((rect.right ?? rect.left) - rect.left);
+    const midX = rect.left + width / 2;
+    return {
+      left: midX - labelW / 2,
+      top: rect.top - labelH - 1,
+    };
+  }
+
+  // mark 설정(color/underline/background/none) -> ::highlight(readgloss-ann) CSS 글
+  function highlightCss(settings, dark = false) {
+    const mark = settings?.mark ?? 'none';
+    const accent = dark ? ACCENT_DARK : ACCENT;
+    const bg = dark ? 'rgba(107,155,255,.22)' : 'rgba(47,111,235,.14)';
+    if (mark === 'color') {
+      return `::highlight(readgloss-ann) { color: ${accent}; }`;
+    }
+    if (mark === 'underline') {
+      return `::highlight(readgloss-ann) { text-decoration: underline dotted; }`;
+    }
+    if (mark === 'background') {
+      return `::highlight(readgloss-ann) { background-color: ${bg}; }`;
+    }
+    return `::highlight(readgloss-ann) {}`;
+  }
+
   // ---- 모양: 공유 스타일시트 + CSS 변수 (계약 F) ----
   const ACCENT = '#2f6feb';
   const ACCENT_DARK = '#6b9bff';
@@ -287,7 +344,8 @@ span[data-readgloss="gloss"] { margin-inline-start: var(--rg-ann-gap, 0em); }
 
   globalThis.readglossAnnotate = {
     MAX_WORDS, MAX_ACRONYMS, candidates, blockCandidates, chooseSpans, splitText, chunk, isDarkColor,
-    enabledHere, annotating, structuralKey, applyWords, mydictKeys, makeAnnotation, unwrapAnnotations, annotateBlock, cssVars,
+    enabledHere, annotating, structuralKey, applyWords, mydictKeys, makeAnnotation, unwrapAnnotations, annotateBlock,
+    planBlock, labelBox, highlightCss, cssVars,
   };
   globalThis.readglossAnnotStyle = { sheet, css: ANNOT_CSS, apply, renderPreview };
 })();
