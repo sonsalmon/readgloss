@@ -9,7 +9,8 @@
   const PUNCT = '[\\s"\'“”‘’()\\[\\]{}<>.,;:!?…—–*_`/\\\\|-]*';
   const SELECTION = new RegExp(`^${PUNCT}([A-Za-z]+(?:['’-][A-Za-z]+)*)${PUNCT}$`);
 
-  const BLOCKED_SELECTOR = 'pre, code, input, textarea, [contenteditable]:not([contenteditable="false"])';
+  // 인라인 code(문장 속 `hyperplane`)는 허용, 코드 블록(pre)만 막는다
+  const BLOCKED_SELECTOR = 'pre, input, textarea, [contenteditable]:not([contenteditable="false"])';
 
   function isEnglishWord(s) {
     return typeof s === 'string' && s.length >= MIN_WORD && s.length <= MAX_WORD && WORD.test(s);

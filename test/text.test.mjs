@@ -80,8 +80,9 @@ test('positionBubble: 기본은 단어 아래, 공간이 없으면 위, 가로�
   );
 });
 
-test('BLOCKED_SELECTOR: pre, code, input, textarea, contenteditable', () => {
-  for (const s of ['pre', 'code', 'input', 'textarea', '[contenteditable]']) assert.ok(BLOCKED_SELECTOR.includes(s), s);
+test('BLOCKED_SELECTOR: pre, input, textarea, contenteditable (인라인 code는 허용)', () => {
+  for (const s of ['pre', 'input', 'textarea', '[contenteditable]']) assert.ok(BLOCKED_SELECTOR.includes(s), s);
+  assert.ok(!BLOCKED_SELECTOR.split(',').map((x) => x.trim()).includes('code'));
 });
 
 test('manifest 의 key 로 계산한 확장 ID 가 형식에 맞는다', () => {

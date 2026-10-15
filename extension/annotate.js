@@ -10,7 +10,7 @@
 
   const BLOCK = 'p, li, blockquote, dd, dt, td, th, h1, h2, h3, h4, h5, h6, figcaption';
   // 건드리지 않는 곳: 코드·입력창·편집 영역·이미 있는 ruby·우리가 넣은 노드(번역 블록 등)
-  const EXCLUDE = 'pre, code, kbd, samp, script, style, noscript, template, textarea, input, select, button, svg, ruby, [contenteditable]:not([contenteditable="false"]), [data-readgloss]';
+  const EXCLUDE = 'pre, kbd, samp, script, style, noscript, template, textarea, input, select, button, svg, ruby, [contenteditable]:not([contenteditable="false"]), [data-readgloss]';
   const FLUSH_MS = 50; // 한꺼번에 들어온 블록을 한 요청으로 묶는 시간
   const MUTATION_MS = 300;
   const RETRY_MS = 30_000; // 다리가 꺼져 있으면 이만큼 쉬고 다시 시도한다(최대 MAX_RETRIES 번 연속)
