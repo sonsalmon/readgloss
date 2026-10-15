@@ -58,7 +58,7 @@
     { path: 'theme', options: [['auto', '자동'], ['light', '밝게'], ['dark', '어둡게']] },
     { path: 'glossary', options: [['auto', '자동'], ['off', '끄기']] },
   ];
-  const TOGGLES = [{ path: 'enabled' }, { path: 'selectionTranslate' }, { path: 'floatingButton.show' }, { path: 'dimWhileReading' }];
+  const TOGGLES = [{ path: 'enabled' }, { path: 'selectionTranslate' }, { path: 'floatingButton.show' }, { path: 'dimWhileReading' }, { path: 'structureHints' }];
 
   // 슬라이더가 준 값(문자열 가능) -> 설정 patch. 범위·단계로 고치고, 숫자가 아니면 null.
   function sliderPatch(spec, raw) {
@@ -103,7 +103,7 @@
   }
 
   // 패널 위에 뜬 사전 카드(content.js 의 readgloss-card, 저장된 문장에서 더블클릭해 연 것), 확인 메시지(readgloss-toast), 개념 칸(readgloss-concept-form), 개념 카드(readgloss-concept-card), 메모장(readgloss-memo-pad)을 눌러도 패널은 닫지 않는다.
-  const isCardPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-card');
+  const isCardPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-card' || n?.localName === 'readgloss-struct-card');
   const isToastPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-toast');
   const isConceptPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-concept-form' || n?.localName === 'readgloss-concept-card');
   const isMemoPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-memo-pad');
@@ -678,6 +678,7 @@
     'annotation.color': '색', 'annotation.opacityPct': '불투명도', 'annotation.weight': '굵기', 'annotation.gapEm': '단어 간격',
     mark: '단어 표시', theme: '테마', glossary: '분야 용어집', enabled: '주석 켜기', allowCopy: '주석 글자 복사 허용', selectionTranslate: '드래그 번역', 'floatingButton.show': '떠 있는 버튼 보이기',
     opacityInput: '입력 칸 투명도', opacityUi: '나머지 투명도', dimWhileReading: '읽는 동안 흐리게',
+    structureHints: '문장 구조 표시',
   };
   const LEVEL_HINT = {
     A2: 'A2 이상: 거의 모든 단어에 뜻이 붙어요',
@@ -872,7 +873,7 @@
       h('h3', { class: 'sec', text: '켜기' }), toggle('enabled'), offRow,
       h('h3', { class: 'sec', text: '어떤 단어에' }), slider('level'), slider('maxPerParagraph'), choice('repeat'), choice('glossary', null, '전치행렬처럼 분야 용어로 보여 줘요. 끄면 사전 뜻만 나와요.'), glossBox,
       h('h3', { class: 'sec', text: '주석 모양' }), choice('annotation.position'), slider('annotation.sizePct'), choice('annotation.color', color),
-      slider('annotation.opacityPct'), choice('annotation.weight'), slider('annotation.gapEm'),
+      slider('annotation.opacityPct'), choice('annotation.weight'), slider('annotation.gapEm'), toggle('structureHints'),
       h('h3', { class: 'sec', text: '내게 맞추기' }), autoRow, offsetRow, statsHint, adaptiveMsg,
       h('h3', { class: 'sec', text: '단어 표시' }), choice('mark'),
       h('h3', { class: 'sec', text: '화면' }), slider('opacityInput'), slider('opacityUi'), toggle('dimWhileReading', '메모할 때만 진해지고, 읽을 때는 설정한 투명도로 보여요.'),

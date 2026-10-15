@@ -58,7 +58,7 @@ test('계약 9 접착: 사전 카드가 저장 문맥·출처를 쓰고, 패널 
   assert.match(content, /globalThis\.readglossSelection\.lookupExtras\(d\)/);
   assert.match(content, /document\.documentElement\.append\(host\)/, '카드 호스트를 문서 끝(패널 뒤)에 붙인다');
   const panel = read('panel.js');
-  assert.match(panel, /const isCardPath = \(path\) => Array\.isArray\(path\) && path\.some\(\(n\) => n\?\.localName === 'readgloss-card'\)/);
+  assert.match(panel, /const isCardPath = \(path\) => Array\.isArray\(path\) && path\.some\(\(n\) => n\?\.localName === 'readgloss-card'( \|\| n\?\.localName === 'readgloss-struct-card')?\)/); // T42: 문장 구조 카드도
   assert.match(panel, /!path\.includes\(host\) && !C\.isCardPath\(path\)/);
   assert.match(panel, /!e\.readglossCardClosed/);
 });

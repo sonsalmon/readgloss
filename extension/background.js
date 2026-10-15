@@ -538,5 +538,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true; // 비동기 응답
 });
 
+// --- 문장 구조(T42b): content script 의 'structure' 요청을 다리 /explain-structure 로 전달한다. ---
+async function explainStructure({ sentence, phrase, title }, retried = false) {
+  const token = await getToken(retried);
+  if (!token) return { error: 'pair-failed' };
+  const res = await bridgeFetch('/explain-structure', {
+    method: 'POST',
+    headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sentence, phrase, title }),
+  });
+  if (res.status === 401 && !retried) return explainStructure({ sentence, phrase, title }, true);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: data.error || `http-${res.status}` };
+  return data;
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'structure') return;
+  explainStructure(msg).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
+  return true; // 비동기 응답
+});
+
+
 
 

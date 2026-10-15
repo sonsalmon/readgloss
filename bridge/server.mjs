@@ -28,6 +28,7 @@ import { createMemos, parseMemoOp } from './memos.mjs';
 import { createTutorQuote } from './tutor-quote.mjs';
 import { createStudyTime, parseStudyTimeOp, parseStudyTimeRange } from './study-time.mjs';
 import { adjustOffset, createWstat, LEMMA_RE, probability, threshold } from './wstat.mjs';
+import { createStructure } from './structure.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
@@ -108,7 +109,7 @@ function sendAiError(res, e, cors) {
 }
 
 // ask({word, sentence, context?}) / askTranslate(문단, 용어 지정 목록) / askContext(프롬프트 문자열) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
-export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), dbFile = join(dirname(cacheFile), 'readgloss.db'), learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career'), tutorSessionsDir = join(homedir(), '.aside', 'u', '0', 'sessions'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
+export function createBridge({ ask, askTranslate, askContext, askStructure = askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), structureFile = join(dirname(cacheFile), 'structure-explanations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), dbFile = join(dirname(cacheFile), 'readgloss.db'), learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career'), tutorSessionsDir = join(homedir(), '.aside', 'u', '0', 'sessions'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
   const dataDir = dirname(cacheFile);
   const dbExisted = existsSync(dbFile);
   // db 를 못 열거나 옮기기가 실패하면 JSON 으로 계속 돈다(변경 기록 11-2). 단, db 파일이 이미 있었는데 openDb 가 실패하면 예외를 던진다.
@@ -146,6 +147,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
   const lookup = createLookup({ cache: createCache(cacheFile), ask });
   const translate = createTranslate({ cache: createCache(translationsFile), ask: askTranslate });
   const contextTranslate = createContextTranslate({ cache: createCache(contextFile), ask: askContext });
+  const structure = createStructure({ cache: createCache(structureFile), ask: askStructure, db, now });
   const words = db ? createWords({ db, now }) : createWords({ file: wordsFile, now });
   const glossary = createGlossary();
   const mydict = db ? createMydict({ db, now }) : createMydict({ file: mydictFile, now });
@@ -726,6 +728,41 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     return send(res, 200, { ok: true }, cors);
   }
 
+  // 문장 구조 풀이: POST /explain-structure { sentence(1~600), phrase(1~60), title(<=300)? }
+  async function handleExplainStructure(req, res, cors) {
+    const { value, status } = await readJson(req, MAX_WIDE_BODY);
+    if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return send(res, 400, { error: 'bad-request' }, cors);
+    }
+    const { sentence, phrase, title, force } = value;
+    if (typeof sentence !== 'string' || sentence.length < 1 || sentence.length > 600 || !sentence.trim()) {
+      return send(res, 400, { error: 'bad-request' }, cors);
+    }
+    if (typeof phrase !== 'string' || phrase.length < 1 || phrase.length > 60 || !phrase.trim()) {
+      return send(res, 400, { error: 'bad-request' }, cors);
+    }
+    if (title !== undefined && title !== null && (typeof title !== 'string' || title.length > 300)) {
+      return send(res, 400, { error: 'bad-request' }, cors);
+    }
+    try {
+      const r = await structure.explain({
+        sentence,
+        phrase,
+        title: typeof title === 'string' ? title : undefined,
+        force: force === true,
+      });
+      send(res, 200, r, cors);
+    } catch (e) {
+      sendAiError(res, e, cors);
+    }
+  }
+
+  // 문장 구조 통계: GET /explain-structure/stats -> { patterns: [{ pattern, opened }] }
+  function handleExplainStructureStats(req, res, cors) {
+    send(res, 200, structure.stats(), cors);
+  }
+
   async function handle(req, res) {
     // 1. Host 가 고정값이 아니면 거절. 2. Origin 이 있는데 내 확장이 아니면 거절(토큰 유무와 무관).
     if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, { error: 'forbidden' });
@@ -813,6 +850,14 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleStudyTime(req, res, cors);
     }
+    if (path === '/explain-structure') {
+      if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleExplainStructure(req, res, cors);
+    }
+    if (path === '/explain-structure/stats') {
+      if (req.method !== 'GET') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleExplainStructureStats(req, res, cors);
+    }
     return send(res, 404, { error: 'not-found' }, cors);
   }
 
@@ -830,6 +875,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     thresholdFor,
     annotate,
     buildSignals,
+    structure,
     // 127.0.0.1 에만 바인딩한다. port 0 이면 임시 포트(테스트용). 실제 포트를 돌려준다.
     listen: (port = PORT) =>
       new Promise((resolve, reject) => {
@@ -866,6 +912,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
     ask: async (a) => (await client.ask(buildPrompt(a))).text,
     askTranslate: async (text, terms) => (await client.ask(buildTranslatePrompt(text, terms), { timeoutMs: 60_000 })).text,
     askContext: async (prompt) => (await client.ask(prompt)).text,
+    askStructure: async (prompt) => (await client.ask(prompt)).text,
     cacheFile: join(dataDir, 'cache.json'),
     tokenFile: join(dataDir, 'token'),
     extensionId,

@@ -8,6 +8,7 @@
     annotation: { position: 'top', sizePct: 55, color: 'text', customColor: '#2f6feb', opacityPct: 70, weight: 'normal', gapEm: 0 },
     mark: 'none', allowCopy: false, selectionTranslate: true, theme: 'auto', glossary: 'auto', sites: [],
     opacityInput: 100, opacityUi: 100, dimWhileReading: true,
+    structureHints: true,
     // 분야 용어집(보안·ML·수학)을 켤 사이트. 규칙은 sites 와 같다.
     glossarySites: Object.freeze(['academy.hackthebox.com', 'app.hackthebox.com', 'portswigger.net', 'owasp.org', '*.owasp.org', 'book.hacktricks.xyz', 'book.hacktricks.wiki', 'cloud.hacktricks.xyz', 'hacktricks.wiki', '*.hacktricks.wiki', 'tryhackme.com', 'attack.mitre.org', 'atlas.mitre.org', 'cwe.mitre.org', 'nvd.nist.gov', 'www.exploit-db.com', 'gtfobins.github.io', 'lolbas-project.github.io', 'arxiv.org']),
     floatingButton: { show: true, top: 60 },
@@ -63,6 +64,7 @@
       glossarySites: cleanList(Array.isArray(r.glossarySites) ? r.glossarySites : D.glossarySites),
       // 위쪽 한계(창 높이-40)는 창 크기를 아는 쪽(버튼)이 맞춘다. 여기서는 40 이상만 보장.
       floatingButton: { show: bool(f.show, DF.show), top: num(f.top, 40, Infinity, DF.top) },
+      structureHints: bool(r.structureHints, D.structureHints),
     };
   }
 
