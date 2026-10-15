@@ -136,11 +136,25 @@
     return typeof msSinceLeave === 'number' && msSinceLeave >= 350;
   }
 
+  // 순수 함수: 주석 양 자동 조절 offset 문구(T41b)
+  function offsetLabel(offset) {
+    const n = typeof offset === 'number' ? offset : Number(offset);
+    if (!Number.isFinite(n) || Math.abs(n) < 0.0001) {
+      return '자동 조절: 0 (그대로)';
+    }
+    if (n > 0) {
+      const v = n.toFixed(2);
+      return `자동 조절: +${v} (주석 줄임)`;
+    }
+    const v = Math.abs(n).toFixed(2);
+    return `자동 조절: −${v} (주석 늘림)`;
+  }
+
   globalThis.readglossPanelCore = {
     getPath, patchFor, sortTabs, mountPane, levelIndex, levelAt, RANGES, CHOICES, TOGGLES, sliderPatch, sliderValue,
     cleanSite, addSite, removeSite, resetPatch, clampTop, dragTop, mergePatch, themeAttr, isCardPath, isToastPath,
     isConceptPath, isMemoPath,
-    pageTranslateMenu, pageTranslateAction, studyModeText, studyModeToggle, menuShouldClose, MAX_SITES,
+    pageTranslateMenu, pageTranslateAction, studyModeText, studyModeToggle, menuShouldClose, offsetLabel, MAX_SITES,
   };
 
   if (typeof document === 'undefined' || globalThis.readglossPanelLoaded) return; // node 시험·중복 주입: 여기까지
@@ -792,12 +806,74 @@
       ctx.setSettings(C.resetPatch(S.DEFAULTS));
     });
 
+    // 내게 맞추기(T41b): 주석 양 자동 조절 스위치, offset 표시 및 되돌리기, 7일 통계
+    const autoInput = h('input', { type: 'checkbox' });
+    const autoRow = h('div', { class: 'row' },
+      h('label', { class: 'check' }, autoInput, h('span', {}, '주석 양 자동 맞추기'))
+    );
+    const offsetSpan = h('span', { text: C.offsetLabel(0) });
+    const offsetResetBtn = h('button', { class: 'btn', type: 'button', text: '되돌리기' });
+    const offsetRow = h('div', { class: 'row' },
+      h('div', { class: 'rowhead' }, offsetSpan, offsetResetBtn)
+    );
+    const statsHint = h('p', { class: 'hint', text: '지난 7일: 뜬 주석 0 · 본 것 0 · 주석 없이 찾아본 단어 0' });
+    const adaptiveMsg = h('p', { class: 'msg', role: 'status' });
+    adaptiveMsg.hidden = true;
+
+    async function loadAdaptiveStats() {
+      const r = await ctx.send({ type: 'annotate-stats', op: 'get' });
+      if (!r || r.error) {
+        adaptiveMsg.textContent = '다리에 연결하지 못했어요';
+        adaptiveMsg.hidden = false;
+        return;
+      }
+      adaptiveMsg.hidden = true;
+      adaptiveMsg.textContent = '';
+      autoInput.checked = r.auto !== false;
+      offsetSpan.textContent = C.offsetLabel(r.offset ?? 0);
+      const l7 = r.last7 || {};
+      const shown = Number(l7.shown) || 0;
+      const seen = Number(l7.seen) || 0;
+      const missed = Number(l7.missedLookups) || 0;
+      statsHint.textContent = `지난 7일: 뜬 주석 ${shown} · 본 것 ${seen} · 주석 없이 찾아본 단어 ${missed}`;
+    }
+
+    autoInput.addEventListener('change', async () => {
+      const nextOn = autoInput.checked;
+      const r = await ctx.send({ type: 'annotate-stats', op: 'auto', on: nextOn });
+      if (r?.error) {
+        adaptiveMsg.textContent = '다리에 연결하지 못했어요';
+        adaptiveMsg.hidden = false;
+        autoInput.checked = !nextOn;
+      } else {
+        await loadAdaptiveStats();
+      }
+    });
+
+    offsetResetBtn.addEventListener('click', async () => {
+      offsetResetBtn.disabled = true;
+      try {
+        const r = await ctx.send({ type: 'annotate-stats', op: 'reset' });
+        if (r?.error) {
+          adaptiveMsg.textContent = '다리에 연결하지 못했어요';
+          adaptiveMsg.hidden = false;
+        } else {
+          await loadAdaptiveStats();
+        }
+      } finally {
+        offsetResetBtn.disabled = false;
+      }
+    });
+
+    loadAdaptiveStats();
+
     box.append(
       previewBox,
       h('h3', { class: 'sec', text: '켜기' }), toggle('enabled'), offRow,
       h('h3', { class: 'sec', text: '어떤 단어에' }), slider('level'), slider('maxPerParagraph'), choice('repeat'), choice('glossary', null, '전치행렬처럼 분야 용어로 보여 줘요. 끄면 사전 뜻만 나와요.'), glossBox,
       h('h3', { class: 'sec', text: '주석 모양' }), choice('annotation.position'), slider('annotation.sizePct'), choice('annotation.color', color),
       slider('annotation.opacityPct'), choice('annotation.weight'), slider('annotation.gapEm'),
+      h('h3', { class: 'sec', text: '내게 맞추기' }), autoRow, offsetRow, statsHint, adaptiveMsg,
       h('h3', { class: 'sec', text: '단어 표시' }), choice('mark'),
       h('h3', { class: 'sec', text: '화면' }), slider('opacityInput'), slider('opacityUi'), toggle('dimWhileReading', '메모할 때만 진해지고, 읽을 때는 설정한 투명도로 보여요.'),
       h('h3', { class: 'sec', text: '기타' }), toggle('allowCopy', '체크하지 않으면 복사할 때 주석 글자가 섞이지 않아요.'), toggle('selectionTranslate', '글을 드래그하면 맥 번역 카드가 떠요. 한 단어는 사전 카드로 열려요.'), choice('theme'), toggle('floatingButton.show', '숨겨도 브라우저 툴바의 readgloss 아이콘으로 패널을 열 수 있어요.'),

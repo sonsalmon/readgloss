@@ -27,11 +27,13 @@ import { createConcepts, parseConceptOp } from './concepts.mjs';
 import { createMemos, parseMemoOp } from './memos.mjs';
 import { createTutorQuote } from './tutor-quote.mjs';
 import { createStudyTime, parseStudyTimeOp, parseStudyTimeRange } from './study-time.mjs';
+import { adjustOffset, createWstat, LEMMA_RE, probability, threshold } from './wstat.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
 const MAX_BODY = 16 * 1024;
 const MAX_WORDS_BODY = 24 * 1024;
+const MAX_ANNOTATE_STATS_BODY = 64 * 1024;
 const MAX_STUDY_TIME_BODY = 256 * 1024; // /study-time 항목이 많이 쌓였을 때를 위한 본문 상한
 const MAX_WIDE_BODY = 64 * 1024; // /translate-context·/lookup 은 "더 넓은 문맥"을 실을 수 있어 본문 상한이 크다
 const MAX_ACRONYMS = 100;
@@ -136,6 +138,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
   const concepts = db ? createConcepts({ db, now, learning: () => loadLearning(learningDir) }) : null;
   const memos = db ? createMemos({ db, now }) : null;
   const tutorQuote = createTutorQuote({ sessionsDir: tutorSessionsDir, now });
+  const wstat = db ? createWstat({ db, now }) : null;
 
   const taskGuessCache = new Map();
   const TASK_GUESS_TTL = 10 * 60 * 1000; // 10분 캐시 (600000ms)
@@ -201,7 +204,43 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
 
   const studyTime = db ? createStudyTime({ db, guessTaskFor: guessTaskForUrl, now }) : null;
   const levels = loadWordLevels();
-  const annotate = createAnnotate({ dict, levels, isKnown: words.isKnown, glossary, mydict });
+
+  let lookupsCache = null;
+  let lookupsCacheTs = 0;
+  const LOOKUPS_TTL = 60 * 1000;
+  function getLookups(days = 60) {
+    const t = typeof now === 'function' ? now() : now;
+    if (days === 60) {
+      if (!lookupsCache || t - lookupsCacheTs >= LOOKUPS_TTL) {
+        lookupsCache = study.lookups(60);
+        lookupsCacheTs = t;
+      }
+      return lookupsCache;
+    }
+    return study.lookups(days);
+  }
+
+  function scoreOf(lemma, level, surface) {
+    const saved = Boolean(words.all().saved?.[lemma]);
+    const lookupsMap = getLookups(60);
+    const n1 = lookupsMap.get(lemma) ?? 0;
+    const n2 = (surface && surface !== lemma) ? (lookupsMap.get(surface) ?? 0) : 0;
+    const totalLookups = n1 + n2;
+    const stat = wstat ? wstat.get(lemma) : null;
+    return probability({ level, saved, lookups: totalLookups, stat });
+  }
+  scoreOf.hasSavedOrLookup = (word) => {
+    if (Boolean(words.all().saved?.[word])) return true;
+    const lookupsMap = getLookups(60);
+    return (lookupsMap.get(word) ?? 0) > 0;
+  };
+
+  function thresholdFor(level) {
+    const offset = wstat ? wstat.getOffset() : 0;
+    return threshold(level, offset);
+  }
+
+  const annotate = createAnnotate({ dict, levels, isKnown: words.isKnown, glossary, mydict, scoreOf, thresholdFor });
   const mine = `chrome-extension://${extensionId}`;
 
   const tokenOk = (h) => {
@@ -352,12 +391,111 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     if (!Array.isArray(words) || words.some((w) => typeof w !== 'string') || !ANNOTATE_LEVELS.includes(level)) return send(res, 400, { error: 'bad-request' }, cors);
     if (!Array.isArray(acronyms) || acronyms.some((a) => typeof a !== 'string')) return send(res, 400, { error: 'bad-request' }, cors);
     if (words.length > MAX_ANNOTATE_WORDS || acronyms.length > MAX_ACRONYMS) return send(res, 413, { error: 'too-large' }, cors);
+
+    // 하루 한 번 자동 조절: annot_offset_day 가 오늘이 아니고 auto 가 켜져 있으면
+    if (wstat && wstat.getAuto()) {
+      const today = dateOf(typeof now === 'function' ? now() : now);
+      const lastDay = wstat.getOffsetDay();
+      if (lastDay !== today) {
+        const last7 = wstat.last7();
+        const dictLookups7 = getLookups(7);
+        let missedLookups = 0;
+        for (const word of dictLookups7.keys()) {
+          const stat = wstat.get(word);
+          if (!stat || !stat.shown || stat.shown === 0) {
+            missedLookups++;
+          }
+        }
+        const curOffset = wstat.getOffset();
+        const newOffset = adjustOffset({ offset: curOffset, shown: last7.shown, seen: last7.seen, missedLookups });
+        wstat.setOffset(newOffset);
+        wstat.setOffsetDay(today);
+      }
+    }
+
     try {
       send(res, 200, { items: await annotate(words.map((w) => w.toLowerCase()).filter((w) => WORD_RE.test(w)), level, glossary.domains(value), acronyms.filter((a) => ACRONYM_RE.test(a))) }, cors);
     } catch (e) {
       if (e instanceof DictUnavailableError) send(res, 503, { error: 'dict-unavailable' }, cors);
       else send(res, 502, { error: 'dict-failed' }, cors);
     }
+  }
+
+  // 주석 통계 및 기준선 조절: GET -> { offset, auto, updated, last7:{shown, seen, missedLookups} }, POST { shown, seen } | { op:'reset' } | { op:'auto', on }
+  async function handleAnnotateStats(req, res, cors) {
+    if (!wstat) return send(res, 503, { error: 'no-db' }, cors);
+
+    if (req.method === 'GET') {
+      const offset = wstat.getOffset();
+      const auto = wstat.getAuto();
+      const updated = wstat.getOffsetDay() ?? null;
+      const last7Stats = wstat.last7();
+      const dictLookups7 = getLookups(7);
+      let missedLookups = 0;
+      for (const word of dictLookups7.keys()) {
+        const stat = wstat.get(word);
+        if (!stat || !stat.shown || stat.shown === 0) {
+          missedLookups++;
+        }
+      }
+      return send(res, 200, {
+        offset,
+        auto,
+        updated,
+        last7: {
+          shown: last7Stats.shown,
+          seen: last7Stats.seen,
+          missedLookups,
+        },
+      }, cors);
+    }
+
+    if (req.method === 'POST') {
+      const { value, status } = await readJson(req, MAX_ANNOTATE_STATS_BODY);
+      if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return send(res, 400, { error: 'bad-request' }, cors);
+
+      if (value.op === 'reset') {
+        wstat.setOffset(0);
+        return send(res, 200, { ok: true, offset: 0 }, cors);
+      }
+
+      if (value.op === 'auto') {
+        if (typeof value.on !== 'boolean') return send(res, 400, { error: 'bad-request' }, cors);
+        wstat.setAuto(value.on);
+        return send(res, 200, { ok: true, auto: value.on }, cors);
+      }
+
+      if (value.op !== undefined) {
+        return send(res, 400, { error: 'bad-request' }, cors);
+      }
+
+      const { shown, seen } = value;
+      const hasShown = shown !== undefined;
+      const hasSeen = seen !== undefined;
+      if (!hasShown && !hasSeen) return send(res, 400, { error: 'bad-request' }, cors);
+
+      if (hasShown) {
+        if (!Array.isArray(shown) || shown.length > 500) return send(res, 400, { error: 'bad-request' }, cors);
+        for (const w of shown) {
+          if (typeof w !== 'string' || !LEMMA_RE.test(w.toLowerCase())) return send(res, 400, { error: 'bad-request' }, cors);
+        }
+      }
+      if (hasSeen) {
+        if (!Array.isArray(seen) || seen.length > 500) return send(res, 400, { error: 'bad-request' }, cors);
+        for (const w of seen) {
+          if (typeof w !== 'string' || !LEMMA_RE.test(w.toLowerCase())) return send(res, 400, { error: 'bad-request' }, cors);
+        }
+      }
+
+      wstat.record({
+        shown: hasShown ? shown.map((w) => w.toLowerCase()) : [],
+        seen: hasSeen ? seen.map((w) => w.toLowerCase()) : [],
+      });
+      return send(res, 200, { ok: true }, cors);
+    }
+
+    return send(res, 405, { error: 'method-not-allowed' }, cors);
   }
 
   // 내 단어: GET -> { known, saved, history }, POST { op, lemma, ... } -> 바뀐 같은 모양의 상태
@@ -566,6 +704,10 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     if (path === '/annotate') {
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleAnnotate(req, res, cors);
+    }
+    if (path === '/annotate-stats') {
+      if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleAnnotateStats(req, res, cors);
     }
     if (path === '/words') {
       if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);

@@ -90,5 +90,23 @@ export function createStudy({ file, now = Date.now }) {
       }
       return { days: out };
     },
+    // 최근 days 일(오늘 포함, 로컬 날짜) 동안 사전(dict)으로 찾아본 글(소문자)별 횟수 Map.
+    lookups(days = MAX_DAYS) {
+      const t = now();
+      const validDates = new Set();
+      for (let i = 0; i < days; i++) {
+        const d = new Date(t);
+        d.setDate(d.getDate() - i);
+        validDates.add(dateOf(d.getTime()));
+      }
+      const counts = new Map();
+      for (const v of readAll(file)) {
+        if (v.kind !== 'dict' || v.ts > t || !validDates.has(dateOf(v.ts))) continue;
+        const word = typeof v.text === 'string' ? v.text.trim().toLowerCase() : '';
+        if (!word) continue;
+        counts.set(word, (counts.get(word) ?? 0) + 1);
+      }
+      return counts;
+    },
   };
 }

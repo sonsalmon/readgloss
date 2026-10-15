@@ -504,4 +504,39 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true; // 비동기 응답
 });
 
+// --- 주석 통계 및 내게 맞추기(T41b): content script·패널의 'annotate-stats' 요청을 다리 /annotate-stats 로 전달한다. ---
+async function annotateStats(msg, retried = false) {
+  const token = await getToken(retried);
+  if (!token) return { error: 'pair-failed' };
+  const { op, on, shown, seen } = msg;
+  let path = '/annotate-stats';
+  let init;
+  if (op === 'get') {
+    init = { headers: { 'X-Bridge-Token': token } };
+  } else {
+    const body = {};
+    if (op !== undefined) body.op = op;
+    if (on !== undefined) body.on = on;
+    if (shown !== undefined) body.shown = shown;
+    if (seen !== undefined) body.seen = seen;
+    init = {
+      method: 'POST',
+      headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    };
+  }
+  const res = await bridgeFetch(path, init);
+  if (res.status === 401 && !retried) return annotateStats(msg, true);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: data.error || `http-${res.status}` };
+  return data;
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'annotate-stats') return;
+  annotateStats(msg).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
+  return true; // 비동기 응답
+});
+
+
 

@@ -1,6 +1,7 @@
 // 어려운 영어 단어 판정과 짧은 한국어 뜻(/annotate). AI 는 쓰지 않는다: 분야 용어집 → 활성 분야 표시가 붙은 사전 뜻 → 맥 영한사전 첫 표제어의 첫 뜻 순으로 다듬는다.
 import { readFileSync } from 'node:fs';
 import { createGlossary } from './glossary.mjs';
+import { baseP, threshold } from './wstat.mjs';
 
 export const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 export const DEFAULT_LEVEL = 'B2';
@@ -141,7 +142,7 @@ export function pickEntry(entries, word) {
 // domains(활성 분야, 우선순위 순)에 용어집 뜻이 있으면 gloss 를 그 뜻으로 바꾸고 term:true, domain 을 붙인다. 용어집에 없고 사전 뜻에 활성 분야 표시(〔수학〕 등)가 있으면 그 뜻을 쓴다. 용어집 덮어쓰기는 사전 캐시(known) 밖에서 해서 분야마다 뜻이 달라도 캐시가 섞이지 않는다.
 // mydict: createMydict() 같은 { find(word), get(key) }. 내 사전은 가장 우선이라 기준 등급·아는 단어 판정·사전 캐시 앞에서, 캐시 밖에서 읽는다(바뀌면 바로 반영).
 // 돌려주는 함수의 넷째 인자 acronyms(원래 대문자 철자 목록)는 키 = 원래 철자인 { lemma, gloss, term:true, acronym:true, domain|mine } 항목을 더한다. 맥 사전은 안 부른다.
-export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () => false, glossary = createGlossary(), mydict = { find: () => null, get: () => null } }) {
+export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () => false, glossary = createGlossary(), mydict = { find: () => null, get: () => null }, scoreOf, thresholdFor }) {
   const known = new Map(); // 낱말 -> { lemma, level, gloss(첫 뜻), tagged(분야 표시 뜻 목록) } | null(사전에 없음·뜻 없음). 기준 등급·분야와 무관해서 달라도 재사용한다. 분야에 맞는 뜻은 매번 고른다.
   const rank = (l) => LEVELS.indexOf(l);
 
@@ -161,6 +162,7 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
 
   return async function annotate(words, level = DEFAULT_LEVEL, domains = [], acronyms = []) {
     const min = rank(level);
+    const th = thresholdFor ? thresholdFor(level) : threshold(level, 0);
     const items = {};
     // 약어: 내 사전(분야와 무관) -> 약어집(그 약어의 분야가 활성일 때만). 아는 단어(원형 = 소문자 철자)는 뺀다.
     for (const a of new Set(acronyms)) {
@@ -179,8 +181,19 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
         continue;
       }
       // ponytail: 표면형이 목록에서 이미 기준 미만이면 원형 확인 없이 쉬움. 흔한 단어는 표제어가 많아 사전이 20ms 쯤 걸리기 때문이고, 어긋나면 주석이 덜 붙을 뿐이다.
+      // scoreOf가 있을 때: 그 등급의 바탕 p가 기준보다 낮고 표면형이 단어장·찾아본 기록에 없으면 사전 없이 건너뛴다(감소는 p를 낮출 뿐이라 결과가 같다).
       const own = levels.get(w);
-      if (own !== undefined && rank(own) < min) continue;
+      if (scoreOf) {
+        const bp = own !== undefined ? baseP(own) : null;
+        if (bp !== null && bp < th - 1e-9) {
+          const hasSavedOrLookup = typeof scoreOf.hasSavedOrLookup === 'function'
+            ? scoreOf.hasSavedOrLookup(w)
+            : (scoreOf(w, own) >= 0.90);
+          if (!hasSavedOrLookup) continue;
+        }
+      } else {
+        if (own !== undefined && rank(own) < min) continue;
+      }
       if (isKnown(w)) continue; // 표면형이 곧 아는 원형이면 사전도 안 부른다
       // 용어집에 철자(복수형 포함)가 있으면 사전은 안 부른다: 용어집 단어는 사전에 없거나 엉뚱한 뜻이 첫 줄인 일이 많다.
       let v;
@@ -193,7 +206,14 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
         else if (v) v = { lemma: v.lemma, level: v.level, gloss: (isCommon(v.level) ? null : pickSense(v.tagged, domains))?.ko ?? v.gloss }; // 용어집에 없으면 활성 분야의 사전 표시 뜻(흔한 낱말 제외), 없으면 첫 뜻
       }
       // 아는 단어 판정은 캐시(resolve) 밖에서 한다: 취소하면 사전을 다시 부르지 않고 바로 다시 나온다
-      if (v && !isKnown(v.lemma) && (v.level === null || rank(v.level) >= min)) items[w] = v;
+      if (v && !isKnown(v.lemma)) {
+        if (scoreOf) {
+          const p = scoreOf(v.lemma, v.level, w);
+          if (p >= th - 1e-9) items[w] = v;
+        } else {
+          if (v.level === null || rank(v.level) >= min) items[w] = v;
+        }
+      }
     }
     return items;
   };

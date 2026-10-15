@@ -44,6 +44,100 @@
   let cacheHint = ''; // 캐시를 채울 때의 용어집 힌트 키
   const state = { pageSeen: new Set(), skip: new Set() }; // pageSeen: 이미 주석 붙인 원형, skip: 아는 단어 원형
 
+  // 통계 수집(T41b): shown·seen 원형
+  const statsPageShown = new Set(); // 이 페이지에서 이미 shown 수집한 원형(페이지당 1회)
+  const statsPageSeen = new Set(); // 이 페이지에서 이미 seen 수집한 원형(페이지당 1회)
+  const statsShownQueue = new Set(); // 다리로 보낼 shown 큐
+  const statsSeenQueue = new Set(); // 다리로 보낼 seen 큐
+  let statsFlushTimer = 0;
+  let lastMouseMoveTime = 0;
+  let hoverLemma = null;
+  let hoverTimer = 0;
+
+  function markShown(lemma) {
+    if (!running || !lemma || statsPageShown.has(lemma)) return;
+    statsPageShown.add(lemma);
+    if (statsShownQueue.size < 500) statsShownQueue.add(lemma);
+  }
+
+  function markSeen(lemma) {
+    if (!running || !lemma || statsPageSeen.has(lemma)) return;
+    statsPageSeen.add(lemma);
+    if (statsSeenQueue.size < 500) statsSeenQueue.add(lemma);
+  }
+
+  function flushStats() {
+    if (!running) return;
+    if (statsShownQueue.size === 0 && statsSeenQueue.size === 0) return;
+    const shown = [...statsShownQueue].slice(0, 500);
+    const seen = [...statsSeenQueue].slice(0, 500);
+    statsShownQueue.clear();
+    statsSeenQueue.clear();
+    try {
+      chrome.runtime.sendMessage({ type: 'annotate-stats', shown, seen }).catch(() => {});
+    } catch {
+      // 실패하면 버린다(통계라 잃어도 됨)
+    }
+  }
+
+  function findEntryAt(x, y) {
+    if (!running) return null;
+    for (const block of nearBlocks) {
+      const list = entriesByBlock.get(block);
+      if (!list) continue;
+      for (const entry of list) {
+        if (!entry.range || !entry.lemma) continue;
+        const rects = entry.range.getClientRects();
+        if (!rects || !rects.length) continue;
+        for (let i = 0; i < rects.length; i++) {
+          const r = rects[i];
+          if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+            return entry;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  function onMouseMove(e) {
+    if (!running) {
+      if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = 0; hoverLemma = null; }
+      return;
+    }
+    const now = Date.now();
+    if (now - lastMouseMoveTime < 100) return;
+    lastMouseMoveTime = now;
+
+    const entry = findEntryAt(e.clientX, e.clientY);
+    if (entry?.lemma) {
+      if (hoverLemma === entry.lemma) {
+        // 같은 단어 위: 타이머 유지
+      } else {
+        if (hoverTimer) clearTimeout(hoverTimer);
+        hoverLemma = entry.lemma;
+        hoverTimer = setTimeout(() => {
+          hoverTimer = 0;
+          if (running && hoverLemma) markSeen(hoverLemma);
+        }, 600);
+      }
+    } else {
+      if (hoverTimer) {
+        clearTimeout(hoverTimer);
+        hoverTimer = 0;
+      }
+      hoverLemma = null;
+    }
+  }
+
+  function onDblClick(e) {
+    if (!running) return;
+    const entry = findEntryAt(e.clientX, e.clientY);
+    if (entry?.lemma) {
+      markSeen(entry.lemma);
+    }
+  }
+
   let layerHost = null;
   let layerShadow = null;
   let highlightSheet = null;
@@ -408,6 +502,7 @@
         u.entry.label.style.left = `${u.left}px`;
         u.entry.label.style.top = `${u.top}px`;
         u.entry.label.style.visibility = 'visible';
+        if (u.entry.lemma) markShown(u.entry.lemma);
       } else {
         u.entry.label.style.visibility = 'hidden';
       }
@@ -514,6 +609,9 @@
     document.addEventListener('scroll', scheduleUpdate, { capture: true, passive: true });
     window.addEventListener('resize', scheduleUpdate, { passive: true });
     document.addEventListener('load', scheduleUpdate, { capture: true, passive: true });
+    document.addEventListener('mousemove', onMouseMove, { capture: true, passive: true });
+    document.addEventListener('dblclick', onDblClick, { capture: true, passive: true });
+    if (!statsFlushTimer) statsFlushTimer = setInterval(flushStats, 30_000);
   }
 
   function stop() {
@@ -524,6 +622,17 @@
     document.removeEventListener('scroll', scheduleUpdate, { capture: true });
     window.removeEventListener('resize', scheduleUpdate);
     document.removeEventListener('load', scheduleUpdate, { capture: true });
+    document.removeEventListener('mousemove', onMouseMove, { capture: true });
+    document.removeEventListener('dblclick', onDblClick, { capture: true });
+    if (hoverTimer) {
+      clearTimeout(hoverTimer);
+      hoverTimer = 0;
+      hoverLemma = null;
+    }
+    if (statsFlushTimer) {
+      clearInterval(statsFlushTimer);
+      statsFlushTimer = 0;
+    }
     clearTimeout(flushTimer);
     clearTimeout(mutationTimer);
     cancelAnimationFrame(rafId);
@@ -633,6 +742,11 @@
     pageOff = typeof e.detail?.off === 'boolean' ? e.detail.off : globalThis.readglossPageOff === true;
     sync();
   });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushStats();
+  });
+  window.addEventListener('pagehide', () => flushStats());
 
   try {
     S.load().then(
