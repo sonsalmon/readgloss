@@ -3,6 +3,33 @@
 - 2026-10-06 정범: 모양 **B(직접 만드는 작은 확장 + 다리)** 선택. 비교와 이유는 4·5절.
 - 정해 둔 것: 번역은 Claude 구독(`claude` 공식 프로그램, haiku, 생각 끄기)으로 하고, 캐시·일괄 요청·켠 사이트에서만 자동 주석으로 한도를 아낀다. codex는 나중에 둘째 엔진, agy는 쓰지 않는다.
 
+## 변경 기록 21 (2026-10-15, 정범 승인 "넘어가") — 문장 구조: 전치사 + 관계사
+
+그림: `docs/show-me-adaptive-annotation.html` 4절.
+
+### 21-1. 찾기(확장, 규칙, AI 없음)
+- 본문 블록(자동 주석과 같은 BLOCK·EXCLUDE)에서 다음 구절을 찾는다(대소문자 무시, 낱말 경계):
+  - 전치사 + which/whom/whose: `in|on|at|for|of|to|from|by|with|under|through|during|without|about|over|into|upon|within|among|between|across|behind|beyond|via|against|toward|towards` + `which|whom|whose`.
+  - `the extent to which`, `the degree to which`, `the way in which`는 구절 전체.
+- 표시: 페이지 글자를 바꾸지 않는다(변경 기록 18과 같은 이유). CSS Custom Highlight 이름 `readgloss-struct`, `::highlight(readgloss-struct) { text-decoration: underline dotted; text-decoration-color: 옅은 보라; text-underline-offset: .25em }`.
+- 설정 "문장 구조 표시"(기본 켬, 패널 설정의 주석 묶음). 사이트 끄기·이 페이지 끄기는 자동 주석과 같다.
+
+### 21-2. 누르면
+- 표시된 구절을 한 번 누르면(더블클릭이 아니면 — 250ms 기다려 dblclick이면 취소) 그 문장 아래에 카드: "문장 구조" 제목, 불러오는 중 → 다리 답.
+- 다리 `POST /explain-structure {sentence(≤600), phrase(≤60), title?}` → claude(문맥 번역과 같은 상주 클라이언트, 구독) → `{ skeleton:[{role:'주어'|'동사'|'목적어'|'보어'|'수식', text}], phrase:"for which = 그 조건이 성립하는 (노드)", ko:"문장 번역", pattern:"prep+which" }`. 캐시(문장+구절 열쇠, 파일 `structure-explanations.json`, 문맥 번역 캐시와 같은 방식).
+- 카드: 뼈대(역할 칩 + 영어 조각), 구절 풀이 한 줄, 번역, 그리고 "이 구조를 연 횟수 N번". 버튼 [문장 저장](단어장 구·문장 저장과 같은 save-phrase, kind 'sentence', 번역 = ko), Esc·밖 클릭으로 닫음(변경 기록 T39 Esc 규칙).
+- 다리 db kind `sstat` id `ss_<pattern>` `{opened, lastOpened}`: 카드를 열 때 +1. `GET /explain-structure/stats` → `{patterns:[{pattern, opened}]}`.
+
+### 21-3. 에이전트가 정한 것 (결정 — 이유 — 틀리면 드는 비용)
+- 찾기는 규칙, 풀이는 AI — 찾기는 페이지마다 수백 번이라 무료·즉시여야 하고, 뼈대 풀이는 규칙으로 정확히 못 함 — AI 응답 기다림 1~3초.
+- 문장은 문맥 번역처럼 claude(구독)로 감 — 이미 문맥 번역이 같은 길을 씀 — 없음.
+
+### 21-4. 티켓
+| 티켓 | 내용 |
+|---|---|
+| T42a | 다리 /explain-structure·캐시·sstat |
+| T42b | 확장 찾기·표시·카드·설정 |
+
 ## 변경 기록 20 (2026-10-15, 정범 승인 "쭉 진행") — 내게 맞춘 주석: 단어마다 "모를 확률"
 
 그림: `docs/show-me-adaptive-annotation.html`.
