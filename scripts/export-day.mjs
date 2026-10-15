@@ -87,7 +87,7 @@ export function exportDay(date, dataDir) {
     out.push('');
   }
   if (mine.length) {
-    out.push('### 내 사전', '');
+    out.push('### 내 용어집', '');
     for (const [key, e] of mine) out.push(`- **${key}** — ${clip(e.ko)}${e.exp ? ` (${clip(e.exp)})` : ''}`);
     out.push('');
   }

@@ -683,9 +683,9 @@
       return nodes;
     }
     const blockNodes = siteList('sites', { label: '끌 사이트 목록', inputLabel: '끌 사이트 직접 입력' });
-    const glossNodes = siteList('glossarySites', { label: '용어집을 켤 사이트 목록', inputLabel: '용어집을 켤 사이트 직접 입력', max: true });
-    const glossBox = h('div', { class: 'row glossites', role: 'group', 'aria-label': '용어집을 켤 사이트' },
-      h('div', { class: 'rowhead', text: '용어집을 켤 사이트' }),
+    const glossNodes = siteList('glossarySites', { label: '분야 용어집을 켤 사이트 목록', inputLabel: '분야 용어집을 켤 사이트 직접 입력', max: true });
+    const glossBox = h('div', { class: 'row glossites', role: 'group', 'aria-label': '분야 용어집을 켤 사이트' },
+      h('div', { class: 'rowhead', text: '분야 용어집을 켤 사이트' }),
       h('p', { class: 'hint', text: '이 사이트에서는 보안·머신러닝·수학 용어가 분야 용어로 보여요. 목록 밖에서도 수식·머신러닝 글이면 그 분야만 켜져요.' }), ...glossNodes);
     refreshers.push((s) => glossBox.classList.toggle('dim', s.glossary === 'off'));
 
@@ -713,7 +713,7 @@
       h('h3', { class: 'sec', text: '단어 표시' }), choice('mark'),
       h('h3', { class: 'sec', text: '기타' }), toggle('allowCopy', '체크하지 않으면 복사할 때 주석 글자가 섞이지 않아요.'), toggle('selectionTranslate', '글을 드래그하면 맥 번역 카드가 떠요. 한 단어는 사전 카드로 열려요.'), choice('theme'), toggle('floatingButton.show', '숨겨도 브라우저 툴바의 readgloss 아이콘으로 패널을 열 수 있어요.'),
       h('h3', { class: 'sec', text: '끌 사이트' }), ...blockNodes,
-      h('div', { class: 'reset' }, resetBtn, h('p', { class: 'hint', text: '끌 사이트 목록은 그대로 두고, 용어집을 켤 사이트는 기본 목록으로 돌아가요.' })),
+      h('div', { class: 'reset' }, resetBtn, h('p', { class: 'hint', text: '끌 사이트 목록은 그대로 두고, 분야 용어집을 켤 사이트는 기본 목록으로 돌아가요.' })),
     );
     const refresh = (s) => { refreshers.forEach((f) => f(s)); updatePreview(s); };
     refresh(ctx.settings);

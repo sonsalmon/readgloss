@@ -46,7 +46,7 @@ test('bars: 높이는 하루 합 / 기간 최댓값(%), 0건은 0, 1건 이상�
 test('chips / periodTotal: 오늘 요약은 종류 순서 고정, 0건도 자리를 지키고, 기간 합은 누적 숫자', () => {
   const f = S.fillDays(days, 14, today);
   const c = S.chips(f.at(-1));
-  assert.deepEqual(c.map((x) => x.label), ['찾은 단어', '드래그 번역', '문맥 번역', 'AI 문맥 뜻', '문단 번역', '저장', '알아요', '내 사전', '스크랩', '메모']);
+  assert.deepEqual(c.map((x) => x.label), ['찾은 단어', '드래그 번역', '문맥 번역', 'AI 문맥 뜻', '문단 번역', '저장', '알아요', '내 용어집', '스크랩', '메모']);
   assert.deepEqual(c.map((x) => x.n), [5, 2, 0, 0, 0, 1, 0, 0, 0, 0]);
   assert.equal(S.periodTotal(f), 13);
   assert.deepEqual(S.chips(undefined).map((x) => x.n), [0, 0, 0, 0, 0, 0, 0, 0, 0]); // mt 는 0이면 숨긴다

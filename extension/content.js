@@ -571,7 +571,7 @@
   function paintMine(mine) {
     current.mine = mine;
     ui.mine.hidden = false;
-    ui.mine.textContent = `내 사전: ${mine.ko}`;
+    ui.mine.textContent = `내 용어집: ${mine.ko}`;
     ui.md?.setHas(mine.ko);
     paintTops();
     place();

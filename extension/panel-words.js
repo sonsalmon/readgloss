@@ -76,7 +76,7 @@
   const SUBS = [
     ...LISTS,
     { id: 'phrases', title: '구·문장', empty: '아직 담은 구·문장이 없어요. 드래그 번역 카드에서 단어장에 담으면 여기에 모여요.' },
-    { id: 'mydict', title: '내 사전', empty: '내 사전이 비어 있어요. 약어나 전문 용어의 뜻을 직접 적어 두면 어디서든 그 뜻이 먼저 나와요.' },
+    { id: 'mydict', title: '내 용어집', empty: '내 용어집이 비어 있어요. 약어나 전문 용어의 뜻을 직접 적어 두면 어디서든 그 뜻이 먼저 나와요.' },
   ];
   const countsAll = (s, mine) => ({ ...counts(s), phrases: Object.keys(s.phrases ?? {}).length, mydict: Object.keys(mine ?? {}).length });
 
@@ -309,8 +309,8 @@
     kinds.setAttribute('aria-label', '구·문장 종류');
     const search = el('input', 'q');
     search.type = 'search';
-    search.placeholder = '찾기: 단어는 앞부분, 구·문장·내 사전은 포함';
-    search.setAttribute('aria-label', '찾기: 단어는 앞부분, 구·문장·내 사전은 포함');
+    search.placeholder = '찾기: 단어는 앞부분, 구·문장·내 용어집은 포함';
+    search.setAttribute('aria-label', '찾기: 단어는 앞부분, 구·문장·내 용어집은 포함');
     const status = el('div', 'status');
     status.setAttribute('role', 'status');
 
@@ -322,10 +322,10 @@
       draw();
       if (adding) kField.input.focus();
     }, 'act primary');
-    addToggle.setAttribute('aria-label', '내 사전에 직접 추가');
+    addToggle.setAttribute('aria-label', '내 용어집에 직접 추가');
     const addForm = el('div', 'form');
     addForm.setAttribute('role', 'group');
-    addForm.setAttribute('aria-label', '내 사전에 추가');
+    addForm.setAttribute('aria-label', '내 용어집에 추가');
     const kField = field('낱말·약어 (영문)', '', 80);
     const koField = field('뜻', '', 80);
     const expField = field('풀이 (선택, 예: Principal Component Analysis)', '', 120);
@@ -333,8 +333,8 @@
     addErr.setAttribute('role', 'alert');
     const addBtns = el('div', 'btns');
     addBtns.append(
-      btn('취소', () => { adding = false; draw(); }, 'act', '내 사전 추가 취소'),
-      btn('추가', () => addEntry(), 'act primary', '내 사전에 추가하기'),
+      btn('취소', () => { adding = false; draw(); }, 'act', '내 용어집 추가 취소'),
+      btn('추가', () => addEntry(), 'act primary', '내 용어집에 추가하기'),
     );
     addForm.append(kField.label, koField.label, expField.label, addErr, addBtns);
     addBar.append(addToggle, addForm);

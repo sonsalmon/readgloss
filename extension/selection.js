@@ -230,19 +230,19 @@
     const input = el('input', 'mdin');
     input.type = 'text';
     input.maxLength = 80;
-    input.setAttribute('aria-label', '내 사전에 저장할 뜻');
+    input.setAttribute('aria-label', '내 용어집에 저장할 뜻');
     const err = el('div', 'mderr');
     err.hidden = true;
     err.setAttribute('role', 'status');
-    const ok = button('저장', '내 사전에 저장', () => save());
-    const no = button('취소', '내 사전 저장 취소', () => ((form.hidden = true), resize()));
+    const ok = button('저장', '내 용어집에 저장', () => save());
+    const no = button('취소', '내 용어집 저장 취소', () => ((form.hidden = true), resize()));
     const form = el('div', 'mdform');
     form.hidden = true;
     form.append(input, ok, no, err);
     const btn = button('', '', () => open());
     const paint = () => {
-      btn.textContent = has === null ? '내 사전에 추가' : '내 사전에 있음 ✓';
-      btn.setAttribute('aria-label', has === null ? '내 사전에 추가' : '내 사전에 있음 ✓, 누르면 뜻 고치기');
+      btn.textContent = has === null ? '내 용어집에 추가' : '내 용어집에 있음 ✓';
+      btn.setAttribute('aria-label', has === null ? '내 용어집에 추가' : '내 용어집에 있음 ✓, 누르면 뜻 고치기');
       btn.classList.toggle('on', has !== null);
     };
     paint();
@@ -540,7 +540,7 @@
   function paintMine(mine) {
     current.mine = mine;
     ui.mine.hidden = false;
-    ui.mine.textContent = `내 사전: ${mine.ko}`;
+    ui.mine.textContent = `내 용어집: ${mine.ko}`;
     ui.md?.setHas(mine.ko);
     place();
   }

@@ -11,7 +11,7 @@
     { id: 'paragraph', label: '문단 번역' },
     { id: 'save', label: '저장' },
     { id: 'known', label: '알아요' },
-    { id: 'mydict', label: '내 사전' },
+    { id: 'mydict', label: '내 용어집' },
     { id: 'scrap', label: '스크랩' },
     { id: 'memo', label: '메모' },
   ];
