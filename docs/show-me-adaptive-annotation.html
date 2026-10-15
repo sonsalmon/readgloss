@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>내게 맞춘 주석</title>
+<style>
+:root{--bg:#fbfaf7;--fg:#222;--mut:#666;--card:#fff;--bd:#e3e0d8;--acc:#534AB7}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1b1a;--fg:#eee;--mut:#aaa;--card:#252524;--bd:#3a3936;--acc:#AFA9EC}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Apple SD Gothic Neo",sans-serif}
+main{max-width:900px;margin:auto;padding:16px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:16px 0;overflow-x:auto}
+h1{font-size:22px}h2{font-size:18px;margin:0 0 8px}.mut{color:var(--mut);font-size:14px}
+table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-top:1px solid var(--bd);padding:6px;text-align:left;vertical-align:top}
+.ex{border:1px solid var(--bd);border-radius:8px;padding:10px;font-size:15px;line-height:2}
+.u{border-bottom:2px dotted var(--acc)}
+</style></head><body><main>
+<h1>내게 맞춘 주석 — "진짜 모를 만한 것만"</h1>
+<p class="mut">readgloss 다음 조각 설계안 · 2026-10-15 · 상태: 정범 확인 대기 · 학습노트 작업 다음에 만든다</p>
+
+<section><h2>1. 지금 문제</h2>
+<ul>
+<li>주석 기준이 "보통 학습자 등급표"(B2 이상)다. 정범의 실력·경향을 모른다.</li>
+<li>분야 용어집 단어는 등급과 상관없이 붙는다. 그래서 <b>zero → 영(0)</b>처럼 쉬운 단어에도 붙는다.</li>
+<li>등급표에 없는 어려운 단어(예: 전문 용어 아닌 드문 낱말)는 빠지기도 한다.</li>
+</ul></section>
+
+<section><h2>2. 바꾸는 방식 — 단어마다 "모를 확률"</h2>
+<pre class="mermaid">
+flowchart LR
+  P["출발점<br/>등급표 등급<br/>(A1 낮음 ~ C2·목록 밖 높음)"] --> S["모를 확률"]
+  L["찾아봄·단어장 저장<br/>(+ 모름)"] --> S
+  K["아는 단어 표시<br/>(→ 거의 0)"] --> S
+  I["주석이 떴는데<br/>본 적 없음 3번+<br/>(− 아는 쪽)"] --> S
+  T["영어 통화에서 틀림·헷갈림<br/>(+ 모름)"] --> S
+  S --> D{"기준보다 높나?"}
+  D -->|예| A["주석 붙임"]
+  D -->|아니오| N["안 붙임"]
+</pre>
+<ul>
+<li>"본 적 있음" = 그 주석에 마우스를 올렸거나, 그 단어를 더블클릭했다.</li>
+<li>용어집 단어도 이 확률을 따른다. 용어집은 "어떤 뜻을 보여 줄지"만 정한다(zero는 확률이 낮아 안 붙음).</li>
+<li>AI는 쓰지 않는다. 모두 맥 안 다리에서 계산한다.</li>
+</ul></section>
+
+<section><h2>3. 기준은 저절로 맞춰진다</h2>
+<table>
+<tr><th>일어난 일</th><th>기준</th></tr>
+<tr><td>주석이 붙었는데 안 보고 지나간 단어가 많다</td><td>올린다 (주석이 준다)</td></tr>
+<tr><td>주석이 없는 단어를 더블클릭해 찾는 일이 많다</td><td>내린다 (주석이 는다)</td></tr>
+</table>
+<p class="mut">하루 한 번 지난 7일 기록으로 조금씩 움직인다. 패널 설정에 "주석 양" 손잡이(적게 ↔ 많이)도 남겨 둔다.</p></section>
+
+<section><h2>4. 문장 구조 — 다음 조각(C)</h2>
+<div class="ex">The node <span class="u">for which</span> the condition holds is <span class="u">used to decide whether to split</span> the data.</div>
+<ul>
+<li>규칙으로 찾는다(모델 없음): 전치사 + which/whom/whose(for which, in which, of whom), to가 이어지는 줄, 겹친 관계절.</li>
+<li>옅은 점선 밑줄. 누르면: 이 문장의 뼈대(주어·동사·목적어)와 "for which = 그 조건이 성립하는 (노드)" 같은 풀이.</li>
+<li>내가 막혀서 저장한 문장이 쌓이면, 어떤 구조에서 자주 막히는지 숫자로 보여 준다.</li>
+</ul></section>
+
+<section><h2>5. 필요한 기록</h2>
+<ul>
+<li>"주석이 떴다"와 "봤다"를 단어별로 센다(맥 안 db, 페이지 글은 안 남김).</li>
+<li>영어 통화 기록(<code>~/dev/learning/english/sessions/</code>)에서 틀린 단어를 읽는 것은 세션 끝 에이전트가 한다.</li>
+</ul></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'default'});</script>
+</body></html>
