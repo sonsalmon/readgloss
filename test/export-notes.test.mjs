@@ -112,12 +112,11 @@ test('학습노트 내보내기: 앞머리, 소제목 묶음, 각 모양 마크�
       data: {
         saved: {
           word: 'escalation',
-          def: '상승, 확대',
+          gloss: '상승, 확대',
           sentence: 'We observed privilege escalation.',
           memo: '중요 단어',
           url: pageUrl,
           headings: ['Vertical privilege escalation'],
-          task: 'S1-04',
           ts: 1400,
         },
       },
@@ -131,10 +130,9 @@ test('학습노트 내보내기: 앞머리, 소제목 묶음, 각 모양 마크�
       key: 'p_01',
       data: {
         text: 'gain access',
-        trans: '접근 권한을 얻다',
+        translation: '접근 권한을 얻다',
         url: pageUrl,
         headings: ['Vertical privilege escalation'],
-        task: 'S1-04',
         ts: 1500,
       },
       ts: 1500,
@@ -199,11 +197,11 @@ test('학습노트 내보내기: 앞머리, 소제목 묶음, 각 모양 마크�
     // 앞머리 (YAML frontmatter) 검증
     assert.ok(noteContent.startsWith('---\n'));
     assert.match(noteContent, /type: study-note\n/);
-    assert.match(noteContent, /title: Access Control Vulnerabilities\n/);
-    assert.match(noteContent, /task: 웹 해킹 첫걸음 \(S1-04\)\n/);
-    assert.match(noteContent, /url: https:\/\/portswigger\.net\/web-security\/access-control\n/);
+    assert.match(noteContent, /title: "Access Control Vulnerabilities"\n/);
+    assert.match(noteContent, /task: "웹 해킹 첫걸음 \(S1-04\)"\n/);
+    assert.match(noteContent, /url: "https:\/\/portswigger\.net\/web-security\/access-control"\n/);
     assert.match(noteContent, /date: 1970-01-01\n/);
-    assert.match(noteContent, /tags: \[다시 보기\]\n/);
+    assert.match(noteContent, /tags: \["다시 보기"\]\n/);
 
     // 앞머리 바로 다음 줄 자동 생성 주석 확인
     const lines = noteContent.split('\n');
@@ -250,7 +248,9 @@ test('학습노트 내보내기: 앞머리, 소제목 묶음, 각 모양 마크�
     const inboxFile = inboxKeys[0];
     const inboxContent = docs.get(inboxFile);
     assert.match(inboxContent, /type: study-note/);
-    assert.match(inboxContent, /task: 인박스/);
+    assert.match(inboxContent, /task: "인박스"/);
+    assert.match(inboxContent, /title: "Inbox Article Title"/);
+    assert.match(inboxContent, /url: "https:\/\/example\.com\/unassigned-article"/);
     assert.match(inboxContent, /# Inbox Article Title/);
     assert.match(inboxContent, /> An unassigned quote\./);
 
@@ -329,9 +329,11 @@ test('개념 문서 내보내기 (llm-wiki 16-5 형식): 앞머리, sources 경�
         title: 'Access Control Vulnerabilities',
       },
     ];
-    const pageFiles = pageFileNames(scraps);
+    const notePathsMap = new Map([
+      ['https://portswigger.net/web-security/access-control', 'S1-04/access-control-vulnerabilities'],
+    ]);
 
-    const docs = renderConceptDocs(concepts, pageFiles);
+    const docs = renderConceptDocs(concepts, notePathsMap);
     assert.ok(docs.has('access-control.md'));
     assert.ok(docs.has('privilege-escalation.md'));
 
@@ -340,10 +342,10 @@ test('개념 문서 내보내기 (llm-wiki 16-5 형식): 앞머리, sources 경�
     // 앞머리 YAML 검증
     assert.ok(acDoc.startsWith('---\n'));
     assert.match(acDoc, /type: concept\n/);
-    assert.match(acDoc, /title: access control\n/);
-    assert.match(acDoc, /description: 누가 무엇을 할 수 있는지 서버가 정하는 규칙\n/);
-    assert.match(acDoc, /aliases: \[접근 통제, AC\]\n/);
-    assert.match(acDoc, /tags: \[다시 보기\]\n/);
+    assert.match(acDoc, /title: "access control"\n/);
+    assert.match(acDoc, /description: "누가 무엇을 할 수 있는지 서버가 정하는 규칙"\n/);
+    assert.match(acDoc, /aliases: \["접근 통제", "AC"\]\n/);
+    assert.match(acDoc, /tags: \["다시 보기"\]\n/);
     assert.match(acDoc, /sources: \["notes\/S1-04\/access-control-vulnerabilities\.md"\]\n/);
     assert.match(acDoc, /created: \d{4}-\d{2}-\d{2}\n/);
     assert.match(acDoc, /updated: \d{4}-\d{2}-\d{2}\n/);

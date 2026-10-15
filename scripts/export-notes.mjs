@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { loadLearning } from '../bridge/task-guess.mjs';
 import { loadNotesData } from './data-source.mjs';
 import { dateOf } from './export-day.mjs';
-import { pageFileNames, pageKey, writeIfChanged, SCRAP_HEADER_COMMENT } from './export-scraps.mjs';
+import { pageFileNames, pageKey, slugifyPage, writeIfChanged, SCRAP_HEADER_COMMENT } from './export-scraps.mjs';
 
 // 순수 함수 모듈 로드
 await import('../extension/selection-core.js');
@@ -102,9 +102,21 @@ function renderConcept(c) {
   return lines.join('\n');
 }
 
+export function defaultPageTitle(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    const path = u.pathname.replace(/\/+$/, '');
+    const title = `${u.host}${path}`;
+    return title || 'page';
+  } catch {
+    return 'page';
+  }
+}
+
 // 단어 항목 렌더링
 function renderWord(w) {
-  const lines = [`> [!word]- ${w.word} — ${w.def}`];
+  const lemma = w.lemma || w.word || '';
+  const lines = [`> [!word]- ${lemma} — ${w.gloss || ''}`];
   const sentence = String(w.sentence ?? '').trim();
   if (sentence) {
     for (const l of sentence.split('\n')) {
@@ -120,7 +132,7 @@ function renderWord(w) {
 
 // 구·문장 항목 렌더링
 function renderPhrase(p) {
-  const transPart = p.trans ? ` — ${p.trans}` : '';
+  const transPart = p.translation ? ` — ${p.translation}` : '';
   return `> [!word]- ${p.text}${transPart}`;
 }
 
@@ -134,18 +146,21 @@ function renderScrap(s) {
   if (link && lines.length > 0) {
     lines[lines.length - 1] += ` [↗](${link})`;
   }
+  if (typeof s?.translation === 'string' && s.translation.trim()) {
+    lines.push(`> 번역: ${s.translation.trim()}`);
+  }
+  if (typeof s?.memo === 'string' && s.memo.trim()) {
+    lines.push('');
+    lines.push(s.memo.trim());
+  }
   return lines.join('\n');
 }
 
-// 학습노트 문서 생성 순수 함수: Map<상대경로, 내용>
-export function renderNoteDocs(data, tasks = {}) {
-  const docs = new Map();
-
-  // 모든 항목 수집
+function collectAllItems(data) {
   const items = [];
 
   // 1. 스크랩
-  const scraps = Object.values(data.scraps?.scraps ?? {});
+  const scraps = Object.values(data?.scraps?.scraps ?? {});
   for (const s of scraps) {
     const rawUrl = s.url;
     const u = normalizeUrl(rawUrl);
@@ -162,7 +177,7 @@ export function renderNoteDocs(data, tasks = {}) {
   }
 
   // 2. 메모
-  const memos = data.memos ?? [];
+  const memos = data?.memos ?? [];
   for (const m of memos) {
     const u = normalizeUrl(m.url);
     if (!u) continue;
@@ -178,7 +193,7 @@ export function renderNoteDocs(data, tasks = {}) {
   }
 
   // 3. 개념 및 나중에 볼 것
-  const concepts = data.concepts ?? [];
+  const concepts = data?.concepts ?? [];
   for (const c of concepts) {
     const rawUrl = c.seen?.url || (c.appears && c.appears[0]?.url) || c.firstUrl;
     const u = normalizeUrl(rawUrl);
@@ -197,81 +212,66 @@ export function renderNoteDocs(data, tasks = {}) {
     });
   }
 
-  // 4. 단어장 단어
-  const savedWords = Object.values(data.words?.saved ?? {});
-  for (const w of savedWords) {
+  // 4. 단어장 단어 (Object.entries로 키=원형 보존)
+  const savedWords = Object.entries(data?.words?.saved ?? {});
+  for (const [lemma, w] of savedWords) {
     const u = normalizeUrl(w.url);
     if (!u) continue;
     items.push({
       kind: 'word',
       url: u,
-      task: w.task ?? null,
-      title: w.title || '',
+      task: null,
+      title: '',
       headings: Array.isArray(w.headings) ? w.headings : [],
       ts: Number.isFinite(w.ts) ? w.ts : 0,
-      raw: w,
+      raw: { ...w, lemma },
     });
   }
 
   // 5. 구·문장
-  const phrases = Object.values(data.words?.phrases ?? {});
+  const phrases = Object.values(data?.words?.phrases ?? {});
   for (const p of phrases) {
     const u = normalizeUrl(p.url);
     if (!u) continue;
     items.push({
       kind: 'phrase',
       url: u,
-      task: p.task ?? null,
-      title: p.title || '',
+      task: null,
+      title: '',
       headings: Array.isArray(p.headings) ? p.headings : [],
       ts: Number.isFinite(p.ts) ? p.ts : 0,
       raw: p,
     });
   }
 
-  // 정규화 주소(url)별로 페이지 묶기
+  return items;
+}
+
+// 정규화 주소 -> 학습노트 상대 경로 (확장자 없이 <할일>/<이름>) 매핑 생성
+export function notePaths(data, tasks = {}) {
+  const items = collectAllItems(data);
   const pageMap = new Map();
+
   for (const item of items) {
     if (!pageMap.has(item.url)) {
-      pageMap.set(item.url, []);
+      pageMap.set(item.url, { task: null, title: '' });
     }
-    pageMap.get(item.url).push(item);
+    const pageInfo = pageMap.get(item.url);
+    if (item.kind !== 'word' && item.kind !== 'phrase') {
+      if (!pageInfo.task && item.task) pageInfo.task = item.task;
+      if (!pageInfo.title && typeof item.title === 'string' && item.title.trim()) {
+        pageInfo.title = item.title.trim();
+      }
+    }
   }
 
-  // 각 페이지의 대표 정보(task, title) 결정 및 pageFileNames 용 배열 생성
-  const pageEntries = [];
   const combinedForNames = [];
-
-  for (const [url, pageItems] of pageMap.entries()) {
-    // 페이지 task: null이 아닌 첫 번째 task
-    let pageTask = null;
-    for (const it of pageItems) {
-      if (it.task) {
-        pageTask = it.task;
-        break;
-      }
-    }
-
-    // 페이지 제목: 비어있지 않은 첫 번째 제목
-    let pageTitle = '';
-    for (const it of pageItems) {
-      if (typeof it.title === 'string' && it.title.trim()) {
-        pageTitle = it.title.trim();
-        break;
-      }
-    }
+  for (const [url, pageInfo] of pageMap.entries()) {
+    const pageTask = pageInfo.task;
+    let pageTitle = pageInfo.title;
     if (!pageTitle) {
-      pageTitle = 'page';
+      pageTitle = defaultPageTitle(url);
     }
-
-    pageEntries.push({
-      url,
-      task: pageTask,
-      title: pageTitle,
-      items: pageItems,
-    });
-
-    // 할 일 없으면 'inbox' 로 가상 설정하여 pageFileNames 규칙 활용
     combinedForNames.push({
       task: pageTask ?? 'inbox',
       url,
@@ -279,14 +279,55 @@ export function renderNoteDocs(data, tasks = {}) {
     });
   }
 
-  // pageFileNames 매핑 (복사 금지, 그대로 import 사용)
   const fileNamesMap = pageFileNames(combinedForNames);
+  const result = new Map();
 
-  for (const page of pageEntries) {
-    const { url, task, title, items: pageItems } = page;
-    const lookupKey = pageKey(task ?? 'inbox', url);
+  for (const [url, pageInfo] of pageMap.entries()) {
+    const pageTask = pageInfo.task;
+    let pageTitle = pageInfo.title;
+    if (!pageTitle) {
+      pageTitle = defaultPageTitle(url);
+    }
+    const lookupKey = pageKey(pageTask ?? 'inbox', url);
     const relFileBase = fileNamesMap.get(lookupKey);
-    const relPath = relFileBase ? `${relFileBase}.md` : (task ? `${task}/page.md` : 'inbox/page.md');
+    const relPath = relFileBase || (pageTask ? `${pageTask}/${slugifyPage(pageTitle)}` : `inbox/${slugifyPage(pageTitle)}`);
+    result.set(url, relPath);
+  }
+
+  return result;
+}
+
+// 학습노트 문서 생성 순수 함수: Map<상대경로, 내용>
+export function renderNoteDocs(data, tasks = {}) {
+  const docs = new Map();
+  const paths = notePaths(data, tasks);
+  const items = collectAllItems(data);
+
+  // 정규화 주소(url)별로 페이지 묶기
+  const pageMap = new Map();
+  for (const item of items) {
+    if (!pageMap.has(item.url)) {
+      pageMap.set(item.url, { items: [], task: null, title: '' });
+    }
+    const pageInfo = pageMap.get(item.url);
+    pageInfo.items.push(item);
+    if (item.kind !== 'word' && item.kind !== 'phrase') {
+      if (!pageInfo.task && item.task) pageInfo.task = item.task;
+      if (!pageInfo.title && typeof item.title === 'string' && item.title.trim()) {
+        pageInfo.title = item.title.trim();
+      }
+    }
+  }
+
+  for (const [url, pageInfo] of pageMap.entries()) {
+    const task = pageInfo.task;
+    let title = pageInfo.title;
+    if (!title) {
+      title = defaultPageTitle(url);
+    }
+    const pageItems = pageInfo.items;
+    const relFileBase = paths.get(url);
+    const relPath = `${relFileBase}.md`;
 
     // 가장 이른 ts 구하기
     let minTs = Infinity;
@@ -306,82 +347,91 @@ export function renderNoteDocs(data, tasks = {}) {
     }
     const sortedTags = [...pageTags].sort((a, b) => a.localeCompare(b));
 
-    // 할 일 제목 텍스트 (task: <제목> (<id>))
-    let taskLine = '';
-    if (task) {
-      const taskTitle = tasks[task] || task;
-      taskLine = `task: ${taskTitle} (${task})`;
-    } else {
-      taskLine = 'task: 인박스';
-    }
+    // 할 일 제목 텍스트 (task: "...")
+    const taskStr = task ? `${tasks[task] || task} (${task})` : '인박스';
 
     // 앞머리 (YAML frontmatter)
     const fm = [
       '---',
       'type: study-note',
-      `title: ${title}`,
-      taskLine,
-      `url: ${url}`,
+      `title: ${JSON.stringify(title)}`,
+      `task: ${JSON.stringify(taskStr)}`,
+      `url: ${JSON.stringify(url)}`,
       `date: ${noteDate}`,
     ];
     if (sortedTags.length > 0) {
-      fm.push(`tags: [${sortedTags.join(', ')}]`);
+      fm.push(`tags: [${sortedTags.map((t) => JSON.stringify(t)).join(', ')}]`);
     }
     fm.push('---');
     fm.push(NOTE_HEADER_COMMENT);
 
-    // 항목들을 소제목별로 그룹화
-    const sectionMap = new Map();
-    const sectionOrder = [];
-    let inPageItems = [];
+    // 소제목 사슬을 나무처럼 묶기
+    class HeadingNode {
+      constructor(name, depth) {
+        this.name = name;
+        this.depth = depth;
+        this.items = [];
+        this.children = new Map();
+        this.minTs = Infinity;
+      }
+    }
+
+    const rootHeading = new HeadingNode('', 0);
+    const inPageItems = [];
 
     for (const it of pageItems) {
       const h = Array.isArray(it.headings) && it.headings.length > 0 ? it.headings : null;
       if (!h) {
         inPageItems.push(it);
-      } else {
-        const hName = h[h.length - 1];
-        const depth = h.length;
-        if (!sectionMap.has(hName)) {
-          sectionMap.set(hName, { name: hName, depth, items: [], minTs: it.ts || Infinity });
-          sectionOrder.push(hName);
+        continue;
+      }
+      let curr = rootHeading;
+      const itTs = Number.isFinite(it.ts) ? it.ts : Infinity;
+      for (let d = 0; d < h.length; d++) {
+        const name = h[d];
+        if (!curr.children.has(name)) {
+          curr.children.set(name, new HeadingNode(name, d + 1));
         }
-        const sec = sectionMap.get(hName);
-        sec.items.push(it);
-        if (it.ts && it.ts < sec.minTs) sec.minTs = it.ts;
+        curr = curr.children.get(name);
+        if (itTs < curr.minTs) {
+          curr.minTs = itTs;
+        }
+      }
+      curr.items.push(it);
+      if (itTs < curr.minTs) {
+        curr.minTs = itTs;
       }
     }
 
-    // 소제목 섹션들은 최초 ts 오름차순으로 정렬
-    const sortedSections = sectionOrder
-      .map((name) => sectionMap.get(name))
-      .sort((a, b) => a.minTs - b.minTs);
+    function collectHeadingBlocks(node, blocks) {
+      const sortedChildren = [...node.children.values()].sort((a, b) => a.minTs - b.minTs);
+      for (const child of sortedChildren) {
+        const hLevel = child.depth === 1 ? '##' : child.depth === 2 ? '###' : '####';
+        const lines = [`${hLevel} ${child.name}`];
+        child.items.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+        for (const it of child.items) {
+          let rendered = '';
+          if (it.kind === 'scrap') rendered = renderScrap(it.raw);
+          else if (it.kind === 'memo') rendered = renderMemo(it.raw);
+          else if (it.kind === 'concept') rendered = renderConcept(it.raw);
+          else if (it.kind === 'word') rendered = renderWord(it.raw);
+          else if (it.kind === 'phrase') rendered = renderPhrase(it.raw);
+
+          if (rendered && rendered.trim()) {
+            lines.push(rendered.trim());
+          }
+        }
+        blocks.push(lines.join('\n\n'));
+        collectHeadingBlocks(child, blocks);
+      }
+    }
 
     const bodyBlocks = [];
-
-    // 각 소제목 섹션 본문 렌더링
-    for (const sec of sortedSections) {
-      const hLevel = sec.depth === 1 ? '##' : sec.depth === 2 ? '###' : '####';
-      const secLines = [`${hLevel} ${sec.name}`];
-      sec.items.sort((a, b) => a.ts - b.ts);
-      for (const it of sec.items) {
-        let rendered = '';
-        if (it.kind === 'scrap') rendered = renderScrap(it.raw);
-        else if (it.kind === 'memo') rendered = renderMemo(it.raw);
-        else if (it.kind === 'concept') rendered = renderConcept(it.raw);
-        else if (it.kind === 'word') rendered = renderWord(it.raw);
-        else if (it.kind === 'phrase') rendered = renderPhrase(it.raw);
-
-        if (rendered && rendered.trim()) {
-          secLines.push(rendered.trim());
-        }
-      }
-      bodyBlocks.push(secLines.join('\n\n'));
-    }
+    collectHeadingBlocks(rootHeading, bodyBlocks);
 
     // headings 없는 항목은 맨 끝 '## 이 페이지에서' 칸
     if (inPageItems.length > 0) {
-      inPageItems.sort((a, b) => a.ts - b.ts);
+      inPageItems.sort((a, b) => (a.ts || 0) - (b.ts || 0));
       const inPageLines = ['## 이 페이지에서'];
       for (const it of inPageItems) {
         let rendered = '';
@@ -411,7 +461,7 @@ export function isGeneratedNote(text) {
   const endFm = text.indexOf('\n---\n', 4);
   if (endFm === -1) return false;
   const fm = text.slice(4, endFm);
-  if (!/(?:^|\n)type:\s*study-note(?:\n|$)/.test(fm)) return false;
+  if (!/(?:^|\n)type:\s*["']?study-note["']?(?:\r?\n|$)/.test(fm)) return false;
   const afterFm = text.slice(endFm + 5).trimStart();
   return afterFm.startsWith('<!-- 자동 생성');
 }

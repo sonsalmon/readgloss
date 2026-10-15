@@ -10,6 +10,7 @@ import { createConcepts } from '../bridge/concepts.mjs';
 import { openReadDb } from '../scripts/data-source.mjs';
 import { pageFileNames, renderScrapDocs, writeIfChanged } from '../scripts/export-scraps.mjs';
 import { renderConceptDocs, CONCEPT_HEADER_COMMENT } from '../scripts/export-concepts.mjs';
+import { notePaths } from '../scripts/export-notes.mjs';
 
 // 순수 모듈 로드
 await import('../extension/panel.js');
@@ -291,7 +292,9 @@ test('G: 같은 할 일에 제목 같은 페이지 둘 → 개념 문서 링크�
     },
   ];
 
-  const conceptDocs = renderConceptDocs(concepts, fileNames);
+  // 16-5·FX-A: 개념 문서 경로는 학습노트 실제 파일 표(notePaths)를 따른다
+  const paths = notePaths({ scraps: { scraps: Object.fromEntries(scraps.map((x) => [x.id, x])) } }, tasks);
+  const conceptDocs = renderConceptDocs(concepts, paths);
   const docContent = conceptDocs.get('test-concept.md');
   assert.ok(docContent);
 
@@ -302,7 +305,7 @@ test('G: 같은 할 일에 제목 같은 페이지 둘 → 개념 문서 링크�
   // 개념에 남은 주소 원문(끝 슬래시·#조각)이 페이지 주소와 달라도 같은 파일로 간다
   const rawUrlDoc = renderConceptDocs(
     [{ ...concepts[0], appears: [{ ...concepts[0].appears[1], url: 'https://example.com/p2/#top' }] }],
-    fileNames,
+    paths,
   ).get('test-concept.md');
   assert.match(rawUrlDoc, /\[\[notes\/S1-04\/same-title-2\]\]/);
 });

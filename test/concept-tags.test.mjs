@@ -127,7 +127,7 @@ test('export 개념 문서에 tags: [..] 줄이 들어가고 없는 개념은 �
   const sqlDoc = docs.get('sql-injection.md');
 
   assert.ok(acDoc);
-  assert.ok(acDoc.includes('\ntags: [다시 보기, 글감 후보]\n')); // 16-5: 앞머리로 옮김
+  assert.ok(acDoc.includes('\ntags: ["다시 보기", "글감 후보"]\n')); // 16-5: 앞머리로 옮김
 
   assert.ok(sqlDoc);
   assert.ok(sqlDoc.includes('\ntags: []\n')); // 앞머리에는 빈 목록

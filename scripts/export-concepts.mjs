@@ -7,8 +7,10 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createConcepts } from '../bridge/concepts.mjs';
 import { loadLearning } from '../bridge/task-guess.mjs';
-import { openReadDb, loadData } from './data-source.mjs';
-import { slugifyPage, writeIfChanged, pageFileNames, pageKey } from './export-scraps.mjs';
+import { openReadDb, loadNotesData } from './data-source.mjs';
+import { slugifyPage, writeIfChanged } from './export-scraps.mjs';
+import { normalizeUrl } from '../bridge/scraps.mjs';
+import { notePaths } from './export-notes.mjs';
 import { dateOf } from './export-day.mjs';
 
 // 순수 함수 모듈 로드
@@ -30,11 +32,18 @@ export function firstDefinitionItem(def) {
   return '(아직 설명 없음)';
 }
 
-// 개념 목록 -> Map<상대경로, 내용>. pageFiles 는 pageFileNames 결과.
-export function renderConceptDocs(concepts, pageFiles = null) {
+// 개념 목록 -> Map<상대경로, 내용>. notePaths 는 notePaths(data, tasks) 결과(Map<정규화 url, <할일>/<이름>>).
+export function renderConceptDocs(concepts, notePaths = null) {
   const docs = new Map();
   const usedSlugs = new Set();
   const conceptsWithSlug = [];
+
+  const getNoteRel = (url) => {
+    if (!notePaths || !url) return null;
+    const key = normalizeUrl(url) || url; // 개념에 남은 주소 원문(끝 슬래시·#조각)도 같은 노트로
+    if (typeof notePaths.get === 'function') return notePaths.get(key) ?? null;
+    return notePaths[key] || null;
+  };
 
   for (const c of concepts) {
     const baseSlug = slugifyPage(c.name);
@@ -58,47 +67,48 @@ export function renderConceptDocs(concepts, pageFiles = null) {
     const isLater = c.later === true || !c.definition;
     const desc = firstDefinitionItem(c.definition);
 
-    // sources 경로 수집: 그 개념이 나온 학습노트 경로 ("notes/<할일>/<페이지>.md")
+    // sources 경로 수집 및 나온 곳 목록 수집
     const sourcesSet = new Set();
+    const whereList = [];
     const appearances = Array.isArray(c.appears) ? c.appears : [];
-    for (const app of appearances) {
-      const task = app.task ?? null;
-      let matched = null;
-      if (task) {
-        matched = pageFiles?.get(pageKey(task, app.url));
-      } else {
-        matched = pageFiles?.get(pageKey('inbox', app.url)) || pageFiles?.get(pageKey(null, app.url));
-      }
 
-      let notePath = '';
-      if (matched) {
-        notePath = `notes/${matched}.md`;
-      } else if (task) {
-        notePath = `notes/${task}/${slugifyPage(app.title || 'page')}.md`;
-      } else {
-        notePath = `notes/inbox/${slugifyPage(app.title || 'page')}.md`;
-      }
-      sourcesSet.add(notePath);
+    for (const app of appearances) {
+      if (!app?.url) continue;
+      const u = globalThis.readglossSelection.normalizeUrl(app.url);
+      const noteRel = getNoteRel(u);
+      if (!noteRel) continue; // 표에 없는 주소는 생략
+
+      sourcesSet.add(`notes/${noteRel}.md`);
+
+      const heading =
+        app.heading ||
+        (Array.isArray(app.headings) && app.headings.length > 0 ? app.headings[app.headings.length - 1] : null) ||
+        app.title ||
+        '이 페이지에서';
+
+      whereList.push({ target: `notes/${noteRel}`, heading });
     }
 
-    if (sourcesSet.size === 0 && c.seen && c.seen.url) {
-      const task = c.firstTask ?? null;
-      let matched = null;
-      if (task) {
-        matched = pageFiles?.get(pageKey(task, c.seen.url));
-      } else {
-        matched = pageFiles?.get(pageKey('inbox', c.seen.url)) || pageFiles?.get(pageKey(null, c.seen.url));
+    // seen 처리: appears에서 나온 곳이 없는 개념(스크랩에서 안 나온 개념)도 seen.url 노트를 냄
+    if (whereList.length === 0 && c.seen && c.seen.url) {
+      const u = globalThis.readglossSelection.normalizeUrl(c.seen.url);
+      const noteRel = getNoteRel(u);
+      if (noteRel) {
+        sourcesSet.add(`notes/${noteRel}.md`);
+        const heading =
+          (Array.isArray(c.seen.headings) && c.seen.headings.length > 0
+            ? c.seen.headings[c.seen.headings.length - 1]
+            : null) ||
+          c.seen.title ||
+          '이 페이지에서';
+        whereList.push({ target: `notes/${noteRel}`, heading });
       }
-
-      let notePath = '';
-      if (matched) {
-        notePath = `notes/${matched}.md`;
-      } else if (task) {
-        notePath = `notes/${task}/${slugifyPage(c.seen.title || 'page')}.md`;
-      } else {
-        notePath = `notes/inbox/${slugifyPage(c.seen.title || 'page')}.md`;
+    } else if (c.seen && c.seen.url) {
+      const u = globalThis.readglossSelection.normalizeUrl(c.seen.url);
+      const noteRel = getNoteRel(u);
+      if (noteRel) {
+        sourcesSet.add(`notes/${noteRel}.md`);
       }
-      sourcesSet.add(notePath);
     }
 
     const sources = [...sourcesSet];
@@ -112,10 +122,10 @@ export function renderConceptDocs(concepts, pageFiles = null) {
     const lines = [
       '---',
       'type: concept',
-      `title: ${c.name}`,
-      `description: ${desc}`,
-      `aliases: [${aliases.join(', ')}]`,
-      `tags: [${tags.join(', ')}]`,
+      `title: ${JSON.stringify(c.name)}`,
+      `description: ${JSON.stringify(desc)}`,
+      `aliases: [${aliases.map((a) => JSON.stringify(a)).join(', ')}]`,
+      `tags: [${tags.map((t) => JSON.stringify(t)).join(', ')}]`,
       `sources: [${sources.map((s) => JSON.stringify(s)).join(', ')}]`,
       `created: ${createdDate}`,
       `updated: ${updatedDate}`,
@@ -142,33 +152,10 @@ export function renderConceptDocs(concepts, pageFiles = null) {
 
     // ## 나온 곳
     // - [[notes/<할일>/<페이지>]] — <소제목>
-    if (appearances.length > 0) {
+    if (whereList.length > 0) {
       lines.push('## 나온 곳');
-      for (const app of appearances) {
-        const task = app.task ?? null;
-        let matched = null;
-        if (task) {
-          matched = pageFiles?.get(pageKey(task, app.url));
-        } else {
-          matched = pageFiles?.get(pageKey('inbox', app.url)) || pageFiles?.get(pageKey(null, app.url));
-        }
-
-        let wikiTarget = '';
-        if (matched) {
-          wikiTarget = `notes/${matched}`;
-        } else if (task) {
-          wikiTarget = `notes/${task}/${slugifyPage(app.title || 'page')}`;
-        } else {
-          wikiTarget = `notes/inbox/${slugifyPage(app.title || 'page')}`;
-        }
-
-        const heading =
-          app.heading ||
-          (Array.isArray(app.headings) && app.headings.length > 0 ? app.headings[app.headings.length - 1] : null) ||
-          app.title ||
-          '이 페이지에서';
-
-        lines.push(`- [[${wikiTarget}]] — ${heading}`);
+      for (const w of whereList) {
+        lines.push(`- [[${w.target}]] — ${w.heading}`);
       }
       lines.push('');
     }
@@ -234,7 +221,7 @@ export function isGeneratedConcept(text) {
     const endFm = text.indexOf('\n---\n', 4);
     if (endFm === -1) return false;
     const fm = text.slice(4, endFm);
-    if (!/(?:^|\n)type:\s*concept(?:\n|$)/.test(fm)) return false;
+    if (!/(?:^|\n)type:\s*["']?concept["']?(?:\r?\n|$)/.test(fm)) return false;
     const afterFm = text.slice(endFm + 5).trimStart();
     return afterFm.startsWith('<!-- 자동 생성');
   }
@@ -340,19 +327,21 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
 
   let concepts;
-  let data;
+  let notesData;
+  let tasks;
   try {
     const learning = loadLearning(learningDir);
+    tasks = learning.tasks || {};
     concepts = createConcepts({ db, learning }).list();
     db.close();
-    data = loadData(dataDir);
+    notesData = loadNotesData(dataDir);
   } catch (err) {
     console.error(err.message || String(err));
     process.exit(1);
   }
 
-  const pageFiles = pageFileNames(Object.values(data.scraps.scraps), data.memos);
-  const map = renderConceptDocs(concepts, pageFiles);
+  const paths = notePaths(notesData, tasks);
+  const map = renderConceptDocs(concepts, paths);
   const { written, removed } = writeConceptsIfChanged(toDir, map);
 
   console.log(`개념 문서 내보내기 완료: ${written.length}개 작성, ${removed.length}개 삭제 (${toDir})`);

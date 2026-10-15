@@ -50,7 +50,11 @@ test('export-concepts: 링크 모양, 같은 내용이면 안 씀, 주석 없는
       },
     ];
 
-    const docs = renderConceptDocs(concepts);
+    const notePathsMap = new Map([
+      ['https://portswigger.net/web-security/access-control', 'S1-04/access-control-vulnerabilities'],
+      ['https://example.com/inbox-item', 'inbox/inbox-title'],
+    ]);
+    const docs = renderConceptDocs(concepts, notePathsMap);
 
     // 1. 파일 이름 규칙 및 개수 확인
     assert.equal(docs.size, 2);
@@ -64,7 +68,9 @@ test('export-concepts: 링크 모양, 같은 내용이면 안 씀, 주석 없는
     // 앞머리(llm-wiki 형식, 16-5) 다음 줄에 자동 생성 주석
     assert.equal(acLines[0], '---');
     assert.match(acDoc, /\ntype: concept\n/);
-    assert.match(acDoc, /\naliases: \[AC, Authorization\]\n/);
+    assert.match(acDoc, /title: "Access Control"\n/);
+    assert.match(acDoc, /description: "시스템 자원에 대한 접근 권한을 제어하는 규칙과 절차\."\n/);
+    assert.match(acDoc, /\naliases: \["AC", "Authorization"\]\n/);
     assert.match(acDoc, /\n---\n<!-- 자동 생성 — 고치려면 확장 개념 탭에서 -->\n/);
     assert.ok(acDoc.includes(CONCEPT_HEADER_COMMENT));
 
@@ -79,6 +85,7 @@ test('export-concepts: 링크 모양, 같은 내용이면 안 씀, 주석 없는
     // 3. privilege-escalation.md 형식 검증
     const peDoc = docs.get('privilege-escalation.md');
     assert.match(peDoc, /# Privilege Escalation/);
+    assert.match(peDoc, /title: "Privilege Escalation"\n/);
     assert.match(peDoc, /\naliases: \[\]\n/);
     assert.match(peDoc, /- \[\[access-control\]\] — 관련/);
     assert.ok(!peDoc.includes('## 나온 곳')); // 나온 곳이 없을 때는 섹션 없음
