@@ -125,10 +125,18 @@
     return path.some((node) => (node?.localName || node?.tagName)?.toLowerCase() === 'readgloss-memo-pad');
   }
 
+  // 순수 함수: 개별 host 투명도 판정(T39)
+  // hovered 거나 typing 중이면 1, 아니면 base 값
+  function hostOpacity({ hovered, typing, base = 1 } = {}) {
+    if (hovered || typing) return 1;
+    return typeof base === 'number' ? base : 1;
+  }
+
   globalThis.readglossOpacity = {
     HOST_TAGS,
     HOST_SELECTOR,
     TIMEOUT_MS,
+    hostOpacity,
     createInitialState,
     stateAfter,
     computeAlpha,
@@ -148,17 +156,20 @@
     dimWhileReading: true,
   };
   let dimTimer = 0;
+  const hostLastInput = new Map();
+  let currentHoveredHost = null;
 
   function ensureStyleSheet() {
     if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
     style.id = STYLE_ID;
-    style.textContent = `
-      ${HOST_SELECTOR} {
-        opacity: var(--rg-ui-alpha, 1) !important;
+    const rules = HOST_TAGS.map((tag) => `
+      ${tag} {
+        opacity: var(--rg-alpha-${tag}, var(--rg-ui-alpha, 1)) !important;
         transition: opacity 0.15s ease-out;
       }
-    `;
+    `).join('\n');
+    style.textContent = rules;
     (document.head || document.documentElement).append(style);
   }
 
@@ -168,81 +179,119 @@
     const rootStyle = document.documentElement.style;
     rootStyle.setProperty('--rg-ui-alpha', String(uiAlpha));
     rootStyle.setProperty('--rg-input-alpha', String(inputAlpha));
+
+    const base = Math.min(1, Math.max(0.4, (Number(curSettings.opacityUi) || 100) / 100));
+    const now = Date.now();
+
+    for (const tag of HOST_TAGS) {
+      const isHovered = currentHoveredHost === tag;
+      const lastInput = hostLastInput.get(tag) || 0;
+      const isTyping = (now - lastInput) < TIMEOUT_MS;
+      const alpha = hostOpacity({ hovered: isHovered, typing: isTyping, base });
+      rootStyle.setProperty(`--rg-alpha-${tag}`, String(alpha));
+    }
   }
 
   function scheduleDimCheck(delay = TIMEOUT_MS) {
     clearTimeout(dimTimer);
     dimTimer = setTimeout(() => {
       const now = Date.now();
-      const prevSolid = _internalState.solid;
       stateAfter({ type: 'timer' }, now);
-      if (prevSolid !== _internalState.solid) {
-        applyToDocument();
+      applyToDocument();
+      let minRemaining = Infinity;
+      for (const [tag, lastInput] of hostLastInput.entries()) {
+        const remaining = TIMEOUT_MS - (now - lastInput);
+        if (remaining > 0 && remaining < minRemaining) {
+          minRemaining = remaining;
+        }
+      }
+      if (minRemaining < Infinity) {
+        scheduleDimCheck(minRemaining);
       }
     }, Math.max(0, delay));
   }
 
-  function dispatchState(event) {
-    const now = Date.now();
-    const prevSolid = _internalState.solid;
-    stateAfter(event, now);
-    if (prevSolid !== _internalState.solid) {
-      applyToDocument();
+  function findHostTagInPath(path) {
+    if (!Array.isArray(path)) return null;
+    for (const node of path) {
+      const tag = (node?.localName || node?.tagName)?.toLowerCase();
+      if (HOST_TAGS.includes(tag)) {
+        return tag;
+      }
     }
+    return null;
   }
 
-  // 1. 메모장 열림 감지 (MutationObserver)
+  // 1. 메모장 열림 감지 (MutationObserver): 메모장 열린 직후 메모장만 1.5초간 진함
   const obs = new MutationObserver((mutations) => {
     for (const m of mutations) {
       for (const n of m.addedNodes) {
         if ((n.localName || n.tagName)?.toLowerCase() === 'readgloss-memo-pad') {
-          dispatchState({ type: 'memo-open' });
+          hostLastInput.set('readgloss-memo-pad', Date.now());
+          stateAfter({ type: 'memo-open' }, Date.now());
+          applyToDocument();
+          scheduleDimCheck(TIMEOUT_MS);
         }
       }
     }
   });
   obs.observe(document.documentElement, { childList: true });
 
-  // 2. 마우스 진입 / 퇴장 감지
-  let isMouseOverMemo = false;
-
+  // 2. 마우스 진입 / 퇴장 감지 (호스트마다 따로 진해짐)
   document.addEventListener('mouseover', (e) => {
-    const inMemo = hasMemoHostInPath(e.composedPath());
-    if (inMemo && !isMouseOverMemo) {
-      isMouseOverMemo = true;
-      dispatchState({ type: 'memo-enter' });
+    const hostTag = findHostTagInPath(e.composedPath());
+    if (hostTag !== currentHoveredHost) {
+      currentHoveredHost = hostTag;
+      if (hostTag === 'readgloss-memo-pad') {
+        stateAfter({ type: 'memo-enter' }, Date.now());
+      } else if (_internalState.mouseInMemo) {
+        stateAfter({ type: 'memo-leave' }, Date.now());
+      }
+      applyToDocument();
     }
   }, true);
 
   document.addEventListener('mouseout', (e) => {
-    if (!isMouseOverMemo) return;
-    const relatedInMemo = hasMemoHostInPath(e.relatedTarget ? [e.relatedTarget] : []);
-    if (!relatedInMemo) {
-      isMouseOverMemo = false;
-      dispatchState({ type: 'memo-leave' });
-      const elapsed = Date.now() - (_internalState.lastInputAt || 0);
-      const remaining = TIMEOUT_MS - elapsed;
-      if (remaining > 0) {
-        scheduleDimCheck(remaining);
+    if (!currentHoveredHost) return;
+    const related = e.relatedTarget;
+    const relatedPath = related ? (typeof related.composedPath === 'function' ? related.composedPath() : [related]) : [];
+    const relatedHostTag = findHostTagInPath(relatedPath);
+    if (relatedHostTag !== currentHoveredHost) {
+      const prevHost = currentHoveredHost;
+      currentHoveredHost = relatedHostTag;
+      if (prevHost === 'readgloss-memo-pad') {
+        stateAfter({ type: 'memo-leave' }, Date.now());
+        const elapsed = Date.now() - (_internalState.lastInputAt || 0);
+        const remaining = TIMEOUT_MS - elapsed;
+        if (remaining > 0) {
+          scheduleDimCheck(remaining);
+        }
       }
+      applyToDocument();
     }
   }, true);
 
-  // 3. 메모장 쓰는 칸 input 이벤트 (composed 라 document 에서 받음)
+  // 3. 호스트 내부 input 이벤트 (마지막 input 뒤 1.5초 안 해당 host 만 진함)
   document.addEventListener('input', (e) => {
-    if (hasMemoHostInPath(e.composedPath())) {
-      dispatchState({ type: 'memo-input' });
-      if (!isMouseOverMemo) {
-        scheduleDimCheck(TIMEOUT_MS);
+    const hostTag = findHostTagInPath(e.composedPath());
+    if (hostTag) {
+      const now = Date.now();
+      hostLastInput.set(hostTag, now);
+      if (hostTag === 'readgloss-memo-pad') {
+        stateAfter({ type: 'memo-input' }, now);
       }
+      applyToDocument();
+      scheduleDimCheck(TIMEOUT_MS);
     }
   }, true);
 
-  // 4. 본문 mousedown 감지: 경로에 우리 host 가 없음
+  // 4. 본문 mousedown 감지: 모두 설정 값으로 복귀
   document.addEventListener('mousedown', (e) => {
     if (!hasOurHostInPath(e.composedPath())) {
-      isMouseOverMemo = false;
-      dispatchState({ type: 'page-mousedown' });
+      currentHoveredHost = null;
+      hostLastInput.clear();
+      stateAfter({ type: 'page-mousedown' }, Date.now());
+      applyToDocument();
     }
   }, true);
 

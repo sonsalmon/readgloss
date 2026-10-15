@@ -129,11 +129,18 @@
 
   const themeAttr = (theme) => (theme === 'light' || theme === 'dark' ? theme : null); // auto 는 속성 없음(prefers-color-scheme)
 
+  // 순수 함수: 퀵 메뉴 닫기 판정(T39)
+  // overDock 이나 overMenu 면 닫지 않고, 둘 다 벗어난 지 350ms 이상일 때만 닫는다.
+  function menuShouldClose({ overDock, overMenu, msSinceLeave }) {
+    if (overDock || overMenu) return false;
+    return typeof msSinceLeave === 'number' && msSinceLeave >= 350;
+  }
+
   globalThis.readglossPanelCore = {
     getPath, patchFor, sortTabs, mountPane, levelIndex, levelAt, RANGES, CHOICES, TOGGLES, sliderPatch, sliderValue,
     cleanSite, addSite, removeSite, resetPatch, clampTop, dragTop, mergePatch, themeAttr, isCardPath, isToastPath,
     isConceptPath, isMemoPath,
-    pageTranslateMenu, pageTranslateAction, studyModeText, studyModeToggle, MAX_SITES,
+    pageTranslateMenu, pageTranslateAction, studyModeText, studyModeToggle, menuShouldClose, MAX_SITES,
   };
 
   if (typeof document === 'undefined' || globalThis.readglossPanelLoaded) return; // node 시험·중복 주입: 여기까지
@@ -166,9 +173,9 @@
     .fab:active { cursor: grabbing; }
     .fab:hover { background: var(--rg-accent-soft); }
     .fab svg { width: 20px; height: 20px; pointer-events: none; }
-    .menu { position: absolute; right: 100%; top: 0; padding-right: 8px; display: none; }
-    .up .menu { top: auto; bottom: 0; }
-    .dock:hover .menu, .dock:has(:focus-visible) .menu { display: block; }
+    .menu { position: absolute; right: 100%; top: -8px; padding: 12px 16px 20px 8px; display: none; }
+    .up .menu { top: auto; bottom: -8px; }
+    .menu.open, .dock:has(:focus-visible) .menu { display: block; }
     .menu-card { display: flex; flex-direction: column; min-width: 150px; padding: 4px; border-radius: var(--rg-radius);
       background: var(--rg-bg); border: 1px solid var(--rg-border); box-shadow: var(--rg-shadow); }
     .mitem { all: unset; box-sizing: border-box; cursor: pointer; padding: 6px 10px; border-radius: 7px; white-space: nowrap; font-size: 13px; }
@@ -417,10 +424,50 @@
       h('button', { class: 'mitem', type: 'button', text: '내 단어', onclick: () => openPanel('words') }),
       h('button', { class: 'mitem', type: 'button', text: '버튼 숨기기', onclick: () => setSettings({ floatingButton: { show: false } }) })));
   const dock = h('div', { class: 'dock' }, menu, fab);
-  dock.addEventListener('mouseenter', syncPageTranslate); // 메뉴를 열 때 문구를 다시 계산
-  dock.addEventListener('focusin', syncPageTranslate);
-  dock.addEventListener('mouseenter', syncScrapView);
-  dock.addEventListener('focusin', syncScrapView);
+  let overDock = false;
+  let overMenu = false;
+  let menuCloseTimer = 0;
+  let menuLeaveAt = 0;
+
+  function openQuickMenu() {
+    clearTimeout(menuCloseTimer);
+    menuLeaveAt = 0;
+    menu.classList.add('open');
+    syncPageTranslate();
+    syncScrapView();
+  }
+
+  function scheduleQuickMenuClose() {
+    clearTimeout(menuCloseTimer);
+    menuLeaveAt = Date.now();
+    menuCloseTimer = setTimeout(() => {
+      const elapsed = Date.now() - menuLeaveAt;
+      if (C.menuShouldClose({ overDock, overMenu, msSinceLeave: elapsed })) {
+        menu.classList.remove('open');
+      }
+    }, 350);
+  }
+
+  dock.addEventListener('mouseenter', () => {
+    overDock = true;
+    openQuickMenu();
+  });
+  dock.addEventListener('mouseleave', () => {
+    overDock = false;
+    scheduleQuickMenuClose();
+  });
+  menu.addEventListener('mouseenter', () => {
+    overMenu = true;
+    openQuickMenu();
+  });
+  menu.addEventListener('mouseleave', () => {
+    overMenu = false;
+    scheduleQuickMenuClose();
+  });
+  dock.addEventListener('focusin', () => {
+    syncPageTranslate();
+    syncScrapView();
+  });
   dock.hidden = true; // 저장된 위치를 읽기 전에는 숨겨 둔다(깜빡임 방지)
 
   // 패널

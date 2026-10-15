@@ -29,8 +29,9 @@ test('T22-1 panel.js: 전체 번역 메뉴는 readglossPageTranslate 를 직접 
   assert.match(src, /api\.onStatus\?\.\(applyPtState\)/);
   assert.doesNotMatch(src, /readgloss:pagetranslate'/, 'window 이벤트를 보내지 않는다');
   assert.doesNotMatch(src, /document\.querySelector\('readgloss-translation'\)/, '손으로 번역한 문단이 메뉴 상태를 흔들지 않는다');
-  assert.match(src, /dock\.addEventListener\('mouseenter', syncPageTranslate\)/);
-  assert.match(src, /dock\.addEventListener\('focusin', syncPageTranslate\)/);
+  // T39: 메뉴는 openQuickMenu 로 열고(마우스 들어올 때), 열 때 문구를 다시 계산한다
+  assert.match(src.slice(src.indexOf('function openQuickMenu')), /^function openQuickMenu\(\) \{[\s\S]*?syncPageTranslate\(\);/);
+  assert.match(src, /dock\.addEventListener\('focusin', \(\) => \{\s*syncPageTranslate\(\);/); // 키보드로 열 때도
 });
 
 test('T22-3 paragraph.js: clear 는 진행 중이면 먼저 확실히 멈추고 상태 객체를 새로 만들지 않는다', () => {

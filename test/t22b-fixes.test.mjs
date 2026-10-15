@@ -151,7 +151,8 @@ test('T22-2 paragraph.js: 늦게 온 옛 답을 버릴 때 현재 문단이면 �
 
 test('T22-3 content.js: 사전 카드 Esc 도 확인 메시지(readgloss-toast) 안에서는 무시한다', () => {
   const src = read('content.js');
-  assert.match(src, /document\.addEventListener\('keydown', \(e\) => e\.key === 'Escape' && host && !e\.composedPath\(\)\.some\(\(n\) => n\.localName === 'readgloss-toast'\) && \(\(e\.readglossCardClosed = true\), close\(\)\), true\)/);
+  // T39: Esc 처리는 한 리스너에서 확인 메시지 먼저, 그다음 사전 카드(확인 메시지 안 Escape 는 카드에 안 감)
+  assert.match(src, /if \(host && !e\.composedPath\(\)\.some\(\(n\) => n\.localName === 'readgloss-toast'\)\) \{\s*e\.readglossCardClosed = true;/);
 });
 
 test('T22-5 panel.js: 전체 번역 메뉴 클릭은 신뢰한 클릭만 처리한다(페이지 .click() 차단)', () => {

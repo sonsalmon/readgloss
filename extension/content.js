@@ -718,5 +718,23 @@
     true,
   );
   document.addEventListener('mousedown', (e) => host && !e.composedPath().includes(host) && !e.composedPath().some((n) => n.localName === 'readgloss-toast') && close(), true); // 확인 메시지(메모)를 누를 땐 카드를 닫지 않는다
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && host && !e.composedPath().some((n) => n.localName === 'readgloss-toast') && ((e.readglossCardClosed = true), close()), true); // 표시: 패널(panel.js)이 같은 Escape 로 같이 닫히지 않게. 확인 메시지(메모) 안 Escape 는 무시
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+
+    // 저장 완료 확인 메시지(readgloss-toast)가 열려 있고 메모 칸 입력 중이 아닐 때 Esc 로 바로 닫음
+    if (toastHost && !toastMemo) {
+      e.readglossCardClosed = true; // 패널·메모장 등이 같은 Escape 로 닫히지 않게 막음
+      hideToast();
+      return;
+    }
+
+    // 사전 카드(readgloss-card) Esc 로 닫기 및 글 선택 해제. 확인 메시지(메모) 안 Escape 는 무시
+    if (host && !e.composedPath().some((n) => n.localName === 'readgloss-toast')) {
+      e.readglossCardClosed = true; // 표시: 패널(panel.js)이 같은 Escape 로 같이 닫히지 않게
+      try {
+        window.getSelection?.()?.removeAllRanges?.();
+      } catch {}
+      close();
+    }
+  }, true);
 })();
