@@ -775,7 +775,7 @@
       defField.className = 'detail-field';
       const defLabel = document.createElement('label');
       defLabel.className = 'detail-label';
-      defLabel.textContent = '정의 (1~500자)';
+      defLabel.textContent = '내 정의 (비우면 나중에 볼 것 · 500자까지)';
       const defTextarea = document.createElement('textarea');
       defTextarea.className = 'detail-textarea';
       defTextarea.rows = 4;
