@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>학습노트 설계</title>
+<style>
+:root{--bg:#fbfaf7;--fg:#222;--mut:#666;--card:#fff;--bd:#e3e0d8;--acc:#534AB7;--accbg:#EEEDFE;--q:#FAEEDA;--qf:#633806;--g:#E1F5EE;--gf:#085041;--r:#FAECE7;--rf:#712B13}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1b1a;--fg:#eee;--mut:#aaa;--card:#252524;--bd:#3a3936;--acc:#AFA9EC;--accbg:#26215C;--q:#412402;--qf:#FAC775;--g:#04342C;--gf:#9FE1CB;--r:#4A1B0C;--rf:#F5C4B3}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Apple SD Gothic Neo",sans-serif}
+main{max-width:960px;margin:auto;padding:16px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:16px 0;overflow-x:auto}
+h1{font-size:22px}h2{font-size:18px;margin:0 0 8px}.mut{color:var(--mut);font-size:14px}
+pre.md{background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:12px;font-size:13px;white-space:pre-wrap}
+.note{border:1px solid var(--bd);border-radius:8px;padding:12px;font-size:14px}
+.note h3{font-size:15px;margin:8px 0 4px}
+.qt{border-left:3px solid var(--qf);background:var(--q);color:var(--qf);padding:4px 8px;margin:4px 0}
+.cc{border-left:3px solid var(--acc);background:var(--accbg);padding:6px 8px;margin:6px 0}
+.lt{border-left:3px solid var(--rf);background:var(--r);color:var(--rf);padding:4px 8px;margin:4px 0}
+.wd{border-left:3px solid var(--gf);background:var(--g);color:var(--gf);padding:4px 8px;margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-top:1px solid var(--bd);padding:6px;text-align:left;vertical-align:top}
+</style></head><body><main>
+<h1>학습노트 — 메모가 바탕, 개념은 메모의 한 모양</h1>
+<p class="mut">readgloss 설계 제안 · 2026-10-15 · 상태: 정범 확인 대기</p>
+
+<section><h2>1. 생각의 틀</h2>
+<ul>
+<li>공부하며 남기는 것은 모두 <b>메모</b>다. 메모는 페이지의 소제목 아래에 쌓인다.</li>
+<li>메모에는 모양이 있다: 내 글 · 인용 · <b>개념</b> · <b>나중에 볼 것</b> · 단어.</li>
+<li>개념은 "이름 + 내 정의"라는 정해진 모양의 메모다. 그래서 메모장에도 보이고, 개념 탭에도 보인다. 같은 것 하나라서 어디서 고쳐도 둘 다 바뀐다.</li>
+<li>학습을 마치면 이 메모들이 모여 <b>학습노트 한 장(마크다운)</b>이 된다. 개념은 따로 <b>llm-wiki 형식의 개념 페이지</b>로도 나온다.</li>
+</ul></section>
+
+<section><h2>2. 전체 그림</h2>
+<pre class="mermaid">
+flowchart LR
+  subgraph 확장["브라우저에서 (확장)"]
+    Pad["메모장<br/>소제목 칸마다 메모"]
+    Card["드래그·사전 카드<br/>[스크랩] [내 개념으로] [나중에] [단어장]"]
+    Tab["개념 탭<br/>(개념 모양만 모아 보기)"]
+  end
+  DB[("readgloss.db<br/>메모 = 점 하나<br/>모양: 글·인용·개념·나중에·단어")]
+  Pad <--> DB
+  Card --> DB
+  Tab <--> DB
+  DB -->|세션 따라잡기| Note["학습노트<br/>notes/할일/페이지.md"]
+  DB -->|세션 따라잡기| Cpt["개념 페이지<br/>concepts/이름.md<br/>(llm-wiki 형식)"]
+  Cpt -.->|정범이 고른 것만| Wiki["llm-wiki<br/>raw/sources"]
+</pre></section>
+
+<section><h2>3. 학습노트 한 장의 모양 (마크다운)</h2>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">
+<pre class="md">---
+type: study-note
+title: Access control vulnerabilities
+task: 웹 해킹 첫걸음 (S1-04)
+url: https://portswigger.net/web-security/access-control
+date: 2026-10-15
+tags: [다시 보기]
+---
+# Access control vulnerabilities
+
+## Vertical privilege escalation
+&gt; If a user can gain access to functionality
+&gt; that they are not permitted to access…
+
+- 관리자 기능을 일반 사용자가 씀 = 수직
+  - 서버가 권한을 확인해야 함
+
+&gt; [!concept] [[access control]]
+&gt; 다른 이름: 접근 통제, AC · #다시 보기
+&gt; - 누가 무엇을 할 수 있는지 서버가 정하는 규칙
+&gt; - 클라이언트 숨김은 통제가 아님
+
+&gt; [!question] 나중에 볼 것: IDOR
+
+&gt; [!word] escalation — 상승, 확대
+</pre>
+<div class="note">
+<h3>Vertical privilege escalation</h3>
+<div class="qt">If a user can gain access to functionality that they are not permitted to access…</div>
+<ul><li>관리자 기능을 일반 사용자가 씀 = 수직<ul><li>서버가 권한을 확인해야 함</li></ul></li></ul>
+<div class="cc"><b>개념 · access control</b><br><span class="mut">다른 이름: 접근 통제, AC · #다시 보기</span><ul style="margin:4px 0"><li>누가 무엇을 할 수 있는지 서버가 정하는 규칙</li><li>클라이언트 숨김은 통제가 아님</li></ul></div>
+<div class="lt">나중에 볼 것 · IDOR</div>
+<div class="wd">단어 · escalation — 상승, 확대</div>
+<p class="mut">↑ 옵시디언·llm-wiki 앱에서 보이는 모습. 콜아웃을 모르는 곳에서는 인용(&gt;) 글로 보인다.</p>
+</div></div></section>
+
+<section><h2>4. 개념 페이지 (llm-wiki 형식)</h2>
+<pre class="md">---
+type: concept
+title: access control
+description: 누가 무엇을 할 수 있는지 서버가 정하는 규칙이다.
+aliases: [접근 통제, AC]
+tags: [다시 보기]
+sources: ["notes/S1-04/access-control-vulnerabilities.md"]
+created: 2026-10-15
+updated: 2026-10-15
+---
+# access control
+
+누가 무엇을 할 수 있는지 서버가 정하는 규칙이다.
+
+- 누가 무엇을 할 수 있는지 서버가 정하는 규칙
+- 클라이언트 숨김은 통제가 아님
+
+## 나온 곳
+- [[notes/S1-04/access-control-vulnerabilities]] — Vertical privilege escalation
+
+## 관련 페이지
+- [[privilege escalation]] — 권한 상승은 접근 통제가 뚫린 결과
+</pre>
+<p class="mut">첫 줄 한 문장 = 내 정의의 첫 항목. llm-wiki 규칙(첫 줄 한 문장, aliases, 관련 페이지 형식)을 따른다.</p></section>
+
+<section><h2>5. 무엇이 어떻게 바뀌나</h2>
+<table>
+<tr><th>지금</th><th>바꾼 뒤</th></tr>
+<tr><td>메모·개념·스크랩·단어가 따로 저장되고 따로 문서가 나옴</td><td>모두 "메모"로 소제목 아래에 쌓이고, 학습노트 한 장에 모임</td></tr>
+<tr><td>개념은 개념 탭에서만 고침</td><td>메모장에서도 개념 칸이 보이고 거기서 고치면 개념 탭에도 반영(같은 것 하나)</td></tr>
+<tr><td>학습 폴더 <code>scraps/</code> 문서</td><td>학습 폴더 <code>notes/</code> 학습노트(스크랩·메모·개념·나중에·단어가 다 들어감)</td></tr>
+<tr><td>개념 문서는 자체 형식</td><td>개념 페이지는 llm-wiki 형식(앞머리·첫 줄·관련 페이지)</td></tr>
+<tr><td>이미지 없음</td><td>메모장에 이미지를 끌어 넣으면 <code>notes/할일/assets/</code>에 저장, 노트에 <code>![](…)</code> (다음 단계)</td></tr>
+</table></section>
+
+<section><h2>6. 메모장에서 개념 쓰기</h2>
+<ul>
+<li>쓰는 칸 맨 앞에 <code>!개념 이름</code>을 치고 ⌘Enter → 개념 메모가 된다(다음 줄부터 정의 목록). 카드의 [내 개념으로]와 같은 결과.</li>
+<li><code>?이름</code> + ⌘Enter → 나중에 볼 것.</li>
+<li>메모장에서 개념 메모를 누르면 그 자리에서 고친다(자동 저장). 개념 탭·페이지 회색 표시에도 바로 반영.</li>
+</ul></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'default'});</script>
+</body></html>
