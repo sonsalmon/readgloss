@@ -256,6 +256,63 @@
     return { left, top, width, height };
   }
 
+  // 메모장 사각영역을 화면 모서리 기준 좌표({ ax, x, ay, y, width, height })로 변환.
+  // 놓을 때 메모장 가운데가 화면 왼쪽 절반이면 ax='left', 오른쪽이면 'right'; 세로도 동일.
+  function toAnchored(rect, viewport) {
+    const vw = viewport && typeof viewport.vw === 'number' && Number.isFinite(viewport.vw) ? viewport.vw : 0;
+    const vh = viewport && typeof viewport.vh === 'number' && Number.isFinite(viewport.vh) ? viewport.vh : 0;
+
+    const rawW = rect && typeof rect.width === 'number' && Number.isFinite(rect.width) ? rect.width : 260;
+    const rawH = rect && typeof rect.height === 'number' && Number.isFinite(rect.height) ? rect.height : 200;
+    const rawL = rect && typeof rect.left === 'number' && Number.isFinite(rect.left) ? rect.left : 0;
+    const rawT = rect && typeof rect.top === 'number' && Number.isFinite(rect.top) ? rect.top : 0;
+
+    const centerX = rawL + rawW / 2;
+    const centerY = rawT + rawH / 2;
+
+    const ax = centerX < vw / 2 ? 'left' : 'right';
+    const ay = centerY < vh / 2 ? 'top' : 'bottom';
+
+    const x = ax === 'right' ? vw - (rawL + rawW) : rawL;
+    const y = ay === 'bottom' ? vh - (rawT + rawH) : rawT;
+
+    return {
+      ax,
+      x: Math.round(x),
+      ay,
+      y: Math.round(y),
+      width: Math.round(rawW),
+      height: Math.round(rawH),
+    };
+  }
+
+  // 저장된 모서리 기준 좌표({ ax, x, ay, y, width, height })를 화면 안 보이는 위치({ left, top, width, height })로 변환.
+  // 화면 안으로 당김(clampRect 재사용). 옛 저장 모양({ left, top, width, height })이 오면 toAnchored로 바꿔 읽는다.
+  function fromAnchored(saved, viewport) {
+    if (!saved || typeof saved !== 'object') {
+      return clampRect({ left: 0, top: 0, width: 260, height: 200 }, viewport);
+    }
+
+    let anchored = saved;
+    // 옛 저장 모양({ left, top, width, height })이 오면 toAnchored로 바꿔 읽는다.
+    if (!anchored.ax || !anchored.ay) {
+      anchored = toAnchored(anchored, viewport);
+    }
+
+    const vw = viewport && typeof viewport.vw === 'number' && Number.isFinite(viewport.vw) ? viewport.vw : 0;
+    const vh = viewport && typeof viewport.vh === 'number' && Number.isFinite(viewport.vh) ? viewport.vh : 0;
+
+    const rawW = typeof anchored.width === 'number' && Number.isFinite(anchored.width) ? anchored.width : 260;
+    const rawH = typeof anchored.height === 'number' && Number.isFinite(anchored.height) ? anchored.height : 200;
+    const rawX = typeof anchored.x === 'number' && Number.isFinite(anchored.x) ? anchored.x : 0;
+    const rawY = typeof anchored.y === 'number' && Number.isFinite(anchored.y) ? anchored.y : 0;
+
+    const rawLeft = anchored.ax === 'right' ? vw - rawW - rawX : rawX;
+    const rawTop = anchored.ay === 'bottom' ? vh - rawH - rawY : rawY;
+
+    return clampRect({ left: rawLeft, top: rawTop, width: rawW, height: rawH }, viewport);
+  }
+
   // 글이 공백뿐이고 quote 없으면 false
   function canSave(text, quote) {
     const hasText = typeof text === 'string' && text.trim().length > 0;
@@ -282,6 +339,8 @@
     shouldMoveCaret,
     padKeyV2,
     clampRect,
+    toAnchored,
+    fromAnchored,
     isPageField,
     canSave,
   };

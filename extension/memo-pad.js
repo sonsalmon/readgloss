@@ -7,15 +7,82 @@
   const DEFAULT_HEIGHT = 360;
   const MARGIN = 24;
 
+  function getDefaultAnchored() {
+    return {
+      ax: 'right',
+      x: MARGIN,
+      ay: 'bottom',
+      y: MARGIN,
+      width: DEFAULT_WIDTH,
+      height: DEFAULT_HEIGHT,
+    };
+  }
+
   function getDefaultRect() {
     const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
     const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+    const memoCore = globalThis.readglossMemo;
+    if (memoCore?.fromAnchored) {
+      return memoCore.fromAnchored(getDefaultAnchored(), { vw, vh });
+    }
     const left = Math.max(0, vw - DEFAULT_WIDTH - MARGIN);
     const top = Math.max(0, vh - DEFAULT_HEIGHT - MARGIN);
     return { left, top, width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT };
   }
 
+  let savedAnchored = getDefaultAnchored();
   let currentRect = getDefaultRect();
+
+  function applyAnchored(anchored) {
+    if (!anchored) return;
+    const memoCore = globalThis.readglossMemo;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+
+    let target = anchored;
+    if (!target.ax || !target.ay) {
+      target = memoCore?.toAnchored ? memoCore.toAnchored(target, { vw, vh }) : target;
+    }
+
+    const clamped = memoCore?.fromAnchored
+      ? memoCore.fromAnchored(target, { vw, vh })
+      : (memoCore?.clampRect ? memoCore.clampRect(target, { vw, vh }) : target);
+    currentRect = clamped;
+
+    if (!host) return;
+
+    host.style.position = 'fixed';
+    host.style.width = `${clamped.width}px`;
+    host.style.height = `${clamped.height}px`;
+
+    const rawLeft = target.ax === 'right' ? vw - target.width - target.x : target.x;
+    const rawTop = target.ay === 'bottom' ? vh - target.height - target.y : target.y;
+
+    const isClampedX = clamped.left !== rawLeft || clamped.width !== target.width;
+    const isClampedY = clamped.top !== rawTop || clamped.height !== target.height;
+
+    if (isClampedX) {
+      host.style.left = `${clamped.left}px`;
+      host.style.right = 'auto';
+    } else if (target.ax === 'right') {
+      host.style.right = `${target.x}px`;
+      host.style.left = 'auto';
+    } else {
+      host.style.left = `${target.x}px`;
+      host.style.right = 'auto';
+    }
+
+    if (isClampedY) {
+      host.style.top = `${clamped.top}px`;
+      host.style.bottom = 'auto';
+    } else if (target.ay === 'bottom') {
+      host.style.bottom = `${target.y}px`;
+      host.style.top = 'auto';
+    } else {
+      host.style.top = `${target.y}px`;
+      host.style.bottom = 'auto';
+    }
+  }
 
   function applyRect(rect) {
     if (!rect) return;
@@ -40,9 +107,13 @@
     const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
     const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
     const clamped = memoCore?.clampRect ? memoCore.clampRect(currentRect, { vw, vh }) : currentRect;
-    applyRect(clamped);
+    currentRect = clamped;
+    if (memoCore?.toAnchored) {
+      savedAnchored = memoCore.toAnchored(clamped, { vw, vh });
+    }
+    applyAnchored(savedAnchored);
     if (chrome?.storage?.local?.set) {
-      chrome.storage.local.set({ memoPadRect: clamped });
+      chrome.storage.local.set({ memoPadRect: savedAnchored });
     }
   }
 
@@ -50,14 +121,25 @@
     if (chrome?.storage?.local?.get) {
       chrome.storage.local.get(['memoPadRect'], (items) => {
         if (!chrome.runtime?.lastError && items?.memoPadRect) {
-          applyRect(items.memoPadRect);
+          const stored = items.memoPadRect;
+          const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+          const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+          const memoCore = globalThis.readglossMemo;
+          if (!stored.ax || !stored.ay) {
+            savedAnchored = memoCore?.toAnchored ? memoCore.toAnchored(stored, { vw, vh }) : stored;
+          } else {
+            savedAnchored = stored;
+          }
+          applyAnchored(savedAnchored);
         } else {
-          applyRect(currentRect || getDefaultRect());
+          savedAnchored = getDefaultAnchored();
+          applyAnchored(savedAnchored);
         }
         if (typeof callback === 'function') callback();
       });
     } else {
-      applyRect(currentRect || getDefaultRect());
+      savedAnchored = savedAnchored || getDefaultAnchored();
+      applyAnchored(savedAnchored);
       if (typeof callback === 'function') callback();
     }
   }
@@ -77,6 +159,12 @@
       isDragging = true;
       startX = e.clientX;
       startY = e.clientY;
+      const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+      const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+      const memoCore = globalThis.readglossMemo;
+      if (memoCore?.fromAnchored) {
+        currentRect = memoCore.fromAnchored(savedAnchored, { vw, vh });
+      }
       startLeft = currentRect.left;
       startTop = currentRect.top;
       try {
@@ -137,6 +225,12 @@
       isResizing = true;
       startX = e.clientX;
       startY = e.clientY;
+      const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+      const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+      const memoCore = globalThis.readglossMemo;
+      if (memoCore?.fromAnchored) {
+        currentRect = memoCore.fromAnchored(savedAnchored, { vw, vh });
+      }
       startW = currentRect.width;
       startH = currentRect.height;
       try {
@@ -186,7 +280,7 @@
       clearTimeout(resizeDebounceTimer);
       resizeDebounceTimer = setTimeout(() => {
         if (isOpen && host) {
-          applyRect(currentRect);
+          applyAnchored(savedAnchored);
         }
       }, 200);
     });
@@ -624,7 +718,7 @@
       host = document.createElement(HOST_TAG);
       shadow = host.attachShadow({ mode: 'open' });
       document.documentElement.append(host);
-      applyRect(currentRect);
+      applyAnchored(savedAnchored);
     }
     return shadow;
   }
