@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>섹션별 공부 시간</title>
+<style>
+:root{--bg:#fbfaf7;--fg:#222;--mut:#666;--card:#fff;--bd:#e3e0d8;--acc:#534AB7;--bar:#AFA9EC}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1b1a;--fg:#eee;--mut:#aaa;--card:#252524;--bd:#3a3936;--acc:#AFA9EC;--bar:#534AB7}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Apple SD Gothic Neo",sans-serif}
+main{max-width:900px;margin:auto;padding:16px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:16px 0;overflow-x:auto}
+h1{font-size:22px}h2{font-size:18px;margin:0 0 8px}.mut{color:var(--mut);font-size:14px}
+.pad{border:2px solid var(--acc);border-radius:10px;padding:8px;font-size:14px;max-width:360px}
+.row{display:flex;justify-content:space-between;padding:3px 6px;border-bottom:1px dashed var(--bd)}
+.bar{height:10px;background:var(--bar);border-radius:5px;display:inline-block;vertical-align:middle}
+table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-top:1px solid var(--bd);padding:6px;text-align:left;vertical-align:top}
+</style></head><body><main>
+<h1>섹션별 공부 시간 — 보고 있을 때만 재는 스톱워치</h1>
+<p class="mut">readgloss 변경 기록 19 설계안 · 2026-10-15 · T38·T39 다음</p>
+
+<section><h2>1. 언제 시계가 가나</h2>
+<pre class="mermaid">
+flowchart LR
+  A["이 탭이 보임<br/>+ 창이 앞에 있음"] --> B{"5분 안에<br/>스크롤·마우스·키?"}
+  B -->|예| C["⏱ 흐름<br/>지금 소제목에 더함"]
+  B -->|아니오| D["⏸ 멈춤(자리 비움)"]
+  E["다른 탭·다른 창·<br/>화면 잠금"] --> D
+  D -->|"다시 움직임"| C
+</pre>
+<ul>
+<li>"지금 소제목" = 메모장이 쓰는 지금 칸 규칙과 같다(화면 위쪽에 걸친 h1~h3). 메모장이 닫혀 있어도 잰다.</li>
+<li>영상·긴 글을 가만히 볼 때 끊기지 않게 5분 여유. 동영상이 재생 중이면 멈추지 않는다.</li>
+<li>재는 것은 맥 안 다리 db에만. 페이지 글은 남기지 않는다(주소·소제목 글·초).</li>
+</ul></section>
+
+<section><h2>2. 어디서 보이나</h2>
+<div class="pad">
+<div class="row"><b>ml-foundations › Naive Bayes</b><span>⏱ 18:42</span></div>
+<div class="row"><span>Bayes' Theorem</span><span class="mut">6분</span></div>
+<div class="row"><span>How Naive Bayes Works</span><span class="mut">9분 · 메모 2</span></div>
+<div class="row"><span>Data Assumptions</span><span class="mut">1분</span></div>
+</div>
+<ul>
+<li>메모장 위 줄: 이 페이지 오늘 시간이 스톱워치처럼 간다(멈추면 ⏸).</li>
+<li>목차 줄: 소제목마다 머문 시간.</li>
+<li>패널 "공부 기록" 탭에 <b>시간</b> 보기: 오늘·이번 주, 할 일 → 페이지 → 소제목 막대.</li>
+</ul>
+<table>
+<tr><th>소제목(이번 주)</th><th>시간</th></tr>
+<tr><td>Naive Bayes › How Naive Bayes Works</td><td><span class="bar" style="width:180px"></span> 41분</td></tr>
+<tr><td>Decision Trees › Gini Impurity</td><td><span class="bar" style="width:120px"></span> 27분</td></tr>
+<tr><td>Logistic Regression › Sigmoid</td><td><span class="bar" style="width:50px"></span> 11분</td></tr>
+</table></section>
+
+<section><h2>3. 분석에 쓰기</h2>
+<ul>
+<li>학습노트 앞머리에 <code>minutes</code>, 소제목 줄 끝에 "· 12분".</li>
+<li>세션 끝에 에이전트가 learning-records에 "오래 머문 소제목 3개"를 적는다 → 튜터·다음 복습이 거기서 시작.</li>
+<li>나중에: "오래 머물렀는데 메모가 없는 소제목" = 막힌 곳 후보(내게 맞춘 주석·문장 구조와 연결).</li>
+</ul></section>
+
+<section><h2>4. 정해 둔 것(바꿀 수 있음)</h2>
+<ul>
+<li>자리 비움 기준 5분 — 읽기만 할 때도 안 끊기게. 틀리면: 시간이 조금 부풀려짐.</li>
+<li>30초마다, 그리고 탭을 떠날 때 다리에 보냄 — 브라우저가 갑자기 꺼져도 30초 넘게 잃지 않음.</li>
+<li>하루 = 서울 날짜 기준.</li>
+</ul></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'default'});</script>
+</body></html>
