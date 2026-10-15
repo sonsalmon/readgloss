@@ -295,6 +295,7 @@
   let currentTaskTitle = ''; // 짐작된 할 일 제목
   let typingTimer = 0;
   let drafts = {}; // 소제목 key별 쓰던 글 보관 { [key]: string }
+  let stash = {}; // 다시 열기로 고치는 동안 그 칸이 쓰던 글 { [key]: string } — 고치기를 마치거나 그만두면 되돌린다
   let editingMemo = null; // 다시 열기로 가져온 메모 { id, sectionKey } — 그 칸의 ⌘Enter 가 고침(edit)으로 보낸다
   let currentHeadings = []; // [{ key, text, level, el }]
   let currentMemos = []; // 이 페이지의 저장된 메모 목록
@@ -961,6 +962,7 @@
       type: 'memo-state-set',
       open: isOpen,
       drafts,
+      stash,
       quotes,
       rect: currentRect,
       text: Object.values(drafts).find(Boolean) || '',
@@ -1001,6 +1003,15 @@
     }
   }
 
+  // 다시 열기로 가져온 메모 고치기를 마치거나 그만둔다: 그 칸 쓰는 칸을 보관한 초안으로 되돌린다(없으면 빈 칸)
+  function endEdit() {
+    if (!editingMemo) return;
+    const key = editingMemo.sectionKey;
+    drafts[key] = stash[key] || '';
+    delete stash[key];
+    editingMemo = null;
+  }
+
   // 메모 고치기(다시 열기 뒤): 칸 글로 그 메모 글을 바꾼다(다리 op edit)
   async function performEdit(sectionKey, ta) {
     const text = (ta.value || '').trim().slice(0, 2000);
@@ -1012,9 +1023,9 @@
     if (res?.memo) {
       const idx = currentMemos.findIndex((m) => m.id === id);
       if (idx !== -1) currentMemos[idx] = res.memo;
-      editingMemo = null;
-      ta.value = '';
-      drafts[sectionKey] = '';
+      endEdit();
+      ta.value = drafts[sectionKey] || '';
+      autoResize(ta);
       saveDrafts();
       rebuildSectionsUI();
       showSuccessMeta('고쳤어요');
@@ -1035,12 +1046,16 @@
         showToastNotice('이 페이지에서 그 메모를 찾지 못했어요');
         return;
       }
+      endEdit(); // 고치던 것이 있으면 그만두고 그 칸 초안을 되돌린 뒤 다음 메모를 가져온다
       currentMemos = res.memos;
       openPad();
       const memoCore = globalThis.readglossMemo;
       const pageTitle = (document.title || '').replace(/\s+/g, ' ').trim();
       const sections = memoCore?.buildSections ? memoCore.buildSections(currentHeadings, currentMemos, pageTitle) : [];
       const key = sections.find((sec) => (sec.memos || []).some((m) => m.id === id))?.key || '_page';
+      // 칸에 쓰던 글은 메모 글로 덮기 전에 보관한다(고치기를 마치거나 그만두면 되돌린다)
+      const prevDraft = drafts[key] || '';
+      if (prevDraft) stash[key] = prevDraft;
       editingMemo = { id, sectionKey: key };
       currentActiveKey = key;
       drafts[key] = memo.text || '';
@@ -1709,7 +1724,6 @@
   // 메모장 접기(닫기)
   function closePad() {
     clearTimeout(typingTimer);
-    editingMemo = null;
     if (shadow && currentMode === 'pad') {
       const textareas = shadow.querySelectorAll('.sec-textarea');
       for (const ta of textareas) {
@@ -1718,6 +1732,7 @@
         if (key) drafts[key] = ta.value;
       }
     }
+    endEdit(); // 고치는 중 닫으면 그만둔 것이다: 칸을 보관한 초안으로 되돌린다
     isOpen = false;
     currentMode = 'pad';
     removeHost();
@@ -1771,6 +1786,13 @@
       if (res.quotes && typeof res.quotes === 'object') {
         quotes = { ...res.quotes };
       }
+      // 고치던 중 새로고침했으면 고치기는 그만둔 것이다(고치는 상태는 저장하지 않는다): 보관한 초안을 칸으로 되돌린다
+      if (res.stash && typeof res.stash === 'object') {
+        for (const k of Object.keys(res.stash)) {
+          if (res.stash[k]) drafts[k] = res.stash[k];
+        }
+      }
+      stash = {};
       // 옛 상태의 text가 있으면 첫 칸 draft로 옮긴다
       if (typeof res.text === 'string' && res.text) {
         const firstKey = currentHeadings[0]?.key || '_page';

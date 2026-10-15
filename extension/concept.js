@@ -416,6 +416,8 @@
     const hit = findHit(e.clientX, e.clientY);
     pressedConceptId = hit?.id ?? null;
     pressedWasOpen = Boolean(hit) && isPanelOpen() && globalThis.readglossConceptPanelUi?.getCurrentConceptId?.() === hit.id;
+    // 개념 표시 위 누름을 panel.js 가 알아보게 표시한다(패널은 열린 채 상세만 바뀐다). 같은 개념 토글 닫기는 여기서 한다.
+    if (hit) e.readglossConceptHit = true;
   }
 
   function onWindowMouseUp() {
@@ -846,7 +848,7 @@
     defField.className = 'field';
     const defLabel = document.createElement('label');
     defLabel.className = 'label';
-    defLabel.textContent = '내 정의 (1~500자)';
+    defLabel.textContent = '내 정의 (비우면 나중에 볼 것 · 500자까지)';
     const defIn = document.createElement('textarea');
     defIn.className = 'textarea';
     defIn.rows = 3;

@@ -188,7 +188,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function concepts(msg, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
-  const { op, id, name, aliases, definition, related, task, scrapId, seen } = msg;
+  const { op, id, name, aliases, tags, definition, related, task, scrapId, seen } = msg;
   let path = '/concepts';
   let init;
   if (op === 'names') {
@@ -200,7 +200,7 @@ async function concepts(msg, retried = false) {
     init = {
       method: 'POST',
       headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ op, id, name, aliases, definition, related, task, scrapId, seen }),
+      body: JSON.stringify({ op, id, name, aliases, tags, definition, related, task, scrapId, seen }),
     };
   }
   const res = await bridgeFetch(path, init);
@@ -380,15 +380,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === 'memo-state-get') {
     storage.get(key).then((data) => {
-      sendResponse(data?.[key] ?? { open: false, text: '', drafts: {}, quotes: {} });
-    }).catch(() => sendResponse({ open: false, text: '', drafts: {}, quotes: {} }));
+      sendResponse(data?.[key] ?? { open: false, text: '', drafts: {}, quotes: {}, stash: {} });
+    }).catch(() => sendResponse({ open: false, text: '', drafts: {}, quotes: {}, stash: {} }));
     return true; // 비동기 응답
   }
 
   if (msg.type === 'memo-state-set') {
     const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
     // 변경 기록 14-3: 쓰던 글·인용은 소제목 칸별로 탭 상태에 둔다
-    const state = { open: !!msg.open, text: typeof msg.text === 'string' ? msg.text : '', drafts: obj(msg.drafts), quotes: obj(msg.quotes) };
+    const state = { open: !!msg.open, text: typeof msg.text === 'string' ? msg.text : '', drafts: obj(msg.drafts), quotes: obj(msg.quotes), stash: obj(msg.stash) };
     storage.set({ [key]: state }).then(() => {
       sendResponse({ ok: true });
     }).catch(() => sendResponse({ error: 'storage-error' }));

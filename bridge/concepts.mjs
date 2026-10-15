@@ -46,8 +46,10 @@ export function parseConceptOp(v) {
     const cleanName = v.name.trim().replace(/\s+/g, ' ');
     if (cleanName.length < 1 || v.name.length > LIMIT.name || cleanName.length > LIMIT.name) return null;
 
+    // hasX: 키가 요청에 있었나. 없으면 고치기 때 기존 값을 그대로 둔다(빈 배열과 구분)
     let aliases = [];
-    if (v.aliases !== undefined && v.aliases !== null) {
+    const hasAliases = v.aliases !== undefined && v.aliases !== null;
+    if (hasAliases) {
       if (!Array.isArray(v.aliases) || v.aliases.length > LIMIT.aliasesCount) return null;
       for (const a of v.aliases) {
         if (typeof a !== 'string') return null;
@@ -58,7 +60,8 @@ export function parseConceptOp(v) {
     }
 
     let tags = [];
-    if (v.tags !== undefined) {
+    const hasTags = v.tags !== undefined;
+    if (hasTags) {
       if (!Array.isArray(v.tags)) return null;
       const seenTags = new Set();
       for (const t of v.tags) {
@@ -79,7 +82,8 @@ export function parseConceptOp(v) {
     const definition = v.definition;
 
     let related = [];
-    if (v.related !== undefined && v.related !== null) {
+    const hasRelated = v.related !== undefined && v.related !== null;
+    if (hasRelated) {
       if (!Array.isArray(v.related) || v.related.length > LIMIT.relatedCount) return null;
       for (const r of v.related) {
         if (typeof r !== 'string') return null;
@@ -121,9 +125,12 @@ export function parseConceptOp(v) {
       id,
       name: cleanName,
       aliases,
+      hasAliases,
       tags,
+      hasTags,
       definition,
       related,
+      hasRelated,
       task,
       scrapId,
       seen,
@@ -309,13 +316,20 @@ export function createConcepts({ db, now = Date.now, learning }) {
         ? op.seen
         : (existingNode?.data?.seen ?? null);
 
-      const tags = Array.isArray(op.tags)
-        ? [...op.tags]
-        : (existingNode?.data?.tags ? [...existingNode.data.tags] : []);
+      // 요청에 키가 없으면(hasX 가 false) 고치기 때 기존 값을 유지한다. 직접 넘긴 객체는 배열 여부로 판단한다.
+      const aliasesGiven = op.hasAliases ?? Array.isArray(op.aliases);
+      const tagsGiven = op.hasTags ?? Array.isArray(op.tags);
+      const relatedGiven = op.hasRelated ?? Array.isArray(op.related);
+      const aliases = aliasesGiven
+        ? [...(op.aliases || [])]
+        : [...(existingNode?.data?.aliases ?? [])];
+      const tags = tagsGiven
+        ? [...(op.tags || [])]
+        : [...(existingNode?.data?.tags ?? [])];
 
       const data = {
         name: op.name,
-        aliases: op.aliases || [],
+        aliases,
         tags,
         definition: op.definition,
         seen,
@@ -347,14 +361,13 @@ export function createConcepts({ db, now = Date.now, learning }) {
         db.link(targetId, op.scrapId, 'from_scrap', nowTs);
       }
 
-      // 3. related 선: 옛 related 선 지우고 새 관련 개념 양방향 연결
-      const oldRelated = db.out(targetId, 'related');
-      for (const e of oldRelated) {
-        db.unlink(targetId, e.dst, 'related');
-        db.unlink(e.dst, targetId, 'related');
-      }
-
-      if (Array.isArray(op.related)) {
+      // 3. related 선: 키가 있을 때만 옛 related 선을 지우고 새 관련 개념을 양방향으로 잇는다
+      if (relatedGiven) {
+        const oldRelated = db.out(targetId, 'related');
+        for (const e of oldRelated) {
+          db.unlink(targetId, e.dst, 'related');
+          db.unlink(e.dst, targetId, 'related');
+        }
         for (const relName of op.related) {
           const relKey = conceptKey(relName);
           if (!relKey) continue;

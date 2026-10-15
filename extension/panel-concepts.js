@@ -370,6 +370,7 @@
   let rerenderCurrentTab = null;
   let hasRendered = false;
   let loadConcepts = null;
+  let conceptsBusy = () => false; // 상세에 저장 안 된 변경이 있거나 칸에 포커스가 있나 (render 가 정한다)
 
   if (typeof window !== 'undefined') {
     // 패널 열기 시 conceptId 전달 받음. panel.js 의 open-panel 리스너보다 먼저 와야 막 열린 패널이 이 id 를 놓치지 않는다(capture).
@@ -394,7 +395,8 @@
       // 상세에서 자동 저장한 것이면 다시 그리지 않는다(입력 중인 칸이 날아간다). 목록은 뒤로 갈 때 받는다.
       if (e.detail?.fromDetail) return;
       if (hasRendered && typeof loadConcepts === 'function') {
-        loadConcepts();
+        // 상세에 저장 안 된 변경이 있거나 칸에 포커스가 있으면 화면은 그대로 두고 목록 자료만 새로 받아 둔다
+        loadConcepts({ quiet: conceptsBusy() });
       }
     });
   }
@@ -410,6 +412,8 @@
     let detailKeyHandler = null; // 상세의 Esc·⌘Enter 리스너. 다시 그릴 때 이전 것을 뗀다
     let selectedConceptId = targetConceptId;
     let currentView = targetConceptId ? 'detail' : 'list'; // 'list' | 'detail'
+    let detailHasWork = () => false; // 상세가 그려지면 renderDetailView 가 채운다(저장 안 된 변경·저장 중·자동 저장 대기)
+    conceptsBusy = () => currentView === 'detail' && (detailHasWork() || pane.matches(':focus-within'));
     let filterMode = 'all'; // 'all' | 'defined' | 'later'
     let searchQuery = '';
     let statusMsg = '';
@@ -429,9 +433,11 @@
       });
     }
 
-    loadConcepts = async function () {
+    loadConcepts = async function (opts) {
       const reqId = loadSeq.next();
-      isLoading = true;
+      // quiet: 상세 작업 중 다른 곳에서 저장된 경우. 화면은 그대로 두고 목록 자료만 받는다(로딩 중이면 평소대로)
+      const quiet = opts?.quiet === true && !isLoading;
+      if (!quiet) isLoading = true;
       let res = await send({ type: 'concepts', op: 'get' });
       // 다른 요청이 발생했으면 이전 응답은 버린다
       if (!loadSeq.isLatest(reqId)) return;
@@ -443,6 +449,7 @@
       } else {
         conceptsList = [];
       }
+      if (quiet) return; // 화면은 그대로 둔다
 
       // 열 id가 목록에 없으면(방금 만든 개념) 한 번 더 받아 온 뒤 상세를 그린다
       const openId = targetConceptId;
@@ -708,6 +715,7 @@
       let pendingCloseOnSuccess = false;
       let pendingClosePanelOnSuccess = false;
       let isDirty = false;
+      detailHasWork = () => isDirty || Boolean(autoSaveTimer) || isSaving;
 
       // 상단 뒤로가기
       const nav = document.createElement('div');

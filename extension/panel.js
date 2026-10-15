@@ -549,9 +549,10 @@
   fab.setAttribute('aria-label', 'readgloss 패널 열기');
 
   // 바깥 클릭: 패널 안, 사전 카드, 확인 메시지, 개념 칸·카드, 메모장을 눌러도 닫지 않는다.
+  // 개념 표시 위를 누른 것(e.readglossConceptHit)이면 닫지 않는다: 패널은 열린 채 상세만 바뀐다. 같은 개념이면 concept.js 가 닫는다.
   document.addEventListener('mousedown', (e) => {
     const path = e.composedPath();
-    if (isOpen && !path.includes(host) && !C.isCardPath(path) && !C.isConceptPath(path) && !C.isToastPath(path) && !C.isMemoPath(path)) closePanel({ restoreFocus: false });
+    if (isOpen && !e.readglossConceptHit && !path.includes(host) && !C.isCardPath(path) && !C.isConceptPath(path) && !C.isToastPath(path) && !C.isMemoPath(path)) closePanel({ restoreFocus: false });
   }, true);
   // 사전 카드가 이 Escape 로 닫혔으면(content.js 가 표시를 남긴다) 패널은 그대로 둔다. 확인 메시지(메모)나 개념 칸·카드, 메모장 안에서 누른 Escape 도 무시한다.
   document.addEventListener('keydown', (e) => e.key === 'Escape' && isOpen && !e.readglossCardClosed && !C.isMemoPath(e.composedPath()) && !C.isConceptPath(e.composedPath()) && !C.isToastPath(e.composedPath()) && closePanel(), true);
