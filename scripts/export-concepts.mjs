@@ -1,6 +1,7 @@
 // scripts/export-concepts.mjs
-// 개념 문서를 대상 폴더에 내보낸다.
+// 개념 문서를 대상 폴더에 내보낸다 (과제 T33b, 명세 16-5 llm-wiki 형식).
 // 사용: node scripts/export-concepts.mjs --to <폴더> [--data <폴더(기본 data/)>] [--learning <폴더>]
+import { existsSync, readdirSync, readFileSync, rmdirSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +10,9 @@ import { loadLearning } from '../bridge/task-guess.mjs';
 import { openReadDb, loadData } from './data-source.mjs';
 import { slugifyPage, writeIfChanged, pageFileNames, pageKey } from './export-scraps.mjs';
 import { dateOf } from './export-day.mjs';
+
+// 순수 함수 모듈 로드
+await import('../extension/selection-core.js');
 
 // 개념 문서 머리 주석(고치려면 개념 탭에서). 스크랩 문서 머리(export-scraps HEADER_COMMENT)와 다르다.
 export const CONCEPT_HEADER_COMMENT = '<!-- 자동 생성 — 고치려면 확장 개념 탭에서 -->';
@@ -26,7 +30,7 @@ export function firstDefinitionItem(def) {
   return '(아직 설명 없음)';
 }
 
-// 개념 목록 -> Map<상대경로, 내용>. pageFiles 는 pageFileNames 결과(없으면 제목으로 링크).
+// 개념 목록 -> Map<상대경로, 내용>. pageFiles 는 pageFileNames 결과.
 export function renderConceptDocs(concepts, pageFiles = null) {
   const docs = new Map();
   const usedSlugs = new Set();
@@ -51,61 +55,135 @@ export function renderConceptDocs(concepts, pageFiles = null) {
   }
 
   for (const c of conceptsWithSlug) {
-    const lines = [CONCEPT_HEADER_COMMENT, '', `# ${c.name}`, ''];
+    const isLater = c.later === true || !c.definition;
+    const desc = firstDefinitionItem(c.definition);
 
-    // 별칭 (있을 때만)
-    if (Array.isArray(c.aliases) && c.aliases.length > 0) {
-      lines.push(`별칭: ${c.aliases.join(', ')}`, '');
+    // sources 경로 수집: 그 개념이 나온 학습노트 경로 ("notes/<할일>/<페이지>.md")
+    const sourcesSet = new Set();
+    const appearances = Array.isArray(c.appears) ? c.appears : [];
+    for (const app of appearances) {
+      const task = app.task ?? null;
+      let matched = null;
+      if (task) {
+        matched = pageFiles?.get(pageKey(task, app.url));
+      } else {
+        matched = pageFiles?.get(pageKey('inbox', app.url)) || pageFiles?.get(pageKey(null, app.url));
+      }
+
+      let notePath = '';
+      if (matched) {
+        notePath = `notes/${matched}.md`;
+      } else if (task) {
+        notePath = `notes/${task}/${slugifyPage(app.title || 'page')}.md`;
+      } else {
+        notePath = `notes/inbox/${slugifyPage(app.title || 'page')}.md`;
+      }
+      sourcesSet.add(notePath);
     }
 
-    // 태그 (있을 때만)
-    if (Array.isArray(c.tags) && c.tags.length > 0) {
-      lines.push(`tags: [${c.tags.join(', ')}]`, '');
+    if (sourcesSet.size === 0 && c.seen && c.seen.url) {
+      const task = c.firstTask ?? null;
+      let matched = null;
+      if (task) {
+        matched = pageFiles?.get(pageKey(task, c.seen.url));
+      } else {
+        matched = pageFiles?.get(pageKey('inbox', c.seen.url)) || pageFiles?.get(pageKey(null, c.seen.url));
+      }
+
+      let notePath = '';
+      if (matched) {
+        notePath = `notes/${matched}.md`;
+      } else if (task) {
+        notePath = `notes/${task}/${slugifyPage(c.seen.title || 'page')}.md`;
+      } else {
+        notePath = `notes/inbox/${slugifyPage(c.seen.title || 'page')}.md`;
+      }
+      sourcesSet.add(notePath);
     }
+
+    const sources = [...sourcesSet];
+
+    // 앞머리 (YAML frontmatter)
+    const aliases = Array.isArray(c.aliases) ? c.aliases.filter(Boolean) : [];
+    const tags = Array.isArray(c.tags) ? c.tags.filter(Boolean) : [];
+    const createdDate = dateOf(c.ts || Date.now());
+    const updatedDate = dateOf(c.updated || c.ts || Date.now());
+
+    const lines = [
+      '---',
+      'type: concept',
+      `title: ${c.name}`,
+      `description: ${desc}`,
+      `aliases: [${aliases.join(', ')}]`,
+      `tags: [${tags.join(', ')}]`,
+      `sources: [${sources.map((s) => JSON.stringify(s)).join(', ')}]`,
+      `created: ${createdDate}`,
+      `updated: ${updatedDate}`,
+      '---',
+      CONCEPT_HEADER_COMMENT,
+      '',
+      `# ${c.name}`,
+      '',
+      desc,
+      '',
+    ];
 
     // 정의 문단
-    const isLater = c.later === true || !c.definition;
     if (isLater) {
-      lines.push('(아직 설명 없음)', '');
       if (c.seen) {
         const title = c.seen.title || '';
         const url = c.seen.url || '';
         const sentence = (c.seen.sentence || '').slice(0, 120);
         lines.push(`본 곳: [${title}](${url}) — "${sentence}"`, '');
       }
-    } else if (c.definition) {
+    } else if (c.definition && c.definition.trim() !== desc) {
       lines.push(c.definition, '');
     }
 
-    // 관련: [[<다른 개념 파일 이름>]]
+    // ## 나온 곳
+    // - [[notes/<할일>/<페이지>]] — <소제목>
+    if (appearances.length > 0) {
+      lines.push('## 나온 곳');
+      for (const app of appearances) {
+        const task = app.task ?? null;
+        let matched = null;
+        if (task) {
+          matched = pageFiles?.get(pageKey(task, app.url));
+        } else {
+          matched = pageFiles?.get(pageKey('inbox', app.url)) || pageFiles?.get(pageKey(null, app.url));
+        }
+
+        let wikiTarget = '';
+        if (matched) {
+          wikiTarget = `notes/${matched}`;
+        } else if (task) {
+          wikiTarget = `notes/${task}/${slugifyPage(app.title || 'page')}`;
+        } else {
+          wikiTarget = `notes/inbox/${slugifyPage(app.title || 'page')}`;
+        }
+
+        const heading =
+          app.heading ||
+          (Array.isArray(app.headings) && app.headings.length > 0 ? app.headings[app.headings.length - 1] : null) ||
+          app.title ||
+          '이 페이지에서';
+
+        lines.push(`- [[${wikiTarget}]] — ${heading}`);
+      }
+      lines.push('');
+    }
+
+    // ## 관련 페이지
+    // - [[<관련 개념>]] — 관련
     if (Array.isArray(c.related) && c.related.length > 0) {
-      const links = [];
+      lines.push('## 관련 페이지');
       for (const r of c.related) {
         const targetName = r.name || r;
         const targetSlug =
           slugByConcept.get(r.id) ||
           slugByConcept.get(typeof targetName === 'string' ? targetName.toLowerCase() : '') ||
           slugifyPage(targetName);
-        links.push(`[[${targetSlug}]]`);
-      }
-      lines.push(`관련: ${links.join(', ')}`, '');
-    }
-
-    // ## 나온 곳
-    // - <할 일 제목> · [[../scraps/<할일>/<페이지 파일 이름>]] — "<exact 앞 80자>"
-    if (Array.isArray(c.appears) && c.appears.length > 0) {
-      lines.push('## 나온 곳', '');
-      for (const app of c.appears) {
-        const taskTitle = app.taskTitle || (app.task ? app.task : '인박스');
-        let pageLink;
-        if (app.task) {
-          const matched = pageFiles?.get(pageKey(app.task, app.url));
-          pageLink = matched ? `../scraps/${matched}` : `../scraps/${app.task}/${slugifyPage(app.title || 'page')}`;
-        } else {
-          pageLink = '../scraps/inbox';
-        }
-        const exact80 = (app.exact || '').slice(0, 80);
-        lines.push(`- ${taskTitle} · [[${pageLink}]] — "${exact80}"`);
+        lines.push(`- [[${targetSlug}]] — 관련`);
       }
       lines.push('');
     }
@@ -114,7 +192,6 @@ export function renderConceptDocs(concepts, pageFiles = null) {
   }
 
   // 나중에-볼-것.md 목록 한 장(오래된 것 먼저: - <이름> · <본 곳 제목> · <YYYY-MM-DD>)
-  // 나중에 볼 것이 없으면 그 파일을 만들지 않는다(있던 자동 생성 파일이면 writeIfChanged가 지움).
   const laterConcepts = concepts.filter((c) => c.later === true || !c.definition);
   if (laterConcepts.length > 0) {
     const sortedLater = [...laterConcepts].sort((a, b) => (a.ts || 0) - (b.ts || 0));
@@ -129,7 +206,6 @@ export function renderConceptDocs(concepts, pageFiles = null) {
   }
 
   // 글감-후보.md 목록 한 장(글감 후보 태그 개념만: - <이름> · <정의 첫 항목 또는 (아직 설명 없음)> · <YYYY-MM-DD>)
-  // 글감 후보가 없으면 그 파일을 만들지 않는다(있던 자동 생성 파일이면 writeIfChanged가 지움).
   const candidateConcepts = concepts.filter(
     (c) => Array.isArray(c.tags) && c.tags.includes('글감 후보'),
   );
@@ -146,6 +222,84 @@ export function renderConceptDocs(concepts, pageFiles = null) {
   }
 
   return docs;
+}
+
+// 자동 생성된 개념 파일인지 판정 (첫 줄 주석이거나, 앞머리에 type: concept가 있고 주석이 있는 파일)
+export function isGeneratedConcept(text) {
+  if (typeof text !== 'string') return false;
+  const firstLine = text.split('\n')[0].trim();
+  if (firstLine.startsWith('<!-- 자동 생성')) return true;
+
+  if (text.startsWith('---\n')) {
+    const endFm = text.indexOf('\n---\n', 4);
+    if (endFm === -1) return false;
+    const fm = text.slice(4, endFm);
+    if (!/(?:^|\n)type:\s*concept(?:\n|$)/.test(fm)) return false;
+    const afterFm = text.slice(endFm + 5).trimStart();
+    return afterFm.startsWith('<!-- 자동 생성');
+  }
+  return false;
+}
+
+function findMdFiles(base, sub = '') {
+  const currentDir = join(base, sub);
+  if (!existsSync(currentDir)) return [];
+  const entries = readdirSync(currentDir, { withFileTypes: true });
+  const files = [];
+  for (const e of entries) {
+    const rel = sub ? `${sub}/${e.name}` : e.name;
+    if (e.isDirectory()) {
+      files.push(...findMdFiles(base, rel));
+    } else if (e.isFile() && e.name.endsWith('.md')) {
+      files.push(rel);
+    }
+  }
+  return files;
+}
+
+function removeEmptyDirs(dir) {
+  if (!existsSync(dir)) return;
+  const entries = readdirSync(dir, { withFileTypes: true });
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      const sub = join(dir, e.name);
+      removeEmptyDirs(sub);
+      try {
+        rmdirSync(sub);
+      } catch {
+        // 비어있지 않으면 패스
+      }
+    }
+  }
+}
+
+// 개념 문서 쓰기 및 자동 생성 파일 삭제
+export function writeConceptsIfChanged(dir, map) {
+  const res = writeIfChanged(dir, map);
+
+  // 추가 정리: map에 없는 기존 .md 중 자동 생성 판정된 개념 파일 삭제
+  const root = resolve(dir);
+  const existingFiles = findMdFiles(root);
+  for (const rel of existingFiles) {
+    const normRel = rel.replace(/\\/g, '/');
+    if (!map.has(normRel)) {
+      const fullPath = join(root, rel);
+      try {
+        const text = readFileSync(fullPath, 'utf8');
+        if (isGeneratedConcept(text)) {
+          unlinkSync(fullPath);
+          if (!res.removed.includes(normRel)) {
+            res.removed.push(normRel);
+          }
+        }
+      } catch {
+        // 읽기/삭제 실패 무시
+      }
+    }
+  }
+
+  removeEmptyDirs(root);
+  return res;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -197,9 +351,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exit(1);
   }
 
-  const pageFiles = pageFileNames(Object.values(data.scraps.scraps));
+  const pageFiles = pageFileNames(Object.values(data.scraps.scraps), data.memos);
   const map = renderConceptDocs(concepts, pageFiles);
-  const { written, removed } = writeIfChanged(toDir, map);
+  const { written, removed } = writeConceptsIfChanged(toDir, map);
 
   console.log(`개념 문서 내보내기 완료: ${written.length}개 작성, ${removed.length}개 삭제 (${toDir})`);
 }

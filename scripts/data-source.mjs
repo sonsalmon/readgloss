@@ -191,3 +191,57 @@ export function openReadDb(dataDir) {
     },
   };
 }
+
+// 학습노트 내보내기를 위해 단어·메모·스크랩 외에 개념(concept) 목록까지 포함하여 읽는다.
+export function loadNotesData(dataDir) {
+  const base = loadData(dataDir);
+  const concepts = [];
+  let db = null;
+  try {
+    db = openReadDb(dataDir);
+    if (db) {
+      const nodes = db.byKind('concept');
+      for (const n of nodes) {
+        if (!n) continue;
+        const d = n.data && typeof n.data === 'object' ? n.data : {};
+        const fromScrapEdges = db.out(n.id, 'from_scrap');
+        const appears = [];
+        for (const e of fromScrapEdges) {
+          const scrapNode = db.get(e.dst);
+          if (scrapNode && scrapNode.kind === 'scrap' && scrapNode.data) {
+            appears.push(scrapNode.data);
+          }
+        }
+        appears.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+        concepts.push({
+          id: n.id,
+          key: n.key,
+          ts: n.ts,
+          name: d.name || n.key || '',
+          aliases: Array.isArray(d.aliases) ? [...d.aliases] : [],
+          tags: Array.isArray(d.tags) ? [...d.tags] : [],
+          definition: typeof d.definition === 'string' ? d.definition : '',
+          later: (d.definition ?? '') === '',
+          seen: d.seen && typeof d.seen === 'object' ? d.seen : null,
+          firstTask: d.firstTask ?? null,
+          firstUrl: d.firstUrl ?? null,
+          firstTitle: d.firstTitle ?? null,
+          appears,
+        });
+      }
+    }
+  } catch {
+    // db 읽기 오류 시 빈 concepts 로 fallback
+  } finally {
+    if (db) {
+      try {
+        db.close();
+      } catch {}
+    }
+  }
+
+  return {
+    ...base,
+    concepts,
+  };
+}

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { renderConceptDocs } from '../scripts/export-concepts.mjs';
+import { renderConceptDocs, writeConceptsIfChanged } from '../scripts/export-concepts.mjs';
 import { writeIfChanged, slugifyPage } from '../scripts/export-scraps.mjs';
 import { CONCEPT_HEADER_COMMENT } from '../scripts/export-concepts.mjs';
 
@@ -61,43 +61,30 @@ test('export-concepts: 링크 모양, 같은 내용이면 안 씀, 주석 없는
     const acDoc = docs.get('access-control.md');
     const acLines = acDoc.split('\n');
 
-    // 첫 줄 자동 생성 주석
-    assert.equal(acLines[0], CONCEPT_HEADER_COMMENT); // 개념 문서 머리(T28 고침 H)
+    // 앞머리(llm-wiki 형식, 16-5) 다음 줄에 자동 생성 주석
+    assert.equal(acLines[0], '---');
+    assert.match(acDoc, /\ntype: concept\n/);
+    assert.match(acDoc, /\naliases: \[AC, Authorization\]\n/);
+    assert.match(acDoc, /\n---\n<!-- 자동 생성 — 고치려면 확장 개념 탭에서 -->\n/);
+    assert.ok(acDoc.includes(CONCEPT_HEADER_COMMENT));
 
-    // 제목
     assert.match(acDoc, /# Access Control/);
-
-    // 별칭
-    assert.match(acDoc, /별칭: AC, Authorization/);
-
-    // 정의
     assert.match(acDoc, /시스템 자원에 대한 접근 권한을 제어하는 규칙과 절차\./);
-
-    // 관련 개념 위키링크: [[privilege-escalation]]
-    assert.match(acDoc, /관련: \[\[privilege-escalation\]\]/);
-
-    // ## 나온 곳 절 및 항목 링크 모양
-    // - <할 일 제목> · [[../scraps/<할일>/<페이지 파일 이름>]] — "<exact 앞 80자>"
-    assert.match(acDoc, /## 나온 곳/);
-    assert.match(
-      acDoc,
-      /- 접근 통제 · \[\[\.\.\/scraps\/S1-04\/access-control-vulnerabilities\]\] — "Broken access control is the failure to enforce access restrictions properly\."/,
-    );
-    // 인박스 항목 모양
-    assert.match(
-      acDoc,
-      /- 인박스 · \[\[\.\.\/scraps\/inbox\]\] — "This is an unassigned inbox item quote\."/,
-    );
+    // 정의가 한 문장이면 description과 겹쳐 쓰지 않는다
+    assert.equal(acDoc.split('시스템 자원에 대한').length - 1, 2); // 앞머리 + 본문 한 번
+    assert.match(acDoc, /## 관련 페이지\n- \[\[privilege-escalation\]\] — 관련/);
+    assert.match(acDoc, /## 나온 곳\n- \[\[notes\/S1-04\/access-control-vulnerabilities\]\]/);
+    assert.match(acDoc, /- \[\[notes\/inbox\/inbox-title\]\]/);
 
     // 3. privilege-escalation.md 형식 검증
     const peDoc = docs.get('privilege-escalation.md');
     assert.match(peDoc, /# Privilege Escalation/);
-    assert.ok(!peDoc.includes('별칭:')); // 별칭이 없을 때는 별칭 줄 없음
-    assert.match(peDoc, /관련: \[\[access-control\]\]/);
+    assert.match(peDoc, /\naliases: \[\]\n/);
+    assert.match(peDoc, /- \[\[access-control\]\] — 관련/);
     assert.ok(!peDoc.includes('## 나온 곳')); // 나온 곳이 없을 때는 섹션 없음
 
     // 4. writeIfChanged 동작 확인 (최초 쓰기)
-    const res1 = writeIfChanged(dir, docs);
+    const res1 = writeConceptsIfChanged(dir, docs);
     assert.equal(res1.written.length, 2);
     assert.equal(res1.removed.length, 0);
 
@@ -110,7 +97,7 @@ test('export-concepts: 링크 모양, 같은 내용이면 안 씀, 주석 없는
 
     // 잠시 대기 후 동일 내용 다시 쓰기 -> 쓰지 않음 (mtime 유지)
     await new Promise((resolve) => setTimeout(resolve, 30));
-    const res2 = writeIfChanged(dir, docs);
+    const res2 = writeConceptsIfChanged(dir, docs);
     assert.equal(res2.written.length, 0);
     const mtime2 = statSync(acPath).mtimeMs;
     assert.equal(mtime1, mtime2);
@@ -121,7 +108,7 @@ test('export-concepts: 링크 모양, 같은 내용이면 안 씀, 주석 없는
 
     // 6. Privilege Escalation 개념이 삭제된 상태의 map
     const singleDoc = new Map([['access-control.md', acDoc]]);
-    const res3 = writeIfChanged(dir, singleDoc);
+    const res3 = writeConceptsIfChanged(dir, singleDoc);
 
     // privilege-escalation.md는 자동 생성 주석이 있으므로 삭제됨
     assert.ok(res3.removed.includes('privilege-escalation.md'));
