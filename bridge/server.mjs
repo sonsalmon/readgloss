@@ -32,6 +32,7 @@ const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
 const MAX_BODY = 16 * 1024;
 const MAX_WORDS_BODY = 24 * 1024;
+const MAX_STUDY_TIME_BODY = 256 * 1024; // /study-time 항목이 많이 쌓였을 때를 위한 본문 상한
 const MAX_WIDE_BODY = 64 * 1024; // /translate-context·/lookup 은 "더 넓은 문맥"을 실을 수 있어 본문 상한이 크다
 const MAX_ACRONYMS = 100;
 const ACRONYM_RE = /^[A-Z]{2,6}$/;
@@ -136,10 +137,21 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
   const memos = db ? createMemos({ db, now }) : null;
   const tutorQuote = createTutorQuote({ sessionsDir: tutorSessionsDir, now });
 
+  const taskGuessCache = new Map();
+  const TASK_GUESS_TTL = 10 * 60 * 1000; // 10분 캐시 (600000ms)
+  const MAX_TASK_GUESS_CACHE = 500;
+
   function guessTaskForUrl(rawUrl) {
     if (typeof rawUrl !== 'string' || rawUrl.length > 2000) return null;
     const normUrl = normalizeUrl(rawUrl);
     if (!normUrl) return null;
+
+    const nowTs = typeof now === 'function' ? now() : now;
+    const cached = taskGuessCache.get(normUrl);
+    if (cached && (nowTs - cached.ts < TASK_GUESS_TTL)) {
+      return cached.result;
+    }
+
     const learning = loadLearning(learningDir);
     const allScraps = scraps.all();
     const lastToday = lastTaskToday(allScraps, now);
@@ -167,7 +179,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       }
     }
     const remembered = rememberedTask(normUrl, records);
-    return guessTask({
+    const result = guessTask({
       thisWeek: learning.thisWeek,
       url: normUrl,
       nodes: learning.nodes,
@@ -177,6 +189,14 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       roadmapOk: learning.roadmapOk,
       remembered,
     });
+
+    if (taskGuessCache.size >= MAX_TASK_GUESS_CACHE) {
+      const oldestKey = taskGuessCache.keys().next().value;
+      if (oldestKey !== undefined) taskGuessCache.delete(oldestKey);
+    }
+    taskGuessCache.set(normUrl, { result, ts: nowTs });
+
+    return result;
   }
 
   const studyTime = db ? createStudyTime({ db, guessTaskFor: guessTaskForUrl, now }) : null;
@@ -492,7 +512,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       const items = studyTime.list(range.from, range.to);
       return send(res, 200, { items }, cors);
     }
-    const { value, status } = await readJson(req, MAX_WORDS_BODY);
+    const { value, status } = await readJson(req, MAX_STUDY_TIME_BODY);
     if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
     const op = parseStudyTimeOp(value);
     if (!op || op.op !== 'add') return send(res, 400, { error: 'bad-request' }, cors);

@@ -2631,7 +2631,8 @@
         const hasDraft = draftText.trim().length > 0;
 
         const st = globalThis.readglossStudyTime;
-        const headingSec = (st && typeof st.sectionSeconds === 'function') ? st.sectionSeconds(s.text) : 0;
+        const headingChain = getHeadingChain(currentHeadings, s.key);
+        const headingSec = (st && typeof st.sectionSeconds === 'function') ? st.sectionSeconds(headingChain) : 0;
         const minutes = headingSec >= 60 ? Math.floor(headingSec / 60) : 0;
 
         const fullLabel = memoCore?.tocLabel

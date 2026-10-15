@@ -324,7 +324,7 @@ test('[시간] 보기 전환 시 study-time과 scraps 데이터를 가져오고 
   }
 });
 
-test('[시간] 보기: 다리 연결 실패 시 "다리에 연결하지 못했어요" 표시', async () => {
+test('[시간] 보기: 다리 꺼짐이면 MESSAGES 의 다리 꺼짐 안내 표시(FX-H 6)', async () => {
   const m = await mountStudyPanel({
     'study-time': () => ({ error: 'bridge-off' }),
   });
@@ -333,7 +333,7 @@ test('[시간] 보기: 다리 연결 실패 시 "다리에 연결하지 못했�
     timeTab.handlers.click[0]();
     await m.settle();
 
-    const errorEl = m.root.all().find((n) => n.textContent?.includes('다리에 연결하지 못했어요'));
+    const errorEl = m.root.all().find((n) => n.textContent?.includes('다리가 꺼져 있어요'));
     assert.ok(errorEl);
   } finally {
     m.restore();

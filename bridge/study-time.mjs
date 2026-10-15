@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto';
 import { normalizeUrl } from './scraps.mjs';
 
-// 날짜 범위 검사: YYYY-MM-DD 형식, from <= to, 최대 62일
+// 날짜 범위 검사: YYYY-MM-DD 형식, 실제 달력 날짜, from <= to, 최대 62일
 export function parseStudyTimeRange(from, to) {
   if (typeof from !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(from)) return null;
   if (typeof to !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return null;
@@ -13,6 +13,8 @@ export function parseStudyTimeRange(from, to) {
   const dFrom = new Date(from + 'T00:00:00Z');
   const dTo = new Date(to + 'T00:00:00Z');
   if (Number.isNaN(dFrom.getTime()) || Number.isNaN(dTo.getTime())) return null;
+  // 실제 달력 날짜인지 검사 (예: 2026-13-45, 2026-02-31 등 거절)
+  if (dFrom.toISOString().slice(0, 10) !== from || dTo.toISOString().slice(0, 10) !== to) return null;
 
   const diffDays = Math.round((dTo - dFrom) / 86400000) + 1;
   if (diffDays < 1 || diffDays > 62) return null;
@@ -30,7 +32,7 @@ export function parseStudyTimeOp(v) {
 
     for (const item of v.items) {
       if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-      if (typeof item.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(item.date)) return null;
+      if (!parseStudyTimeRange(item.date, item.date)) return null;
       if (typeof item.url !== 'string' || item.url.length > 2000) return null;
 
       const norm = normalizeUrl(item.url);

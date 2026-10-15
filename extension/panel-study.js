@@ -109,7 +109,7 @@
     };
   }
 
-  // 오래 머문 소제목 상위 n개(소제목 단위 상위 n개, 기본 3개)
+  // 오래 머문 소제목 상위 n개(소제목 단위 상위 n개, 기본 3개, 사슬 전체를 열쇠로 묶음)
   function topSections(items, n = 3) {
     if (!Array.isArray(items) || items.length === 0) return [];
     const secMap = new Map();
@@ -118,8 +118,8 @@
       const url = typeof it.url === 'string' ? it.url : '';
       const pageTitle = (typeof it.title === 'string' && it.title.trim()) ? it.title.trim() : (url || '(제목 없음)');
       const headings = Array.isArray(it.headings) ? it.headings.filter(Boolean) : [];
-      const sectionTitle = headings.length > 0 ? String(headings[headings.length - 1]).trim() : '(소제목 없음)';
-      const key = `${url}|${sectionTitle}`;
+      const chainKey = headings.join('\u0000');
+      const key = `${url}|${chainKey}`;
       const sec = Math.max(0, Number(it.seconds) || 0);
 
       const prev = secMap.get(key);
@@ -129,24 +129,40 @@
         secMap.set(key, {
           url,
           pageTitle,
-          sectionTitle,
+          headings,
           seconds: sec,
         });
       }
     }
 
     const list = Array.from(secMap.values())
-      .sort((a, b) => b.seconds - a.seconds || a.pageTitle.localeCompare(b.pageTitle) || a.sectionTitle.localeCompare(b.sectionTitle))
+      .sort((a, b) => b.seconds - a.seconds || a.pageTitle.localeCompare(b.pageTitle) || (a.headings[a.headings.length - 1] || '').localeCompare(b.headings[b.headings.length - 1] || ''))
       .slice(0, n);
 
-    return list.map((item) => ({
-      ...item,
-      formattedDuration: formatDuration(item.seconds),
-      text: `${item.pageTitle} › ${item.sectionTitle} · ${formatDuration(item.seconds)}`,
-    }));
+    // 같은 마지막 소제목 이름이 둘 이상이면 '상위 › 이름'으로 표시
+    const nameCounts = new Map();
+    for (const item of list) {
+      const last = item.headings.length > 0 ? String(item.headings[item.headings.length - 1]).trim() : '(소제목 없음)';
+      nameCounts.set(last, (nameCounts.get(last) || 0) + 1);
+    }
+
+    return list.map((item) => {
+      const last = item.headings.length > 0 ? String(item.headings[item.headings.length - 1]).trim() : '(소제목 없음)';
+      const isDuplicate = (nameCounts.get(last) || 0) > 1;
+      const sectionTitle = isDuplicate && item.headings.length >= 2
+        ? `${item.headings[item.headings.length - 2]} › ${last}`
+        : last;
+
+      return {
+        ...item,
+        sectionTitle,
+        formattedDuration: formatDuration(item.seconds),
+        text: `${item.pageTitle} › ${sectionTitle} · ${formatDuration(item.seconds)}`,
+      };
+    });
   }
 
-  // 묶음: 할 일(task, 없으면 '인박스') -> 페이지(title, 없으면 주소) -> 소제목(headings 마지막, 없으면 '(소제목 없음)')
+  // 묶음: 할 일(task, 없으면 '인박스') -> 페이지(title, 없으면 주소) -> 소제목(사슬 전체 열쇠, 중복 이름 상위 › 이름)
   function groupTime(items, tasks = {}) {
     if (!Array.isArray(items) || items.length === 0) return [];
 
@@ -188,13 +204,11 @@
       pObj.seconds += sec;
 
       const headings = Array.isArray(it.headings) ? it.headings.filter(Boolean) : [];
-      const secTitle = headings.length > 0 ? String(headings[headings.length - 1]).trim() : '(소제목 없음)';
-      const secKey = secTitle;
+      const secKey = headings.join('\u0000'); // 사슬 전체를 열쇠로 묶음
 
       let sObj = pObj.secMap.get(secKey);
       if (!sObj) {
         sObj = {
-          title: secTitle,
           headings,
           seconds: 0,
         };
@@ -215,16 +229,31 @@
       const pages = pageList.map((p) => {
         const pPct = maxPageSec > 0 ? Math.round((p.seconds / maxPageSec) * 100) : 0;
 
-        const secList = Array.from(p.secMap.values()).sort((a, b) => b.seconds - a.seconds || a.title.localeCompare(b.title));
+        const secList = Array.from(p.secMap.values()).sort((a, b) => b.seconds - a.seconds || (a.headings[a.headings.length - 1] || '').localeCompare(b.headings[b.headings.length - 1] || ''));
         const maxSec = secList.length > 0 ? Math.max(0, ...secList.map((s) => s.seconds)) : 0;
 
-        const sections = secList.map((s) => ({
-          title: s.title,
-          headings: s.headings,
-          seconds: s.seconds,
-          formattedDuration: formatDuration(s.seconds),
-          pct: maxSec > 0 ? Math.round((s.seconds / maxSec) * 100) : 0,
-        }));
+        // 같은 마지막 소제목 이름이 둘 이상이면 '상위 › 이름'으로 표시
+        const nameCounts = new Map();
+        for (const s of secList) {
+          const last = s.headings.length > 0 ? String(s.headings[s.headings.length - 1]).trim() : '(소제목 없음)';
+          nameCounts.set(last, (nameCounts.get(last) || 0) + 1);
+        }
+
+        const sections = secList.map((s) => {
+          const last = s.headings.length > 0 ? String(s.headings[s.headings.length - 1]).trim() : '(소제목 없음)';
+          const isDuplicate = (nameCounts.get(last) || 0) > 1;
+          const title = isDuplicate && s.headings.length >= 2
+            ? `${s.headings[s.headings.length - 2]} › ${last}`
+            : last;
+
+          return {
+            title,
+            headings: s.headings,
+            seconds: s.seconds,
+            formattedDuration: formatDuration(s.seconds),
+            pct: maxSec > 0 ? Math.round((s.seconds / maxSec) * 100) : 0,
+          };
+        });
 
         return {
           url: p.url,
@@ -247,10 +276,9 @@
     });
   }
 
-  globalThis.readglossStudy = { KINDS, RANGES, DEFAULT_RANGE, EMPTY, dateKey, fillDays, bars, chips, periodTotal, dayTitle, timeOf, kindLabel, listDays, itemRow, formatDuration, weekRange, topSections, groupTime };
-
-  // ---- 그리기(document 는 render 가 불릴 때만 만진다) ----
   const MESSAGES = { 'bridge-off': '다리가 꺼져 있어요. 터미널에서 node ~/dev/readgloss/bridge/server.mjs 를 실행해 주세요', unauthorized: '다리와 연결하지 못했어요(인증). 확장을 다시 불러와 주세요', 'ext-reloaded': '확장이 새로 로드됐어요. 이 페이지를 새로고침해 주세요', 'http-404': '다리가 이 기능을 아직 몰라요. 다리를 다시 시작해 주세요' };
+
+  globalThis.readglossStudy = { KINDS, RANGES, DEFAULT_RANGE, EMPTY, MESSAGES, dateKey, fillDays, bars, chips, periodTotal, dayTitle, timeOf, kindLabel, listDays, itemRow, formatDuration, weekRange, topSections, groupTime };
 
   let savedSubView = 'records'; // 패널 열린 동안 고른 보기('records' | 'time') 기억
   let savedTimeRange = 'today'; // 패널 열린 동안 고른 시간 기간('today' | 'week') 기억
@@ -746,7 +774,7 @@
 
       if (!res || res.error) {
         timeData = null;
-        timeMessage = '다리에 연결하지 못했어요';
+        timeMessage = MESSAGES[res?.error] ?? '다리에 연결하지 못했어요';
       } else {
         const items = Array.isArray(res.items) ? res.items : [];
         const tasks = scrapsRes?.tasks && typeof scrapsRes.tasks === 'object' ? scrapsRes.tasks : {};
