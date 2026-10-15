@@ -221,7 +221,8 @@ test('학습노트 내보내기: 앞머리, 소제목 묶음, 각 모양 마크�
     assert.match(noteContent, /> If a user can gain access to functionality\n> that they are not permitted to access…/);
 
     // 메모 모양: 인용 줄 먼저, 그 다음 글 그대로
-    assert.match(noteContent, /> Important quote\n- 관리자 기능을 일반 사용자가 씀 = 수직\n  - 서버가 권한을 확인해야 함/);
+    assert.ok(!noteContent.includes('access…)')); // 말줄임은 조각에서 뺀다
+    assert.match(noteContent, /> Important quote \[↗\]\([^)]+#:~:text=Important%20quote\)\n\n- 관리자 기능을 일반 사용자가 씀 = 수직\n  - 서버가 권한을 확인해야 함/);
 
     // 개념 모양: > [!concept] [[이름]] + > 다른 이름: ... · #태그 + > - 정의 줄
     assert.match(noteContent, /> \[!concept\] \[\[access control\]\]\n> 다른 이름: 접근 통제, AC · #다시 보기\n> - 누가 무엇을 할 수 있는지 서버가 정하는 규칙\n> - 클라이언트 숨김은 통제가 아님/);

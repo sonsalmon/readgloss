@@ -16,16 +16,58 @@ const normalizeUrl = (u) => globalThis.readglossSelection.normalizeUrl(u);
 
 export const NOTE_HEADER_COMMENT = SCRAP_HEADER_COMMENT;
 
+// 텍스트 조각 주소(Text Fragment URL) 생성 순수 함수
+export function textFragmentUrl(url, exact) {
+  if (typeof url !== 'string' || !url) return '';
+  const baseUrl = url.split('#')[0];
+  // 저장할 때 잘려 붙은 말줄임(…)은 본문에 없으니 뺀다
+  const cleaned = String(exact ?? '').replace(/\s+/g, ' ').trim().replace(/^…+|…+$/g, '').trim();
+  if (!cleaned) return baseUrl;
+
+  const words = cleaned.split(' ');
+  const encodePart = (s) =>
+    encodeURIComponent(s)
+      .replace(/-/g, '%2D')
+      .replace(/,/g, '%2C')
+      .replace(/&/g, '%26');
+
+  if (words.length <= 8) {
+    return `${baseUrl}#:~:text=${encodePart(cleaned)}`;
+  }
+  const start = encodePart(words.slice(0, 4).join(' '));
+  const end = encodePart(words.slice(-4).join(' '));
+  return `${baseUrl}#:~:text=${start},${end}`;
+}
+
 // 메모 항목 렌더링
 function renderMemo(m) {
   const lines = [];
   const exact = String(m?.quote?.exact ?? '').trim();
+  const text = String(m?.text ?? '').trim();
+
   if (exact) {
-    for (const l of exact.split('\n')) {
-      lines.push(`> ${l}`);
+    if (m?.quote?.source === 'tutor') {
+      const t = m.quote.tutor || {};
+      const timePart = t.time ? ` ${t.time}` : '';
+      lines.push(`> [!tutor] 튜터${timePart}`);
+      for (const l of exact.split('\n')) {
+        lines.push(`> ${l}`);
+      }
+      lines.push(`> [[tutor-logs/${t.date ?? ''}#${t.time ?? ''} ${t.title ?? ''}]]`);
+    } else {
+      const rawUrl = m?.url ?? '';
+      const link = rawUrl ? textFragmentUrl(rawUrl, exact) : '';
+      const quoteLines = exact.split('\n').map((l) => `> ${l}`);
+      if (link && quoteLines.length > 0) {
+        quoteLines[quoteLines.length - 1] += ` [↗](${link})`;
+      }
+      lines.push(...quoteLines);
+    }
+    if (text) {
+      lines.push(''); // 메모 인용 뒤 메모 글 사이에 빈 줄
     }
   }
-  const text = String(m?.text ?? '').trim();
+
   if (text) {
     lines.push(text);
   }
@@ -86,7 +128,13 @@ function renderPhrase(p) {
 function renderScrap(s) {
   const exact = String(s?.quote?.exact ?? s?.exact ?? '').trim();
   if (!exact) return '';
-  return exact.split('\n').map((l) => `> ${l}`).join('\n');
+  const rawUrl = s?.url ?? '';
+  const link = rawUrl ? textFragmentUrl(rawUrl, exact) : '';
+  const lines = exact.split('\n').map((l) => `> ${l}`);
+  if (link && lines.length > 0) {
+    lines[lines.length - 1] += ` [↗](${link})`;
+  }
+  return lines.join('\n');
 }
 
 // 학습노트 문서 생성 순수 함수: Map<상대경로, 내용>

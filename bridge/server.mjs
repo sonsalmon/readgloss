@@ -25,6 +25,7 @@ import { dateOf } from '../scripts/export-day.mjs';
 import { openDb, migrateJson } from './db.mjs';
 import { createConcepts, parseConceptOp } from './concepts.mjs';
 import { createMemos, parseMemoOp } from './memos.mjs';
+import { createTutorQuote } from './tutor-quote.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
@@ -87,7 +88,7 @@ function sendAiError(res, e, cors) {
 }
 
 // ask({word, sentence, context?}) / askTranslate(문단, 용어 지정 목록) / askContext(프롬프트 문자열) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
-export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), dbFile = join(dirname(cacheFile), 'readgloss.db'), learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
+export function createBridge({ ask, askTranslate, askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), dbFile = join(dirname(cacheFile), 'readgloss.db'), learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career'), tutorSessionsDir = join(homedir(), '.aside', 'u', '0', 'sessions'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
   const dataDir = dirname(cacheFile);
   const dbExisted = existsSync(dbFile);
   // db 를 못 열거나 옮기기가 실패하면 JSON 으로 계속 돈다(변경 기록 11-2). 단, db 파일이 이미 있었는데 openDb 가 실패하면 예외를 던진다.
@@ -132,6 +133,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
   const scraps = db ? createScraps({ db, now }) : createScraps({ file: scrapsFile, now });
   const concepts = db ? createConcepts({ db, now, learning: () => loadLearning(learningDir) }) : null;
   const memos = db ? createMemos({ db, now }) : null;
+  const tutorQuote = createTutorQuote({ sessionsDir: tutorSessionsDir, now });
   const levels = loadWordLevels();
   const annotate = createAnnotate({ dict, levels, isKnown: words.isKnown, glossary, mydict });
   const mine = `chrome-extension://${extensionId}`;
@@ -461,6 +463,17 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     return send(res, 200, out, cors);
   }
 
+  // 튜터 글 찾기: POST /tutor-quote { text } -> { found: true, date, time, title } | { found: false }
+  async function handleTutorQuote(req, res, cors) {
+    const { value, status } = await readJson(req, MAX_BODY);
+    if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+    if (typeof value?.text !== 'string') return send(res, 400, { error: 'bad-request' }, cors);
+    const text = value.text.trim().replace(/\s+/g, ' ');
+    if (text.length < 15 || text.length > 2000) return send(res, 400, { error: 'bad-request' }, cors);
+    const result = tutorQuote.find(text);
+    return send(res, 200, result, cors);
+  }
+
   async function handle(req, res) {
     // 1. Host 가 고정값이 아니면 거절. 2. Origin 이 있는데 내 확장이 아니면 거절(토큰 유무와 무관).
     if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, { error: 'forbidden' });
@@ -535,6 +548,10 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     if (path === '/translate') {
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleTranslate(req, res, cors);
+    }
+    if (path === '/tutor-quote') {
+      if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleTutorQuote(req, res, cors);
     }
     return send(res, 404, { error: 'not-found' }, cors);
   }

@@ -16,6 +16,7 @@ export const LIMIT = {
   title: 300,
   url: 2000,
   quoteExact: 1000,
+  tutorTitle: 120,
 };
 
 // 요청 본문 파싱 및 상한 검사
@@ -94,7 +95,7 @@ export function parseMemoOp(v) {
       selection = v.selection;
     }
 
-    // 8. quote ({ exact(1~1000), prefix(<=64), suffix(<=64) } | null)
+    // 8. quote ({ exact(1~1000), prefix(<=64), suffix(<=64), source, tutor } | null)
     let quote = null;
     if (v.quote !== undefined && v.quote !== null) {
       if (typeof v.quote !== 'object' || Array.isArray(v.quote)) return null;
@@ -119,6 +120,23 @@ export function parseMemoOp(v) {
         prefix,
         suffix,
       };
+
+      if (v.quote.source !== undefined && v.quote.source !== null) {
+        if (v.quote.source !== 'tutor') return null;
+        const t = v.quote.tutor;
+        if (!t || typeof t !== 'object' || Array.isArray(t)) return null;
+        if (typeof t.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(t.date)) return null;
+        if (typeof t.time !== 'string' || !/^\d{2}:\d{2}$/.test(t.time)) return null;
+        if (typeof t.title !== 'string' || t.title.length < 1 || t.title.length > LIMIT.tutorTitle) return null;
+        quote.source = 'tutor';
+        quote.tutor = {
+          date: t.date,
+          time: t.time,
+          title: t.title,
+        };
+      } else if (v.quote.tutor !== undefined && v.quote.tutor !== null) {
+        return null;
+      }
     }
 
     // 9. task (TASK_RE 만족 | null)
@@ -187,6 +205,16 @@ function formatMemo(node) {
           exact: d.quote.exact ?? '',
           prefix: d.quote.prefix ?? '',
           suffix: d.quote.suffix ?? '',
+          ...(d.quote.source === 'tutor'
+            ? {
+                source: 'tutor',
+                tutor: {
+                  date: d.quote.tutor?.date ?? '',
+                  time: d.quote.tutor?.time ?? '',
+                  title: d.quote.tutor?.title ?? '',
+                },
+              }
+            : {}),
         }
       : null,
     task: d.task ?? null,
