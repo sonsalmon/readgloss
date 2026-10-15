@@ -517,6 +517,7 @@
       box-sizing: border-box;
       width: 100%;
       height: 100%;
+      overflow: hidden;
     }
     .pad-box.docked {
       border-radius: 0;
@@ -539,6 +540,7 @@
       user-select: none;
       -webkit-user-select: none;
       touch-action: none;
+      flex-shrink: 0;
     }
     .meta-title {
       flex: 1;
@@ -620,6 +622,44 @@
     }
     .sec.on {
       background: var(--accbg);
+    }
+    .sec.sec-toc-row {
+      padding: 2px 4px;
+      cursor: pointer;
+    }
+    .sec.sec-toc-row:hover {
+      background: rgba(0, 0, 0, 0.04);
+    }
+    @media (prefers-color-scheme: dark) {
+      .sec.sec-toc-row:hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+    }
+    .sec-toc-btn {
+      all: unset;
+      box-sizing: border-box;
+      display: block;
+      width: 100%;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--mut);
+      border-radius: 4px;
+      padding: 2px 4px;
+      word-break: break-all;
+    }
+    .sec-toc-btn:focus-visible,
+    .sec-toc-btn:focus {
+      outline: 2px solid var(--acc);
+      outline-offset: -1px;
+    }
+    .sec-toc-title {
+      color: var(--fg);
+      font-weight: 500;
+    }
+    .sec-toc-meta {
+      color: var(--mut);
+      font-weight: normal;
     }
     .sec-title {
       font-size: 12px;
@@ -831,7 +871,7 @@
     .sec-textarea {
       width: calc(100% - 8px);
       box-sizing: border-box;
-      min-height: 32px;
+      min-height: 90px;
       border: 1px solid var(--bd);
       border-radius: 6px;
       background: var(--card);
@@ -848,6 +888,8 @@
     }
     .sec-textarea:focus {
       border-color: var(--acc);
+      outline: 2px solid var(--acc);
+      outline-offset: 0;
     }
     .pad-textarea {
       width: 100%;
@@ -874,6 +916,7 @@
       user-select: none;
       word-break: keep-all;
       padding-right: 16px;
+      flex-shrink: 0;
     }
     .header-row {
       display: flex;
@@ -1354,12 +1397,7 @@
       editingMemo = { id, sectionKey: key };
       currentActiveKey = key;
       drafts[key] = memo.text || '';
-      const ta = shadow?.querySelector(`.sec[data-key="${CSS.escape(key)}"] .sec-textarea`);
-      if (ta) {
-        ta.value = memo.text || '';
-        autoResize(ta);
-      }
-      applyActiveSection(true, true);
+      rebuildSectionsUI();
     });
   }
 
@@ -1518,8 +1556,31 @@
 
   function autoResize(ta) {
     if (!ta) return;
+    const memoCore = globalThis.readglossMemo;
+    const container = shadow?.querySelector('.sections-container');
+    const listHeight = container ? container.clientHeight : 300;
+
+    let lineHeight = 20;
+    if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+      try {
+        const cs = window.getComputedStyle(ta);
+        const parsed = parseFloat(cs.lineHeight);
+        if (Number.isFinite(parsed) && parsed > 0) lineHeight = parsed;
+      } catch {}
+    }
+
     ta.style.height = 'auto';
-    ta.style.height = `${Math.max(32, ta.scrollHeight)}px`;
+    const sh = ta.scrollHeight;
+    const h = memoCore?.textareaHeight
+      ? memoCore.textareaHeight({ scrollHeight: sh, lineHeight, listHeight })
+      : Math.min(Math.max(sh, 5 * lineHeight), listHeight > 0 ? listHeight / 2 : 5 * lineHeight);
+
+    ta.style.height = `${h}px`;
+    if (sh > h) {
+      ta.style.overflowY = 'auto';
+    } else {
+      ta.style.overflowY = 'hidden';
+    }
   }
 
   function createMemoLine(m, sectionKey) {
@@ -1968,9 +2029,12 @@
     });
   }
 
-  // 메모장 안에서 그 칸이 보이게 scrollTop 직접 계산 스크롤
+  // 메모장 안에서 그 칸이 보이게 scrollIntoView 및 scrollTop 계산
   function scrollToActiveSection(activeEl, container) {
     if (!activeEl || !container) return;
+    try {
+      activeEl.scrollIntoView({ block: 'nearest' });
+    } catch {}
     const cRect = container.getBoundingClientRect();
     const aRect = activeEl.getBoundingClientRect();
 
@@ -2004,7 +2068,7 @@
       if (allowMove && !pageFieldFocused) {
         const ta = activeEl.querySelector('.sec-textarea');
         if (ta) {
-          ta.focus();
+          ta.focus({ preventScroll: true });
           const len = ta.value.length;
           ta.setSelectionRange(len, len);
         }
@@ -2022,8 +2086,18 @@
     }));
     const newKey = memoCore?.activeSectionKey ? memoCore.activeSectionKey(headingTops, window.innerHeight) : (currentHeadings[0]?.key || '_page');
     if (newKey !== currentActiveKey) {
+      // 쓰는 중(쓰는 칸에 포커스가 있고 마지막 입력 뒤 1.5초 안)에는 지금 칸을 바꾸지 않는다.
+      const activeTextarea = shadow?.querySelector(`.sec[data-key="${CSS.escape(currentActiveKey)}"] .sec-textarea`);
+      const typingFocused = Boolean(activeTextarea && shadow?.activeElement === activeTextarea);
+      const msSinceInput = lastTypedAt > 0 ? (Date.now() - lastTypedAt) : Infinity;
+      const allowSwitch = memoCore?.shouldSwitchSection
+        ? memoCore.shouldSwitchSection({ typingFocused, msSinceInput })
+        : (!typingFocused || msSinceInput >= 1500);
+
+      if (!allowSwitch) return;
+
       currentActiveKey = newKey;
-      applyActiveSection(moveCaret);
+      rebuildSectionsUI();
     }
   }
 
@@ -2095,6 +2169,37 @@
     window.addEventListener('scroll', onScroll, { passive: true });
   }
 
+  // 목차 줄을 누르면: 본문의 그 소제목 요소를 scrollIntoView({behavior:'smooth', block:'start'}),
+  // 그 칸을 지금 칸으로, 쓰는 칸에 focus({preventScroll:true}), 커서는 글 끝.
+  function switchToSection(targetKey) {
+    const hObj = currentHeadings.find((h) => h.key === targetKey);
+    if (hObj?.el) {
+      try {
+        hObj.el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch {
+        hObj.el.scrollIntoView();
+      }
+    } else if (targetKey === '_page') {
+      try {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch {
+        window.scrollTo(0, 0);
+      }
+    }
+
+    currentActiveKey = targetKey;
+    lastTypedAt = 0;
+    rebuildSectionsUI();
+
+    const activeEl = shadow?.querySelector(`.sec[data-key="${CSS.escape(targetKey)}"]`);
+    const ta = activeEl?.querySelector('.sec-textarea');
+    if (ta) {
+      ta.focus({ preventScroll: true });
+      const len = ta.value.length;
+      ta.setSelectionRange(len, len);
+    }
+  }
+
   // 작성 모드 렌더링 (소제목 칸 목록)
   function renderPadUI(root) {
     currentMode = 'pad';
@@ -2149,77 +2254,124 @@
       const sec = document.createElement('div');
       sec.className = 'sec';
       sec.dataset.key = s.key;
-      if (s.key === currentActiveKey) {
-        sec.classList.add('on');
-      }
-
-      // 소제목 글 (level에 따라 들여쓰기 0/8/16px)
-      const titleEl = document.createElement('div');
-      titleEl.className = 'sec-title';
-      titleEl.textContent = s.text || '(제목 없음)';
+      const isActive = s.key === currentActiveKey;
       const indent = Math.max(0, Math.min(2, (s.level || 1) - 1)) * 8;
-      titleEl.style.paddingLeft = `${indent}px`;
-      sec.append(titleEl);
 
-      // 그 아래 저장된 항목들 (모든 모양)
-      const memosContainer = document.createElement('div');
-      memosContainer.className = 'sec-memos';
-      const itemsToRender = Array.isArray(s.items) && s.items.length > 0 ? s.items : (Array.isArray(s.memos) ? s.memos : []);
-      for (const item of itemsToRender) {
-        memosContainer.append(createShapeLine(item, s.key));
-      }
-      sec.append(memosContainer);
+      if (isActive) {
+        // 지금 칸만 펼침: 소제목 글, 그 칸 줄들, 쓰는 칸
+        sec.classList.add('on');
 
-      // 그 칸의 인용이 있으면 쓰는 칸 바로 위에 노란 인용 줄 표시
-      const qData = quotes[s.key];
-      if (qData && typeof qData.exact === 'string' && qData.exact.length > 0) {
-        const quoteEl = document.createElement('div');
-        quoteEl.className = 'sec-quote';
+        const titleEl = document.createElement('div');
+        titleEl.className = 'sec-title';
+        titleEl.textContent = s.text || '(제목 없음)';
+        titleEl.style.paddingLeft = `${indent}px`;
+        sec.append(titleEl);
 
-        const quoteText = document.createElement('div');
-        quoteText.className = 'sec-quote-text';
-        quoteText.textContent = `“${qData.exact}”`;
+        const memosContainer = document.createElement('div');
+        memosContainer.className = 'sec-memos';
+        const itemsToRender = Array.isArray(s.items) && s.items.length > 0 ? s.items : (Array.isArray(s.memos) ? s.memos : []);
+        for (const item of itemsToRender) {
+          memosContainer.append(createShapeLine(item, s.key));
+        }
+        sec.append(memosContainer);
 
-        const quoteDel = document.createElement('button');
-        quoteDel.className = 'sec-quote-del';
-        quoteDel.type = 'button';
-        quoteDel.setAttribute('aria-label', '인용 뺌');
-        quoteDel.textContent = '✕';
-        quoteDel.onclick = (e) => {
-          e.stopPropagation();
-          delete quotes[s.key];
-          saveDrafts();
-          quoteEl.remove();
-        };
+        const qData = quotes[s.key];
+        if (qData && typeof qData.exact === 'string' && qData.exact.length > 0) {
+          const quoteEl = document.createElement('div');
+          quoteEl.className = 'sec-quote';
 
-        quoteEl.onclick = (e) => {
-          if (e.target === quoteDel) return;
-          quoteEl.classList.toggle('expanded');
-        };
+          const quoteText = document.createElement('div');
+          quoteText.className = 'sec-quote-text';
+          quoteText.textContent = `“${qData.exact}”`;
 
-        quoteEl.append(quoteText, quoteDel);
-        sec.append(quoteEl);
-      }
+          const quoteDel = document.createElement('button');
+          quoteDel.className = 'sec-quote-del';
+          quoteDel.type = 'button';
+          quoteDel.setAttribute('aria-label', '인용 뺌');
+          quoteDel.textContent = '✕';
+          quoteDel.onclick = (e) => {
+            e.stopPropagation();
+            delete quotes[s.key];
+            saveDrafts();
+            quoteEl.remove();
+          };
 
-      // 맨 끝 쓰는 칸(textarea, 자동 높이)
-      const ta = document.createElement('textarea');
-      ta.className = 'sec-textarea';
-      ta.maxLength = 2000;
-      ta.placeholder = '메모할 내용을 적으세요...';
-      ta.value = drafts[s.key] || '';
-      autoResize(ta);
+          quoteEl.onclick = (e) => {
+            if (e.target === quoteDel) return;
+            quoteEl.classList.toggle('expanded');
+          };
 
-      ta.addEventListener('input', () => {
-        lastTypedAt = Date.now();
+          quoteEl.append(quoteText, quoteDel);
+          sec.append(quoteEl);
+        }
+
+        const ta = document.createElement('textarea');
+        ta.className = 'sec-textarea';
+        ta.maxLength = 2000;
+        ta.placeholder = '메모할 내용을 적으세요...';
+        ta.value = drafts[s.key] || '';
         autoResize(ta);
-        drafts[s.key] = ta.value;
-        clearTimeout(typingTimer);
-        typingTimer = setTimeout(() => {
-          saveDrafts();
-        }, 200);
-      });
 
-      sec.append(ta);
+        ta.addEventListener('input', () => {
+          lastTypedAt = Date.now();
+          autoResize(ta);
+          drafts[s.key] = ta.value;
+          clearTimeout(typingTimer);
+          typingTimer = setTimeout(() => {
+            saveDrafts();
+          }, 200);
+        });
+
+        sec.append(ta);
+      } else {
+        // 다른 칸은 목차 한 줄: 소제목 글 · 메모 N · 쓰던 글이 있으면 "쓰는 중"
+        sec.classList.add('sec-toc-row');
+
+        const memoCount = Array.isArray(s.memos)
+          ? s.memos.length
+          : (Array.isArray(s.items) ? s.items.filter((i) => i.kind === 'memo').length : 0);
+        const draftText = drafts[s.key] || '';
+        const hasDraft = draftText.trim().length > 0;
+        const fullLabel = memoCore?.tocLabel
+          ? memoCore.tocLabel({ title: s.text || '(제목 없음)', memoCount, hasDraft })
+          : (s.text || '(제목 없음)');
+
+        const tocBtn = document.createElement('button');
+        tocBtn.type = 'button';
+        tocBtn.className = 'sec-toc-btn';
+        tocBtn.setAttribute('aria-label', fullLabel);
+        tocBtn.style.paddingLeft = `${indent + 4}px`;
+
+        const titleEl = document.createElement('b');
+        titleEl.className = 'sec-toc-title';
+        titleEl.textContent = s.text || '(제목 없음)';
+        tocBtn.append(titleEl);
+
+        const metaParts = [];
+        if (memoCount > 0) metaParts.push(`메모 ${memoCount}`);
+        if (hasDraft) metaParts.push('쓰는 중');
+        if (metaParts.length > 0) {
+          const metaSpan = document.createElement('span');
+          metaSpan.className = 'sec-toc-meta';
+          metaSpan.textContent = ` · ${metaParts.join(' · ')}`;
+          tocBtn.append(metaSpan);
+        }
+
+        tocBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          switchToSection(s.key);
+        });
+        tocBtn.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            e.stopPropagation();
+            switchToSection(s.key);
+          }
+        });
+
+        sec.append(tocBtn);
+      }
+
       sectionsContainer.append(sec);
     }
 

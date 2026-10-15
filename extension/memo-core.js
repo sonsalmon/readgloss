@@ -485,6 +485,58 @@
     return outSections;
   }
 
+  // 목차 한 줄 라벨 텍스트 생성 (T36)
+  // 소제목 글 · 메모 N(그 칸 메모 개수, 0이면 생략) · 쓰던 글(drafts)이 있으면 "쓰는 중"
+  function tocLabel(params) {
+    if (!params || typeof params !== 'object') return '';
+    const title = typeof params.title === 'string' ? params.title.trim() : '';
+    const memoCount = typeof params.memoCount === 'number' && Number.isFinite(params.memoCount) && params.memoCount > 0
+      ? params.memoCount
+      : 0;
+    const hasDraft = Boolean(params.hasDraft);
+
+    const parts = [];
+    if (title) parts.push(title);
+    if (memoCount > 0) parts.push(`메모 ${memoCount}`);
+    if (hasDraft) parts.push('쓰는 중');
+
+    return parts.join(' · ');
+  }
+
+  // 쓰는 칸 높이 계산 (T36)
+  // 처음 5줄 높이, 치면 내용에 맞춰 늘고(scrollHeight), 칸 목록 높이의 절반까지, 그 뒤는 쓰는 칸 안 스크롤
+  function textareaHeight(params) {
+    if (!params || typeof params !== 'object') return 100;
+    const lineHeight = typeof params.lineHeight === 'number' && Number.isFinite(params.lineHeight) && params.lineHeight > 0
+      ? params.lineHeight
+      : 20;
+    const minH = 5 * lineHeight;
+    const listHeight = typeof params.listHeight === 'number' && Number.isFinite(params.listHeight) && params.listHeight > 0
+      ? params.listHeight
+      : 0;
+    const maxH = listHeight > 0 ? listHeight / 2 : minH;
+    const scrollHeight = typeof params.scrollHeight === 'number' && Number.isFinite(params.scrollHeight)
+      ? params.scrollHeight
+      : 0;
+
+    const effectiveMax = Math.max(minH, maxH);
+    return Math.min(Math.max(scrollHeight, minH), effectiveMax);
+  }
+
+  // 본문 스크롤에 따른 소제목 칸 전환 허용 여부 판정 (T36)
+  // 쓰는 중(쓰는 칸에 포커스가 있고 마지막 입력 뒤 1.5초 안)에는 지금 칸을 바꾸지 않는다.
+  function shouldSwitchSection(params) {
+    if (!params || typeof params !== 'object') return true;
+    const typingFocused = Boolean(params.typingFocused);
+    if (!typingFocused) return true;
+
+    const msSinceInput = typeof params.msSinceInput === 'number' && Number.isFinite(params.msSinceInput)
+      ? params.msSinceInput
+      : Infinity;
+
+    return msSinceInput >= 1500;
+  }
+
   globalThis.readglossMemo = {
     normalizeUrl,
     currentHeading,
@@ -508,6 +560,9 @@
     assignToSections,
     parseConceptCommand,
     formatShapeLine,
+    tocLabel,
+    textareaHeight,
+    shouldSwitchSection,
   };
 })();
 
