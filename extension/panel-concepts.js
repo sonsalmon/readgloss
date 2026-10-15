@@ -16,8 +16,65 @@
     }
     .filter-chips {
       display: flex;
+      flex-wrap: wrap;
       gap: 6px;
       margin-bottom: 10px;
+    }
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 5px;
+    }
+    .tag-chip {
+      background: none;
+      border: 1px solid var(--rg-border, #d0d7de);
+      border-radius: 12px;
+      padding: 2px 8px;
+      font-size: 11.5px;
+      cursor: pointer;
+      color: var(--rg-muted, #656d76);
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .tag-chip:hover {
+      background: var(--rg-hover, rgba(0, 0, 0, 0.04));
+    }
+    .tag-chip.active {
+      background: var(--rg-accent-soft, rgba(47, 111, 235, 0.10));
+      color: var(--rg-accent, #2f6feb);
+      border-color: var(--rg-accent, #2f6feb);
+      font-weight: 600;
+    }
+    .tag-chip.custom {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .tag-chip-del {
+      border: none;
+      background: none;
+      cursor: pointer;
+      padding: 0;
+      font-size: 12px;
+      line-height: 1;
+      color: inherit;
+    }
+    .tag-input {
+      box-sizing: border-box;
+      width: 75px;
+      padding: 2px 6px;
+      border-radius: 12px;
+      border: 1px dashed var(--rg-border, #d0d7de);
+      background: var(--rg-bg, #fff);
+      color: var(--rg-fg, inherit);
+      font: inherit;
+      font-size: 11.5px;
+    }
+    .tag-input:focus-visible {
+      outline: 2px solid var(--rg-accent, #2f6feb);
+      outline-offset: 1px;
+      border-style: solid;
     }
     .filter-chip {
       background: none;
@@ -431,7 +488,7 @@
     function renderListView(parent) {
       parent.replaceChildren();
 
-      // 거르기 칩: 전체 · 내 개념 · 나중에 볼 것 (N)
+      // 거르기 칩: 전체 · 내 개념 · 나중에 볼 것 (N) + 쓰인 태그마다 #<태그> (N)
       const laterCount = conceptsList.filter((c) => c.later === true || !c.definition).length;
       const chipsRow = document.createElement('div');
       chipsRow.className = 'filter-chips';
@@ -441,6 +498,27 @@
         { key: 'defined', label: '내 개념' },
         { key: 'later', label: `나중에 볼 것 (${laterCount})` },
       ];
+
+      // 사용된 태그별 개수 집계
+      const tagCounts = new Map();
+      for (const c of conceptsList) {
+        if (Array.isArray(c.tags)) {
+          for (const t of c.tags) {
+            if (t) {
+              tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+            }
+          }
+        }
+      }
+
+      // 태그 이름순 정렬 후 칩 추가
+      const sortedTags = [...tagCounts.keys()].sort((a, b) => a.localeCompare(b));
+      for (const t of sortedTags) {
+        chipsData.push({
+          key: `tag:${t}`,
+          label: `#${t} (${tagCounts.get(t)})`,
+        });
+      }
 
       for (const cd of chipsData) {
         const btn = document.createElement('button');
@@ -483,11 +561,16 @@
         const isLater = c.later === true || !c.definition;
         if (filterMode === 'defined' && isLater) return false;
         if (filterMode === 'later' && !isLater) return false;
+        if (filterMode.startsWith('tag:')) {
+          const targetTag = filterMode.slice(4);
+          if (!Array.isArray(c.tags) || !c.tags.includes(targetTag)) return false;
+        }
 
         if (!q) return true;
         if ((c.name || '').toLowerCase().includes(q)) return true;
         if (Array.isArray(c.aliases) && c.aliases.some((a) => a.toLowerCase().includes(q))) return true;
         if ((c.definition || '').toLowerCase().includes(q)) return true;
+        if (Array.isArray(c.tags) && c.tags.some((t) => t.toLowerCase().includes(q))) return true;
         return false;
       });
 
@@ -668,6 +751,94 @@
       aliasField.append(aliasLabel, aliasInput);
       parent.append(aliasField);
 
+      // 태그 필드
+      const tagField = document.createElement('div');
+      tagField.className = 'detail-field';
+      const tagLabel = document.createElement('label');
+      tagLabel.className = 'detail-label';
+      tagLabel.textContent = '태그 (최대 5개)';
+
+      const tagRow = document.createElement('div');
+      tagRow.className = 'tag-row';
+
+      const DEFAULT_TAGS = ['다시 보기', '글감 후보', '헷갈림'];
+      const activeTags = new Set(Array.isArray(concept.tags) ? concept.tags : []);
+
+      const tagInput = document.createElement('input');
+      tagInput.className = 'tag-input';
+      tagInput.type = 'text';
+      tagInput.maxLength = 20;
+      tagInput.placeholder = '+ 새 태그';
+
+      function renderTags() {
+        tagRow.replaceChildren();
+
+        // 기본 태그 3개: 다시 보기, 글감 후보, 헷갈림 (눌러 켜고 끔)
+        for (const dt of DEFAULT_TAGS) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          const isActive = activeTags.has(dt);
+          btn.className = `tag-chip ${isActive ? 'active' : ''}`;
+          btn.textContent = dt;
+          btn.onclick = (e) => {
+            e.preventDefault();
+            if (activeTags.has(dt)) {
+              activeTags.delete(dt);
+            } else {
+              if (activeTags.size < 5) {
+                activeTags.add(dt);
+              }
+            }
+            renderTags();
+          };
+          tagRow.append(btn);
+        }
+
+        // 그 밖에 이 개념에 있는 태그 칩
+        for (const t of activeTags) {
+          if (DEFAULT_TAGS.includes(t)) continue;
+          const chip = document.createElement('span');
+          chip.className = 'tag-chip active custom';
+          chip.textContent = t;
+
+          const delBtn = document.createElement('button');
+          delBtn.type = 'button';
+          delBtn.className = 'tag-chip-del';
+          delBtn.textContent = '×';
+          delBtn.onclick = (e) => {
+            e.preventDefault();
+            activeTags.delete(t);
+            renderTags();
+          };
+          chip.append(delBtn);
+          tagRow.append(chip);
+        }
+
+        // 끝에 작은 입력칸 (Enter로 새 태그 추가, 1~20자, 5개 넘으면 안 받음)
+        tagRow.append(tagInput);
+      }
+
+      tagInput.addEventListener('keydown', (e) => {
+        if (e.isComposing) return;
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          const cleanT = tagInput.value.trim().replace(/\s+/g, ' ');
+          if (cleanT.length >= 1 && cleanT.length <= 20) {
+            if (activeTags.size < 5) {
+              activeTags.add(cleanT);
+              tagInput.value = '';
+              renderTags();
+              tagInput.focus();
+            }
+          }
+        }
+      });
+
+      renderTags();
+      tagField.append(tagLabel, tagRow);
+      parent.append(tagField);
+
       // 관련 개념 필드
       const relField = document.createElement('div');
       relField.className = 'detail-field';
@@ -789,6 +960,7 @@
           id: concept.id,
           name: concept.name,
           aliases,
+          tags: [...activeTags],
           definition: def,
           related: [...relatedSet],
         });

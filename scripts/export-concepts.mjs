@@ -13,6 +13,19 @@ import { dateOf } from './export-day.mjs';
 // 개념 문서 머리 주석(고치려면 개념 탭에서). 스크랩 문서 머리(export-scraps HEADER_COMMENT)와 다르다.
 export const CONCEPT_HEADER_COMMENT = '<!-- 자동 생성 — 고치려면 확장 개념 탭에서 -->';
 
+// 정의에서 첫 항목 텍스트 추출 (마크다운 목록 불릿 제거)
+export function firstDefinitionItem(def) {
+  if (!def || typeof def !== 'string') return '(아직 설명 없음)';
+  const lines = def.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const cleaned = trimmed.replace(/^[-*+]\s+/, '').replace(/^\d+\.\s+/, '').trim();
+    if (cleaned) return cleaned;
+  }
+  return '(아직 설명 없음)';
+}
+
 // 개념 목록 -> Map<상대경로, 내용>. pageFiles 는 pageFileNames 결과(없으면 제목으로 링크).
 export function renderConceptDocs(concepts, pageFiles = null) {
   const docs = new Map();
@@ -43,6 +56,11 @@ export function renderConceptDocs(concepts, pageFiles = null) {
     // 별칭 (있을 때만)
     if (Array.isArray(c.aliases) && c.aliases.length > 0) {
       lines.push(`별칭: ${c.aliases.join(', ')}`, '');
+    }
+
+    // 태그 (있을 때만)
+    if (Array.isArray(c.tags) && c.tags.length > 0) {
+      lines.push(`tags: [${c.tags.join(', ')}]`, '');
     }
 
     // 정의 문단
@@ -108,6 +126,23 @@ export function renderConceptDocs(concepts, pageFiles = null) {
       laterLines.push(`- ${name} · ${seenTitle} · ${d}`);
     }
     docs.set('나중에-볼-것.md', laterLines.join('\n').trimEnd() + '\n');
+  }
+
+  // 글감-후보.md 목록 한 장(글감 후보 태그 개념만: - <이름> · <정의 첫 항목 또는 (아직 설명 없음)> · <YYYY-MM-DD>)
+  // 글감 후보가 없으면 그 파일을 만들지 않는다(있던 자동 생성 파일이면 writeIfChanged가 지움).
+  const candidateConcepts = concepts.filter(
+    (c) => Array.isArray(c.tags) && c.tags.includes('글감 후보'),
+  );
+  if (candidateConcepts.length > 0) {
+    const sortedCandidates = [...candidateConcepts].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    const candidateLines = [CONCEPT_HEADER_COMMENT, '', '# 글감 후보', ''];
+    for (const c of sortedCandidates) {
+      const name = c.name || '';
+      const defItem = firstDefinitionItem(c.definition);
+      const d = dateOf(c.ts || Date.now());
+      candidateLines.push(`- ${name} · ${defItem} · ${d}`);
+    }
+    docs.set('글감-후보.md', candidateLines.join('\n').trimEnd() + '\n');
   }
 
   return docs;

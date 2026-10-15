@@ -8,6 +8,8 @@ export const LIMIT = {
   name: 80,
   alias: 80,
   aliasesCount: 5,
+  tag: 20,
+  tagsCount: 5,
   definition: 500,
   relatedCount: 10,
   relatedName: 80,
@@ -53,6 +55,22 @@ export function parseConceptOp(v) {
         if (cleanA.length < 1 || a.length > LIMIT.alias || cleanA.length > LIMIT.alias) return null;
         aliases.push(cleanA);
       }
+    }
+
+    let tags = [];
+    if (v.tags !== undefined) {
+      if (!Array.isArray(v.tags)) return null;
+      const seenTags = new Set();
+      for (const t of v.tags) {
+        if (typeof t !== 'string') return null;
+        const cleanT = t.trim().replace(/\s+/g, ' ');
+        if (cleanT.length < 1 || t.length > LIMIT.tag || cleanT.length > LIMIT.tag) return null;
+        if (!seenTags.has(cleanT)) {
+          seenTags.add(cleanT);
+          tags.push(cleanT);
+        }
+      }
+      if (tags.length > LIMIT.tagsCount) return null;
     }
 
     if (typeof v.definition !== 'string' || v.definition.length > LIMIT.definition) {
@@ -103,6 +121,7 @@ export function parseConceptOp(v) {
       id,
       name: cleanName,
       aliases,
+      tags,
       definition,
       related,
       task,
@@ -187,6 +206,7 @@ export function createConcepts({ db, now = Date.now, learning }) {
       id: node.id,
       name: d.name || '',
       aliases: Array.isArray(d.aliases) ? [...d.aliases] : [],
+      tags: Array.isArray(d.tags) ? [...d.tags] : [],
       definition,
       later,
       seen: d.seen ?? null,
@@ -289,9 +309,14 @@ export function createConcepts({ db, now = Date.now, learning }) {
         ? op.seen
         : (existingNode?.data?.seen ?? null);
 
+      const tags = Array.isArray(op.tags)
+        ? [...op.tags]
+        : (existingNode?.data?.tags ? [...existingNode.data.tags] : []);
+
       const data = {
         name: op.name,
         aliases: op.aliases || [],
+        tags,
         definition: op.definition,
         seen,
         firstTask,

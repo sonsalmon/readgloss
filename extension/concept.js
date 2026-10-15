@@ -301,6 +301,7 @@
           id: concept.id,
           name: concept.name,
           aliases: concept.aliases,
+          tags: concept.tags,
           definition: '',
           related: concept.related?.map((r) => r.name),
           anchor: hit.rect,
@@ -453,6 +454,13 @@
     const existingConcepts = await getConceptsList();
     const existingNames = existingConcepts.map((c) => c.name);
 
+    const currentConcept = conceptId ? existingConcepts.find((c) => c.id === conceptId) : null;
+    const initialTags = Array.isArray(seed.tags)
+      ? seed.tags
+      : (Array.isArray(currentConcept?.tags) ? currentConcept.tags : []);
+    const activeTags = new Set(initialTags);
+    const DEFAULT_TAGS = ['다시 보기', '글감 후보', '헷갈림'];
+
     formHost = document.createElement('readgloss-concept-form');
     formHost.style.cssText = 'all: initial; position: fixed; z-index: 2147483647; font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;';
 
@@ -571,6 +579,62 @@
         background: var(--rg-accent-soft);
         color: var(--rg-accent);
       }
+      .tag-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 5px;
+      }
+      .tag-chip {
+        background: none;
+        border: 1px solid var(--rg-border);
+        border-radius: 12px;
+        padding: 2px 8px;
+        font-size: 11.5px;
+        cursor: pointer;
+        color: var(--rg-mut);
+        font-family: inherit;
+        transition: all 0.15s;
+      }
+      .tag-chip:hover {
+        background: rgba(0, 0, 0, 0.04);
+      }
+      .tag-chip.active {
+        background: var(--rg-accent-soft);
+        color: var(--rg-accent);
+        border-color: var(--rg-accent);
+        font-weight: 600;
+      }
+      .tag-chip.custom {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+      }
+      .tag-chip-del {
+        border: none;
+        background: none;
+        cursor: pointer;
+        padding: 0;
+        font-size: 12px;
+        line-height: 1;
+        color: inherit;
+      }
+      .tag-input {
+        box-sizing: border-box;
+        width: 75px;
+        padding: 2px 6px;
+        border-radius: 12px;
+        border: 1px dashed var(--rg-border);
+        background: var(--rg-bg);
+        color: var(--rg-fg);
+        font: inherit;
+        font-size: 11.5px;
+      }
+      .tag-input:focus-visible {
+        outline: 2px solid var(--rg-accent);
+        outline-offset: 1px;
+        border-style: solid;
+      }
       .foot {
         display: flex;
         justify-content: flex-end;
@@ -639,6 +703,90 @@
     aliasIn.placeholder = '접근 통제, AC';
     aliasIn.value = Array.isArray(seed.aliases) ? seed.aliases.join(', ') : (seed.aliases || '');
     aliasField.append(aliasLabel, aliasIn);
+
+    // 태그 줄
+    const tagField = document.createElement('div');
+    tagField.className = 'field';
+    const tagLabel = document.createElement('label');
+    tagLabel.className = 'label';
+    tagLabel.textContent = '태그 (최대 5개)';
+
+    const tagRow = document.createElement('div');
+    tagRow.className = 'tag-row';
+
+    const tagInput = document.createElement('input');
+    tagInput.className = 'tag-input';
+    tagInput.type = 'text';
+    tagInput.maxLength = 20;
+    tagInput.placeholder = '+ 새 태그';
+
+    function renderTags() {
+      tagRow.replaceChildren();
+
+      // 기본 태그 3개: 다시 보기, 글감 후보, 헷갈림 (눌러 켜고 끔)
+      for (const dt of DEFAULT_TAGS) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        const isActive = activeTags.has(dt);
+        btn.className = `tag-chip ${isActive ? 'active' : ''}`;
+        btn.textContent = dt;
+        btn.onclick = (e) => {
+          e.preventDefault();
+          if (activeTags.has(dt)) {
+            activeTags.delete(dt);
+          } else {
+            if (activeTags.size < 5) {
+              activeTags.add(dt);
+            }
+          }
+          renderTags();
+        };
+        tagRow.append(btn);
+      }
+
+      // 그 밖에 이 개념에 있는 태그 칩
+      for (const t of activeTags) {
+        if (DEFAULT_TAGS.includes(t)) continue;
+        const chip = document.createElement('span');
+        chip.className = 'tag-chip active custom';
+        chip.textContent = t;
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'tag-chip-del';
+        delBtn.textContent = '×';
+        delBtn.onclick = (e) => {
+          e.preventDefault();
+          activeTags.delete(t);
+          renderTags();
+        };
+        chip.append(delBtn);
+        tagRow.append(chip);
+      }
+
+      // 끝에 작은 입력칸 (Enter로 새 태그 추가, 1~20자, 5개 넘으면 안 받음)
+      tagRow.append(tagInput);
+    }
+
+    tagInput.addEventListener('keydown', (e) => {
+      if (e.isComposing) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        const val = tagInput.value.trim().replace(/\s+/g, ' ');
+        if (val.length >= 1 && val.length <= 20) {
+          if (activeTags.size < 5) {
+            activeTags.add(val);
+            tagInput.value = '';
+            renderTags();
+            tagInput.focus();
+          }
+        }
+      }
+    });
+
+    renderTags();
+    tagField.append(tagLabel, tagRow);
 
     // 내 정의 (설명)
     const defField = document.createElement('div');
@@ -815,6 +963,7 @@
         op: 'save',
         name: cleanName,
         aliases,
+        tags: [...activeTags],
         definition,
         related: [...relatedSet],
         task,
@@ -866,7 +1015,7 @@
     saveBtn.onclick = handleSave;
     foot.append(cancelBtn, saveBtn);
 
-    formCard.append(titleEl, nameField, aliasField, defField, relField, errEl, foot);
+    formCard.append(titleEl, nameField, aliasField, tagField, defField, relField, errEl, foot);
 
     // 키 처리: 카드·칸 안에서 친 키가 페이지·다른 기능(⌥S, 메모 시작 키)으로 새지 않게 stopPropagation
     formHost.addEventListener('keydown', (e) => {
