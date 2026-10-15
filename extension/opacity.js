@@ -125,11 +125,14 @@
     return path.some((node) => (node?.localName || node?.tagName)?.toLowerCase() === 'readgloss-memo-pad');
   }
 
-  // 순수 함수: 개별 host 투명도 판정(T39)
-  // hovered 거나 typing 중이면 1, 아니면 base 값
-  function hostOpacity({ hovered, typing, base = 1 } = {}) {
+  // 순수 함수: 개별 host 투명도 판정(T39, FX-G)
+  // dimWhileReading 이 꺼져 있으면(false) 마우스·입력에도 진해지지 않고 항상 base 값
+  // dimWhileReading 이 켜져 있으면(기본값 true) hovered 거나 typing 중이면 1, 아니면 base 값
+  function hostOpacity({ hovered, typing, base = 1, dimWhileReading = true } = {}) {
+    const b = typeof base === 'number' ? base : 1;
+    if (!dimWhileReading) return b;
     if (hovered || typing) return 1;
-    return typeof base === 'number' ? base : 1;
+    return b;
   }
 
   globalThis.readglossOpacity = {
@@ -181,13 +184,14 @@
     rootStyle.setProperty('--rg-input-alpha', String(inputAlpha));
 
     const base = Math.min(1, Math.max(0.4, (Number(curSettings.opacityUi) || 100) / 100));
+    const dimWhileReading = curSettings.dimWhileReading !== false;
     const now = Date.now();
 
     for (const tag of HOST_TAGS) {
       const isHovered = currentHoveredHost === tag;
       const lastInput = hostLastInput.get(tag) || 0;
       const isTyping = (now - lastInput) < TIMEOUT_MS;
-      const alpha = hostOpacity({ hovered: isHovered, typing: isTyping, base });
+      const alpha = hostOpacity({ hovered: isHovered, typing: isTyping, base, dimWhileReading });
       rootStyle.setProperty(`--rg-alpha-${tag}`, String(alpha));
     }
   }

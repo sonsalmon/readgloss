@@ -119,8 +119,10 @@
     if (!list) return;
     for (const e of list) {
       if (e.label) e.label.remove();
+      if (e.lemma) state.pageSeen.delete(e.lemma);
     }
     entriesByBlock.delete(block);
+    updateHighlights();
   }
 
   // 모든 블록의 뜻 글자와 하이라이트를 지운다
@@ -128,6 +130,7 @@
     for (const list of entriesByBlock.values()) {
       for (const e of list) {
         if (e.label) e.label.remove();
+        if (e.lemma) state.pageSeen.delete(e.lemma);
       }
     }
     entriesByBlock.clear();
@@ -174,6 +177,47 @@
     return true;
   }
 
+  // 글꼴 크기·색·투명도·굵기를 entry 에 설정한다(entry 생성 시 또는 설정 변경 시)
+  function applyEntryStyle(entry, when = settings) {
+    if (!entry.label || !entry.node) return;
+    const dark = core.isDarkColor
+      ? core.isDarkColor(
+          typeof getComputedStyle === 'function' && document.body ? getComputedStyle(document.body).color : '',
+          typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches,
+        )
+      : false;
+    const accent = dark ? ACCENT_DARK : ACCENT;
+    const a = when.annotation;
+    const parent = entry.node.parentElement;
+    const cs = parent && typeof getComputedStyle === 'function' ? getComputedStyle(parent) : null;
+    const parentFs = cs ? parseFloat(cs.fontSize) || 16 : 16;
+    const labelFs = (parentFs * a.sizePct) / 100;
+    const color = a.color === 'text' ? (cs?.color || 'currentColor') : a.color === 'accent' ? accent : a.customColor;
+    const opacity = String(a.opacityPct / 100);
+    const fontWeight = String(WEIGHT_MAP[a.weight] ?? 400);
+
+    entry.fontSize = labelFs;
+    entry.color = color;
+    entry.opacity = opacity;
+    entry.fontWeight = fontWeight;
+
+    entry.label.style.fontSize = `${labelFs}px`;
+    entry.label.style.color = color;
+    entry.label.style.opacity = opacity;
+    entry.label.style.fontWeight = fontWeight;
+    entry.labelWidth = null;
+    entry.labelHeight = null;
+  }
+
+  // 설정이 바뀌었을 때 모든 entry 의 스타일을 다시 계산한다
+  function refreshEntryStyles() {
+    for (const list of entriesByBlock.values()) {
+      for (const e of list) {
+        applyEntryStyle(e, settings);
+      }
+    }
+  }
+
   // 화면 근처 블록 처리(다리 요청 후 planBlock 으로 Range 와 뜻 라벨 구성)
   async function flush() {
     flushTimer = 0;
@@ -204,7 +248,7 @@
     if (mine !== epoch) return;
     if (!ok) {
       for (const j of jobs) done.delete(j.block);
-      if (!dead && retries++ < MAX_RETRIES) setTimeout(() => jobs.forEach((j) => track(j.block)), RETRY_MS);
+      if (!dead && retries++ < MAX_RETRIES) setTimeout(() => jobs.forEach((j) => retrack(j.block)), RETRY_MS);
       return;
     }
     retries = 0;
@@ -234,7 +278,7 @@
           label.style.visibility = 'hidden';
           layerShadow.append(label);
         }
-        entries.push({
+        const entry = {
           node: p.node,
           text: p.node.nodeValue,
           start: p.start,
@@ -243,7 +287,11 @@
           gloss: p.gloss,
           range,
           label,
-        });
+          labelWidth: null,
+          labelHeight: null,
+        };
+        if (label) applyEntryStyle(entry, when);
+        entries.push(entry);
       }
       if (entries.length) entriesByBlock.set(j.block, entries);
     }
@@ -261,35 +309,23 @@
     });
   }
 
-  // 뜻 글자 위치 계산 및 숨김 판정
+  // 뜻 글자 위치 계산 및 숨김 판정 (두 단계: 1단계 읽기 루프 뒤 2단계 쓰기 루프)
   function updatePositions() {
     if (!running || !layerShadow) return;
-    const dark = core.isDarkColor
-      ? core.isDarkColor(
-          typeof getComputedStyle === 'function' && document.body ? getComputedStyle(document.body).color : '',
-          typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches,
-        )
-      : false;
-    const accent = dark ? ACCENT_DARK : ACCENT;
     const a = settings.annotation;
     const vw = window.innerWidth || document.documentElement.clientWidth || 0;
     const vh = window.innerHeight || document.documentElement.clientHeight || 0;
 
+    // 연결 끊김 및 글 변경 블록 정리
     for (const [block, list] of entriesByBlock.entries()) {
       if (!block.isConnected) {
         clearBlockEntries(block);
         done.delete(block);
         nearBlocks.delete(block);
+        io?.unobserve(block);
+        ro?.unobserve(block);
         continue;
       }
-      // 화면 근처가 아니면 숨긴다
-      if (!nearBlocks.has(block)) {
-        for (const e of list) {
-          if (e.label) e.label.style.visibility = 'hidden';
-        }
-        continue;
-      }
-      // 페이지가 글을 바꿈: 노드가 끊겼거나 글이 달라지면 그 블록 엔트리를 버리고 다시 처리 대상으로
       let changed = false;
       for (const e of list) {
         if (!e.node.isConnected || e.node.nodeValue !== e.text) {
@@ -300,12 +336,17 @@
       if (changed) {
         clearBlockEntries(block);
         done.delete(block);
-        track(block);
+        retrack(block);
         continue;
       }
-      if (a.position === 'none') {
+    }
+
+    // 1단계 (읽기 루프): 화면 근처 entry 전부의 getClientRects·elementFromPoint 를 먼저 읽어 배열에 담는다
+    const updates = [];
+    for (const [block, list] of entriesByBlock.entries()) {
+      if (!nearBlocks.has(block) || a.position === 'none') {
         for (const e of list) {
-          if (e.label) e.label.style.visibility = 'hidden';
+          if (e.label) updates.push({ entry: e, visible: false });
         }
         continue;
       }
@@ -314,17 +355,17 @@
         if (!e.label || !e.range) continue;
         const rects = e.range.getClientRects();
         if (!rects || !rects.length) {
-          e.label.style.visibility = 'hidden';
+          updates.push({ entry: e, visible: false });
           continue;
         }
         const rect = rects[0];
         if (rect.width === 0 && rect.height === 0) {
-          e.label.style.visibility = 'hidden';
+          updates.push({ entry: e, visible: false });
           continue;
         }
         // 화면 밖
         if (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw) {
-          e.label.style.visibility = 'hidden';
+          updates.push({ entry: e, visible: false });
           continue;
         }
 
@@ -332,40 +373,43 @@
         const cx = rect.left + rect.width / 2;
         const cy = rect.top + rect.height / 2;
         if (cx < 0 || cx > vw || cy < 0 || cy > vh) {
-          e.label.style.visibility = 'hidden';
+          updates.push({ entry: e, visible: false });
           continue;
         }
         const hit = document.elementFromPoint(cx, cy);
         const parent = e.node.parentElement;
         if (!hit) {
-          e.label.style.visibility = 'hidden';
+          updates.push({ entry: e, visible: false });
           continue;
         }
         const isOurHost = hit === layerHost || (hit.getAttribute && hit.getAttribute('data-readgloss') === 'layer');
         if (!isOurHost && parent && hit !== parent && !parent.contains(hit)) {
-          e.label.style.visibility = 'hidden';
+          updates.push({ entry: e, visible: false });
           continue;
         }
 
-        // 글자 크기, 색, 투명도, 굵기 설정
-        const cs = parent && typeof getComputedStyle === 'function' ? getComputedStyle(parent) : null;
-        const parentFs = cs ? parseFloat(cs.fontSize) || 16 : 16;
-        const labelFs = (parentFs * a.sizePct) / 100;
-        const color = a.color === 'text' ? (cs?.color || 'currentColor') : a.color === 'accent' ? accent : a.customColor;
+        // 뜻 글자 폭·높이는 처음 그릴 때 한 번 재서 entry 에 둔다
+        if (e.labelWidth == null || e.labelHeight == null) {
+          const lr = e.label.getBoundingClientRect();
+          e.labelWidth = lr.width;
+          e.labelHeight = lr.height;
+        }
 
-        e.label.style.fontSize = `${labelFs}px`;
-        e.label.style.color = color;
-        e.label.style.opacity = String(a.opacityPct / 100);
-        e.label.style.fontWeight = String(WEIGHT_MAP[a.weight] ?? 400);
-
-        // 위치: 사각형 위 가운데
-        e.label.style.visibility = 'visible';
-        const labelRect = e.label.getBoundingClientRect();
         const box = core.labelBox
-          ? core.labelBox(rect, labelRect.width, labelRect.height)
-          : { left: rect.left + rect.width / 2 - labelRect.width / 2, top: rect.top - labelRect.height - 1 };
-        e.label.style.left = `${box.left}px`;
-        e.label.style.top = `${box.top}px`;
+          ? core.labelBox(rect, e.labelWidth, e.labelHeight)
+          : { left: rect.left + rect.width / 2 - e.labelWidth / 2, top: rect.top - e.labelHeight - 1 };
+        updates.push({ entry: e, visible: true, left: box.left, top: box.top });
+      }
+    }
+
+    // 2단계 (쓰기 루프): 그다음 한꺼번에 left·top·visibility 를 쓴다
+    for (const u of updates) {
+      if (u.visible) {
+        u.entry.label.style.left = `${u.left}px`;
+        u.entry.label.style.top = `${u.top}px`;
+        u.entry.label.style.visibility = 'visible';
+      } else {
+        u.entry.label.style.visibility = 'hidden';
       }
     }
   }
@@ -390,11 +434,26 @@
     }
   }
 
+  function retrack(block) {
+    if (io && running && !dead && block.isConnected) {
+      done.delete(block);
+      io.unobserve(block);
+      io.observe(block);
+      ro?.observe(block);
+    }
+  }
+
   const isOurs = (n) => !!elementOf(n)?.closest?.('[data-readgloss]');
 
   function collect(records) {
+    let hasNotOurs = false;
     for (const r of records) {
       if (isOurs(r.target)) continue;
+      hasNotOurs = true;
+      if (r.type === 'attributes') {
+        // 우리 노드가 아닌 속성 변경은 scheduleUpdate() 만 수행(블록 다시 처리 아님)
+        continue;
+      }
       const added = [...r.addedNodes];
       if (r.type === 'childList' && added.length && added.every(isOurs)) continue;
       const near = elementOf(r.target)?.closest(BLOCK);
@@ -406,18 +465,31 @@
         const up = n.closest(BLOCK);
         if (up) dirty.add(up);
       }
+      for (const n of r.removedNodes || []) {
+        if (n.nodeType !== 1) continue;
+        const unreg = (b) => {
+          io?.unobserve(b);
+          ro?.unobserve(b);
+          clearBlockEntries(b);
+          done.delete(b);
+          nearBlocks.delete(b);
+          dirty.delete(b);
+        };
+        if (n.matches?.(BLOCK)) unreg(n);
+        n.querySelectorAll?.(BLOCK).forEach(unreg);
+      }
     }
     if (dirty.size && !mutationTimer) {
       mutationTimer = setTimeout(() => {
         mutationTimer = 0;
         for (const b of dirty) {
           done.delete(b);
-          track(b);
+          retrack(b);
         }
         dirty.clear();
         scheduleUpdate();
       }, MUTATION_MS);
-    } else {
+    } else if (hasNotOurs) {
       scheduleUpdate();
     }
   }
@@ -430,11 +502,18 @@
       ro = new ResizeObserver(() => scheduleUpdate());
     }
     mo = new MutationObserver(collect);
-    mo.observe(document.body, { childList: true, subtree: true, characterData: true });
+    mo.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['style', 'class', 'hidden', 'open'],
+    });
     document.querySelectorAll(BLOCK).forEach(track);
 
     document.addEventListener('scroll', scheduleUpdate, { capture: true, passive: true });
     window.addEventListener('resize', scheduleUpdate, { passive: true });
+    document.addEventListener('load', scheduleUpdate, { capture: true, passive: true });
   }
 
   function stop() {
@@ -444,6 +523,7 @@
     io = mo = ro = null;
     document.removeEventListener('scroll', scheduleUpdate, { capture: true });
     window.removeEventListener('resize', scheduleUpdate);
+    document.removeEventListener('load', scheduleUpdate, { capture: true });
     clearTimeout(flushTimer);
     clearTimeout(mutationTimer);
     cancelAnimationFrame(rafId);
@@ -486,7 +566,10 @@
     } else {
       applyHighlightStyle(settings);
       if (!running || key !== appliedKey) rebuild();
-      else scheduleUpdate();
+      else {
+        refreshEntryStyles();
+        scheduleUpdate();
+      }
     }
     appliedKey = key;
   }
@@ -541,7 +624,7 @@
     for (const k of keys) state.pageSeen.delete(k);
     done = new WeakSet();
     updateHighlights();
-    document.querySelectorAll(BLOCK).forEach(track);
+    document.querySelectorAll(BLOCK).forEach(retrack);
     scheduleUpdate();
     mo?.takeRecords();
   });

@@ -2630,6 +2630,7 @@
 
     // ⌘Enter 저장 · Esc 접기 · ⌥⇧M 목록: 메모장 안 어디에 포커스가 있어도 동작한다. 칸 밖이면 지금 칸 글을 쓴다.
     box.addEventListener('keydown', (e) => {
+      if ((e.key === 'Escape' || e.key === 'Esc') && e.readglossCardClosed) return;
       const action = memoCore?.padKeyV2 ? memoCore.padKeyV2(e) : null;
       const key = e.target?.closest?.('.sec')?.dataset?.key || currentActiveKey;
       if (action === 'save') {
@@ -2644,6 +2645,7 @@
       } else if (action === 'newline') {
         if (e.target?.classList?.contains('sec-textarea')) setTimeout(() => autoResize(e.target), 0);
       } else if (action === 'fold') {
+        if (e.readglossCardClosed) return;
         e.preventDefault();
         if (activeConceptEditId) {
           closeConceptInlineEdit(activeConceptEditId);

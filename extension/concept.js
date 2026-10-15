@@ -1282,6 +1282,7 @@
 
     // 키 처리: 카드·칸 안에서 친 키가 페이지·다른 기능(⌥S, 메모 시작 키)으로 새지 않게 stopPropagation
     formHost.addEventListener('keydown', (e) => {
+      if ((e.key === 'Escape' || e.key === 'Esc') && e.readglossCardClosed) return;
       e.stopPropagation();
       if (e.key === 'Escape') {
         e.preventDefault();
