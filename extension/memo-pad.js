@@ -117,9 +117,94 @@
     }
   }
 
+  let isDocked = false; // 붙인 상태 여부
+  let dockWidthValue = 360; // 붙이기 폭 (기본 360, 260~50vw)
+  let originalMarginRight = null; // 붙이기 전 본문 오른쪽 마진
+  let preStudyDockState = null; // 공부 모드 전 상태 { open, docked }
+  let returnFocusTimer = 0; // 쓰는 칸 기본 포커스 타이머
+
+  function saveDockState() {
+    if (chrome?.storage?.local?.set) {
+      chrome.storage.local.set({ memoPadDock: { on: isDocked, width: dockWidthValue } });
+    }
+  }
+
+  function applyDock(width) {
+    isDocked = true;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const memoCore = globalThis.readglossMemo;
+    const w = memoCore?.dockWidth ? memoCore.dockWidth(width ?? dockWidthValue, vw) : (width ?? dockWidthValue ?? 360);
+    dockWidthValue = w;
+
+    if (originalMarginRight === null && typeof document !== 'undefined') {
+      originalMarginRight = document.documentElement.style.marginRight || '';
+    }
+    if (typeof document !== 'undefined') {
+      document.documentElement.style.marginRight = `${w}px`;
+    }
+
+    if (host) {
+      host.style.position = 'fixed';
+      host.style.top = '0px';
+      host.style.right = '0px';
+      host.style.left = 'auto';
+      host.style.bottom = 'auto';
+      host.style.height = '100vh';
+      host.style.width = `${w}px`;
+    }
+    updateDockUI();
+  }
+
+  function undockPad() {
+    isDocked = false;
+    if (originalMarginRight !== null && typeof document !== 'undefined') {
+      document.documentElement.style.marginRight = originalMarginRight;
+      originalMarginRight = null;
+    }
+    applyAnchored(savedAnchored);
+    saveDockState();
+    updateDockUI();
+  }
+
+  function toggleDock() {
+    if (isDocked) {
+      undockPad();
+    } else {
+      applyDock(dockWidthValue);
+      saveDockState();
+    }
+  }
+
+  function updateDockUI() {
+    if (!shadow) return;
+    const btn = shadow.querySelector('.btn-dock');
+    if (btn) {
+      btn.textContent = isDocked ? '띄우기' : '붙이기';
+      btn.setAttribute('aria-label', isDocked ? '떠 있는 창으로 띄우기' : '오른쪽에 붙이기');
+    }
+    const cornerHandle = shadow.querySelector('.resize-handle');
+    if (cornerHandle) {
+      cornerHandle.style.display = isDocked ? 'none' : 'flex';
+    }
+    const dockHandle = shadow.querySelector('.dock-resize-handle');
+    if (dockHandle) {
+      dockHandle.style.display = isDocked ? 'block' : 'none';
+    }
+    const padBox = shadow.querySelector('.pad-box');
+    if (padBox) {
+      padBox.classList.toggle('docked', isDocked);
+    }
+  }
+
   function loadAndApplyRect(callback) {
     if (chrome?.storage?.local?.get) {
-      chrome.storage.local.get(['memoPadRect'], (items) => {
+      chrome.storage.local.get(['memoPadRect', 'memoPadDock'], (items) => {
+        if (!chrome.runtime?.lastError && items?.memoPadDock) {
+          isDocked = Boolean(items.memoPadDock.on);
+          if (typeof items.memoPadDock.width === 'number' && Number.isFinite(items.memoPadDock.width)) {
+            dockWidthValue = items.memoPadDock.width;
+          }
+        }
         if (!chrome.runtime?.lastError && items?.memoPadRect) {
           const stored = items.memoPadRect;
           const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
@@ -130,16 +215,23 @@
           } else {
             savedAnchored = stored;
           }
-          applyAnchored(savedAnchored);
         } else {
           savedAnchored = getDefaultAnchored();
+        }
+        if (isDocked) {
+          applyDock(dockWidthValue);
+        } else {
           applyAnchored(savedAnchored);
         }
         if (typeof callback === 'function') callback();
       });
     } else {
       savedAnchored = savedAnchored || getDefaultAnchored();
-      applyAnchored(savedAnchored);
+      if (isDocked) {
+        applyDock(dockWidthValue);
+      } else {
+        applyAnchored(savedAnchored);
+      }
       if (typeof callback === 'function') callback();
     }
   }
@@ -153,7 +245,7 @@
     let startTop = 0;
 
     metaEl.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || isDocked) return;
       e.stopPropagation();
       e.preventDefault();
       isDragging = true;
@@ -206,11 +298,69 @@
     }
   }
 
+  function createDockResizeHandle() {
+    const handle = document.createElement('div');
+    handle.className = 'dock-resize-handle';
+    handle.setAttribute('aria-label', '폭 조절');
+    handle.style.display = isDocked ? 'block' : 'none';
+
+    let isResizing = false;
+
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      isResizing = true;
+      try {
+        handle.setPointerCapture(e.pointerId);
+      } catch {}
+      document.documentElement.style.userSelect = 'none';
+    });
+
+    handle.addEventListener('pointermove', (e) => {
+      if (!isResizing) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+      const rawW = vw - e.clientX;
+      const memoCore = globalThis.readglossMemo;
+      const w = memoCore?.dockWidth ? memoCore.dockWidth(rawW, vw) : Math.max(260, Math.min(rawW, vw * 0.5));
+      dockWidthValue = w;
+      if (host) {
+        host.style.width = `${w}px`;
+      }
+      if (typeof document !== 'undefined') {
+        document.documentElement.style.marginRight = `${w}px`;
+      }
+    });
+
+    const onPointerUp = (e) => {
+      if (!isResizing) return;
+      isResizing = false;
+      e.stopPropagation();
+      try {
+        handle.releasePointerCapture(e.pointerId);
+      } catch {}
+      document.documentElement.style.userSelect = '';
+      saveDockState();
+    };
+
+    handle.addEventListener('pointerup', onPointerUp);
+    handle.addEventListener('pointercancel', onPointerUp);
+
+    for (const evt of ['mousedown', 'mousemove', 'mouseup', 'click']) {
+      handle.addEventListener(evt, (e) => e.stopPropagation());
+    }
+
+    return handle;
+  }
+
   function createResizeHandle() {
     const handle = document.createElement('div');
     handle.className = 'resize-handle';
     handle.textContent = '◢';
     handle.setAttribute('aria-label', '크기 조절');
+    if (isDocked) handle.style.display = 'none';
 
     let isResizing = false;
     let startX = 0;
@@ -280,7 +430,11 @@
       clearTimeout(resizeDebounceTimer);
       resizeDebounceTimer = setTimeout(() => {
         if (isOpen && host) {
-          applyAnchored(savedAnchored);
+          if (isDocked) {
+            applyDock(dockWidthValue);
+          } else {
+            applyAnchored(savedAnchored);
+          }
         }
       }, 200);
     });
@@ -360,6 +514,9 @@
       width: 100%;
       height: 100%;
     }
+    .pad-box.docked {
+      border-radius: 0;
+    }
     .meta {
       background: var(--accbg);
       color: var(--acc);
@@ -371,11 +528,54 @@
       min-height: 18px;
       display: flex;
       align-items: center;
+      justify-content: space-between;
+      gap: 6px;
       transition: background 0.15s, color 0.15s;
       cursor: grab;
       user-select: none;
       -webkit-user-select: none;
       touch-action: none;
+    }
+    .meta-title {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .btn-dock {
+      all: unset;
+      box-sizing: border-box;
+      cursor: pointer;
+      padding: 1px 7px;
+      border-radius: 4px;
+      border: 1px solid currentColor;
+      font-size: 11px;
+      font-weight: 600;
+      flex-shrink: 0;
+      opacity: 0.85;
+      line-height: 1.4;
+      user-select: none;
+    }
+    .btn-dock:hover {
+      opacity: 1;
+      background: rgba(0, 0, 0, 0.08);
+    }
+    .dock-resize-handle {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 6px;
+      cursor: ew-resize;
+      z-index: 10;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+    .dock-resize-handle:hover {
+      background: var(--acc);
+      opacity: 0.4;
     }
     .meta:active {
       cursor: grabbing;
@@ -719,7 +919,11 @@
       host = document.createElement(HOST_TAG);
       shadow = host.attachShadow({ mode: 'open' });
       document.documentElement.append(host);
-      applyAnchored(savedAnchored);
+      if (isDocked) {
+        applyDock(dockWidthValue);
+      } else {
+        applyAnchored(savedAnchored);
+      }
     }
     return shadow;
   }
@@ -971,17 +1175,28 @@
 
   const BRIDGE_OFF_TEXT = '다리가 꺼져 있어요. 터미널에서 node ~/dev/readgloss/bridge/server.mjs 를 실행해 주세요';
 
+  function updateMetaText(text) {
+    if (!shadow) return;
+    const metaTitle = shadow.querySelector('.meta-title');
+    if (metaTitle) {
+      metaTitle.textContent = text;
+    } else {
+      const metaEl = shadow.querySelector('.meta');
+      if (metaEl) metaEl.textContent = text;
+    }
+  }
+
   function showSuccessMeta(msg = '메모했어요') {
     if (!shadow) return;
     const metaEl = shadow.querySelector('.meta');
     if (metaEl) {
       metaEl.classList.remove('error');
       metaEl.classList.add('success');
-      metaEl.textContent = msg;
+      updateMetaText(msg);
       setTimeout(() => {
         if (metaEl && isOpen && currentMode === 'pad') {
           metaEl.classList.remove('success');
-          metaEl.textContent = buildMetaText();
+          updateMetaText(buildMetaText());
         }
       }, 1500);
     }
@@ -993,11 +1208,11 @@
     if (metaEl) {
       metaEl.classList.remove('success');
       metaEl.classList.add('error');
-      metaEl.textContent = msg;
+      updateMetaText(msg);
       setTimeout(() => {
         if (metaEl && isOpen && currentMode === 'pad') {
           metaEl.classList.remove('error');
-          metaEl.textContent = buildMetaText();
+          updateMetaText(buildMetaText());
         }
       }, 3000);
     }
@@ -1397,7 +1612,24 @@
 
     const meta = document.createElement('div');
     meta.className = 'meta';
-    meta.textContent = buildMetaText();
+
+    const metaTitle = document.createElement('span');
+    metaTitle.className = 'meta-title';
+    metaTitle.textContent = buildMetaText();
+
+    const dockBtn = document.createElement('button');
+    dockBtn.type = 'button';
+    dockBtn.className = 'btn-dock';
+    dockBtn.textContent = isDocked ? '띄우기' : '붙이기';
+    dockBtn.setAttribute('aria-label', isDocked ? '떠 있는 창으로 띄우기' : '오른쪽에 붙이기');
+    dockBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleDock();
+    });
+    dockBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+    dockBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+
+    meta.append(metaTitle, dockBtn);
     attachDragHandle(meta);
 
     // 키 이벤트 격리: 페이지 및 다른 기능으로 새지 않게 함
@@ -1515,7 +1747,13 @@
       }
     });
 
-    box.append(meta, sectionsContainer, info, createResizeHandle());
+    const resizeHandle = createResizeHandle();
+    if (isDocked) resizeHandle.style.display = 'none';
+
+    const dockHandle = createDockResizeHandle();
+
+    box.append(dockHandle, meta, sectionsContainer, info, resizeHandle);
+    if (isDocked) box.classList.add('docked');
     root.append(style, box);
   }
 
@@ -1724,6 +1962,7 @@
   // 메모장 접기(닫기)
   function closePad() {
     clearTimeout(typingTimer);
+    clearTimeout(returnFocusTimer);
     if (shadow && currentMode === 'pad') {
       const textareas = shadow.querySelectorAll('.sec-textarea');
       for (const ta of textareas) {
@@ -1733,6 +1972,10 @@
       }
     }
     endEdit(); // 고치는 중 닫으면 그만둔 것이다: 칸을 보관한 초안으로 되돌린다
+    if (isDocked && originalMarginRight !== null && typeof document !== 'undefined') {
+      document.documentElement.style.marginRight = originalMarginRight;
+      originalMarginRight = null;
+    }
     isOpen = false;
     currentMode = 'pad';
     removeHost();
@@ -1879,6 +2122,135 @@
       openList();
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // 쓰는 칸 기본 포커스 (T34b)
+  // 본문 mouseup·keyup·selectionchange 뒤 0.3초에 조건이 모두 참이면 쓰는 칸으로 포커스 복귀
+  // ---------------------------------------------------------------------------
+
+  function isCardOpen() {
+    const cardSelectors = ['readgloss-selection', 'readgloss-card', 'readgloss-concept-form'];
+    for (const sel of cardSelectors) {
+      const el = document.querySelector(sel);
+      if (el) {
+        if (el.hidden || el.style.display === 'none' || el.style.visibility === 'hidden') continue;
+        try {
+          const style = window.getComputedStyle(el);
+          if (style.display === 'none' || style.visibility === 'hidden') continue;
+        } catch {}
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function getActiveKind(activeEl) {
+    if (!activeEl || activeEl === document.body || activeEl === document.documentElement) {
+      return 'none';
+    }
+    const memoCore = globalThis.readglossMemo;
+    if (memoCore?.isPageField && memoCore.isPageField(activeEl)) {
+      return 'page-field';
+    }
+    if (activeEl.isContentEditable === true || /^(INPUT|TEXTAREA|SELECT)$/.test(activeEl.tagName)) {
+      return 'page-field';
+    }
+    const otherHostTags = ['readgloss-ui', 'readgloss-concept-form', 'readgloss-toast', 'readgloss-concept-card'];
+    let curr = activeEl;
+    while (curr) {
+      const tag = (curr.localName || curr.tagName || '').toLowerCase();
+      if (otherHostTags.includes(tag)) {
+        return 'our-host';
+      }
+      if (curr.getRootNode && curr.getRootNode() instanceof ShadowRoot) {
+        curr = curr.getRootNode().host;
+        continue;
+      }
+      curr = curr.parentElement;
+    }
+    return 'none';
+  }
+
+  function checkPadHasFocus() {
+    if (!host) return false;
+    if (document.activeElement === host) return true;
+    if (shadow?.activeElement) return true;
+    if (host.contains(document.activeElement)) return true;
+    return false;
+  }
+
+  function focusActiveTextarea() {
+    if (!shadow || !isOpen || currentMode !== 'pad') return;
+    const activeEl = shadow.querySelector(`.sec[data-key="${CSS.escape(currentActiveKey)}"]`);
+    const ta = activeEl?.querySelector('.sec-textarea') || shadow.querySelector('.sec.on .sec-textarea') || shadow.querySelector('.sec-textarea');
+    if (ta) {
+      ta.focus({ preventScroll: true });
+      const len = ta.value.length;
+      ta.setSelectionRange(len, len);
+    }
+  }
+
+  function scheduleReturnFocus() {
+    if (!isOpen || currentMode !== 'pad') return;
+    clearTimeout(returnFocusTimer);
+    returnFocusTimer = setTimeout(() => {
+      if (!isOpen || currentMode !== 'pad') return;
+      const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+      const selectionCollapsed = sel ? sel.isCollapsed : true;
+      const cardOpen = isCardOpen();
+      const activeKind = getActiveKind(document.activeElement);
+      const padHasFocus = checkPadHasFocus();
+      const memoCore = globalThis.readglossMemo;
+      const should = memoCore?.shouldReturnFocus
+        ? memoCore.shouldReturnFocus({ selectionCollapsed, cardOpen, activeKind, padHasFocus, padOpen: isOpen })
+        : (selectionCollapsed && !cardOpen && !padHasFocus && activeKind === 'none');
+      if (should) {
+        focusActiveTextarea();
+      }
+    }, 300);
+  }
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('mouseup', scheduleReturnFocus);
+    document.addEventListener('keyup', scheduleReturnFocus);
+    document.addEventListener('selectionchange', scheduleReturnFocus);
+  }
+
+  // ---------------------------------------------------------------------------
+  // 공부 모드(readgloss:study-mode) 이벤트 처리: on이면 열고 붙인다, off면 붙이기 전 상태로
+  // ---------------------------------------------------------------------------
+  if (typeof window !== 'undefined') {
+    window.addEventListener('readgloss:study-mode', (e) => {
+      const on = Boolean(e?.detail?.on);
+      if (on) {
+        if (preStudyDockState === null) {
+          preStudyDockState = { open: isOpen, docked: isDocked };
+        }
+        if (!isOpen) {
+          openPad();
+        }
+        if (!isDocked) {
+          applyDock(dockWidthValue);
+          saveDockState();
+        }
+      } else {
+        if (preStudyDockState) {
+          const { open: wasOpen, docked: wasDocked } = preStudyDockState;
+          preStudyDockState = null;
+          if (!wasDocked && isDocked) {
+            undockPad();
+          }
+          if (!wasOpen && isOpen) {
+            closePad();
+          }
+        } else {
+          if (isDocked) {
+            undockPad();
+          }
+        }
+      }
+    });
+  }
 
   // 초기화
   function initMemoPad() {

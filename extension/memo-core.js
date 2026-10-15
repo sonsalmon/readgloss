@@ -325,6 +325,31 @@
     return hasText || hasQuote;
   }
 
+  // 메모장 붙이기 폭 계산(260~0.5vw로 자름, 기본 360)
+  function dockWidth(saved, vw) {
+    const rawW = typeof saved === 'number' && Number.isFinite(saved) ? saved : 360;
+    const viewportW = typeof vw === 'number' && Number.isFinite(vw) ? vw : 0;
+    const maxW = viewportW > 0 ? viewportW * 0.5 : Infinity;
+    if (maxW >= 260) {
+      return Math.round(Math.min(Math.max(260, rawW), maxW));
+    }
+    return 260;
+  }
+
+  // 쓰는 칸 기본 포커스 복귀 판정 (순수 함수)
+  function shouldReturnFocus(params) {
+    if (!params || typeof params !== 'object') return false;
+    const { selectionCollapsed, cardOpen, activeKind, padHasFocus, padOpen } = params;
+    if (!padOpen) return false;
+    if (!selectionCollapsed) return false;
+    if (cardOpen) return false;
+    if (padHasFocus) return false;
+    if (activeKind && activeKind !== 'none' && activeKind !== 'other' && activeKind !== 'body') {
+      return false;
+    }
+    return true;
+  }
+
   globalThis.readglossMemo = {
     normalizeUrl,
     currentHeading,
@@ -343,5 +368,8 @@
     fromAnchored,
     isPageField,
     canSave,
+    dockWidth,
+    shouldReturnFocus,
   };
 })();
+
