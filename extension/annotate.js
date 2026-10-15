@@ -51,8 +51,13 @@
   const statsSeenQueue = new Set(); // 다리로 보낼 seen 큐
   let statsFlushTimer = 0;
   let lastMouseMoveTime = 0;
+  let lastMouseX = -1;
+  let lastMouseY = -1;
+  let mouseMoveTimer = 0;
   let hoverLemma = null;
   let hoverTimer = 0;
+  let lastHref = typeof location !== 'undefined' ? location.href : '';
+  let spaTimer = 0;
 
   function markShown(lemma) {
     if (!running || !lemma || statsPageShown.has(lemma)) return;
@@ -100,33 +105,71 @@
     return null;
   }
 
-  function onMouseMove(e) {
+  function cancelHover() {
+    if (hoverTimer) {
+      clearTimeout(hoverTimer);
+      hoverTimer = 0;
+    }
+    hoverLemma = null;
+  }
+
+  function processMouseHover(x, y) {
     if (!running) {
-      if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = 0; hoverLemma = null; }
+      cancelHover();
       return;
     }
-    const now = Date.now();
-    if (now - lastMouseMoveTime < 100) return;
-    lastMouseMoveTime = now;
-
-    const entry = findEntryAt(e.clientX, e.clientY);
+    const entry = findEntryAt(x, y);
     if (entry?.lemma) {
       if (hoverLemma === entry.lemma) {
         // 같은 단어 위: 타이머 유지
       } else {
-        if (hoverTimer) clearTimeout(hoverTimer);
+        cancelHover();
         hoverLemma = entry.lemma;
         hoverTimer = setTimeout(() => {
           hoverTimer = 0;
-          if (running && hoverLemma) markSeen(hoverLemma);
+          if (!running || !hoverLemma) return;
+          // 타이머가 끝날 때(0.6초) 그 순간의 마지막 마우스 좌표가 아직 그 단어 사각형 안인지 다시 확인하고 맞을 때만 seen
+          const cur = findEntryAt(lastMouseX, lastMouseY);
+          if (cur?.lemma === hoverLemma) {
+            markSeen(hoverLemma);
+          }
+          hoverLemma = null;
         }, 600);
       }
     } else {
-      if (hoverTimer) {
-        clearTimeout(hoverTimer);
-        hoverTimer = 0;
+      cancelHover();
+    }
+  }
+
+  function onMouseMove(e) {
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+    if (!running) {
+      cancelHover();
+      return;
+    }
+    const now = Date.now();
+    const remaining = 100 - (now - lastMouseMoveTime);
+    if (remaining <= 0 || remaining > 100) {
+      if (mouseMoveTimer) {
+        clearTimeout(mouseMoveTimer);
+        mouseMoveTimer = 0;
       }
-      hoverLemma = null;
+      lastMouseMoveTime = now;
+      processMouseHover(lastMouseX, lastMouseY);
+    } else if (!mouseMoveTimer) {
+      mouseMoveTimer = setTimeout(() => {
+        mouseMoveTimer = 0;
+        lastMouseMoveTime = Date.now();
+        processMouseHover(lastMouseX, lastMouseY);
+      }, remaining);
+    }
+  }
+
+  function checkSpaHref() {
+    if (typeof location !== 'undefined' && location.href !== lastHref) {
+      lastHref = location.href;
+      statsPageShown.clear();
     }
   }
 
@@ -435,10 +478,36 @@
       }
     }
 
+    // position 'none'이면 shown은 단어 범위가 처음 화면 안에 들어올 때로 센다
+    if (a.position === 'none') {
+      for (const [block, list] of entriesByBlock.entries()) {
+        if (!nearBlocks.has(block)) continue;
+        for (const e of list) {
+          if (!e.range || !e.lemma) continue;
+          if (statsPageShown.has(e.lemma)) continue;
+          const rects = e.range.getClientRects();
+          if (!rects || !rects.length) continue;
+          const rect = rects[0];
+          if (rect.width === 0 && rect.height === 0) continue;
+          if (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw) continue;
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          if (cx < 0 || cx > vw || cy < 0 || cy > vh) continue;
+          const hit = document.elementFromPoint(cx, cy);
+          const parent = e.node.parentElement;
+          if (!hit) continue;
+          const isOurHost = hit === layerHost || (hit.getAttribute && hit.getAttribute('data-readgloss') === 'layer');
+          if (!isOurHost && parent && hit !== parent && !parent.contains(hit)) continue;
+          markShown(e.lemma);
+        }
+      }
+      return;
+    }
+
     // 1단계 (읽기 루프): 화면 근처 entry 전부의 getClientRects·elementFromPoint 를 먼저 읽어 배열에 담는다
     const updates = [];
     for (const [block, list] of entriesByBlock.entries()) {
-      if (!nearBlocks.has(block) || a.position === 'none') {
+      if (!nearBlocks.has(block)) {
         for (const e of list) {
           if (e.label) updates.push({ entry: e, visible: false });
         }
@@ -607,11 +676,15 @@
     document.querySelectorAll(BLOCK).forEach(track);
 
     document.addEventListener('scroll', scheduleUpdate, { capture: true, passive: true });
+    document.addEventListener('scroll', cancelHover, { capture: true, passive: true });
+    document.addEventListener('wheel', cancelHover, { capture: true, passive: true });
+    document.addEventListener('keydown', cancelHover, { capture: true, passive: true });
     window.addEventListener('resize', scheduleUpdate, { passive: true });
     document.addEventListener('load', scheduleUpdate, { capture: true, passive: true });
     document.addEventListener('mousemove', onMouseMove, { capture: true, passive: true });
     document.addEventListener('dblclick', onDblClick, { capture: true, passive: true });
     if (!statsFlushTimer) statsFlushTimer = setInterval(flushStats, 30_000);
+    if (!spaTimer) spaTimer = setInterval(checkSpaHref, 1000);
   }
 
   function stop() {
@@ -620,14 +693,21 @@
     ro?.disconnect();
     io = mo = ro = null;
     document.removeEventListener('scroll', scheduleUpdate, { capture: true });
+    document.removeEventListener('scroll', cancelHover, { capture: true });
+    document.removeEventListener('wheel', cancelHover, { capture: true });
+    document.removeEventListener('keydown', cancelHover, { capture: true });
     window.removeEventListener('resize', scheduleUpdate);
     document.removeEventListener('load', scheduleUpdate, { capture: true });
     document.removeEventListener('mousemove', onMouseMove, { capture: true });
     document.removeEventListener('dblclick', onDblClick, { capture: true });
-    if (hoverTimer) {
-      clearTimeout(hoverTimer);
-      hoverTimer = 0;
-      hoverLemma = null;
+    cancelHover();
+    if (mouseMoveTimer) {
+      clearTimeout(mouseMoveTimer);
+      mouseMoveTimer = 0;
+    }
+    if (spaTimer) {
+      clearInterval(spaTimer);
+      spaTimer = 0;
     }
     if (statsFlushTimer) {
       clearInterval(statsFlushTimer);
@@ -657,6 +737,7 @@
   }
 
   function turnOff() {
+    flushStats();
     epoch++;
     running = false;
     stop();

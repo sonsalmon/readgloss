@@ -137,6 +137,89 @@ export function pickEntry(entries, word) {
   return { lemma: base, e: rest.find((x) => plain(x.headword ?? '') === base) ?? rest[0] ?? null };
 }
 
+// 흔한 활용형 및 끝말 제거 형태 목록(배열)을 돌려준다.
+// formsOf(w) = w, w+s, w+es, w+ed, w+d, w+ing, (끝 e 뺀 w)+ing, (끝 y→i)+es/ed, 자음 하나 겹친 w+ed/ing(run→running), 그리고 반대로 표면형에서 그 끝말을 뺀 형태.
+// ponytail: 불규칙 활용(ran→run)은 사전이 원형을 줄 때만 이어진다.
+export function formsOf(w) {
+  if (typeof w !== 'string' || !w) return [];
+  const s = new Set();
+  const lower = w.toLowerCase();
+  s.add(lower);
+
+  // 앞으로 뻗는 활용 (w + ...)
+  s.add(lower + 's');
+  s.add(lower + 'es');
+  s.add(lower + 'ed');
+  s.add(lower + 'd');
+  s.add(lower + 'ing');
+
+  // (끝 e 뺀 w) + ing (make -> making)
+  if (lower.endsWith('e') && lower.length > 1) {
+    s.add(lower.slice(0, -1) + 'ing');
+  }
+
+  // (끝 y→i) + es/ed (study -> studies, studied)
+  if (lower.endsWith('y') && lower.length > 1) {
+    const base = lower.slice(0, -1);
+    s.add(base + 'ies');
+    s.add(base + 'ied');
+  }
+
+  // 자음 하나 겹친 w+ed/ing (run -> running, runned)
+  const lastChar = lower[lower.length - 1];
+  if (lower.length >= 2 && !'aeiou'.includes(lastChar) && /^[a-z]$/.test(lastChar)) {
+    s.add(lower + lastChar + 'ing');
+    s.add(lower + lastChar + 'ed');
+  }
+
+  // 반대로 표면형에서 그 끝말을 뺀 형태
+  // -s
+  if (lower.endsWith('s') && lower.length > 2) {
+    s.add(lower.slice(0, -1));
+  }
+  // -es
+  if (lower.endsWith('es') && lower.length > 3) {
+    s.add(lower.slice(0, -2));
+  }
+  // -ed
+  if (lower.endsWith('ed') && lower.length > 3) {
+    s.add(lower.slice(0, -2));
+    s.add(lower.slice(0, -1)); // -d 만 뺀 것
+  }
+  // -d
+  if (lower.endsWith('d') && lower.length > 2) {
+    s.add(lower.slice(0, -1));
+  }
+  // -ing
+  if (lower.endsWith('ing') && lower.length > 4) {
+    s.add(lower.slice(0, -3));
+    s.add(lower.slice(0, -3) + 'e'); // making -> make
+  }
+  // -ies -> -y
+  if (lower.endsWith('ies') && lower.length > 4) {
+    s.add(lower.slice(0, -3) + 'y');
+  }
+  // -ied -> -y
+  if (lower.endsWith('ied') && lower.length > 4) {
+    s.add(lower.slice(0, -3) + 'y');
+  }
+  // 자음 중복 해제 (running -> run, stopped -> stop)
+  if (lower.endsWith('ing') && lower.length > 5) {
+    const stem = lower.slice(0, -3);
+    if (stem.length >= 2 && stem[stem.length - 1] === stem[stem.length - 2]) {
+      s.add(stem.slice(0, -1));
+    }
+  }
+  if (lower.endsWith('ed') && lower.length > 4) {
+    const stem = lower.slice(0, -2);
+    if (stem.length >= 2 && stem[stem.length - 1] === stem[stem.length - 2]) {
+      s.add(stem.slice(0, -1));
+    }
+  }
+
+  return [...s].filter((f) => f && /^[a-z][a-z'’-]*$/.test(f));
+}
+
 // dict: createDict() 같은 { lookup(word) }. levels: 낱말 -> 등급 Map. isKnown: 원형 -> 아는 단어인가(아는 단어는 결과에서 뺀다).
 // glossary: createGlossary() 같은 { find(word, 활성 분야) }. 돌려주는 함수: (words, level, domains) -> { word: { lemma, level, gloss } } — 어려운 단어만.
 // domains(활성 분야, 우선순위 순)에 용어집 뜻이 있으면 gloss 를 그 뜻으로 바꾸고 term:true, domain 을 붙인다. 용어집에 없고 사전 뜻에 활성 분야 표시(〔수학〕 등)가 있으면 그 뜻을 쓴다. 용어집 덮어쓰기는 사전 캐시(known) 밖에서 해서 분야마다 뜻이 달라도 캐시가 섞이지 않는다.
@@ -160,7 +243,8 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
     return v;
   }
 
-  return async function annotate(words, level = DEFAULT_LEVEL, domains = [], acronyms = []) {
+  return async function annotate(words, level = DEFAULT_LEVEL, domains = [], acronyms = [], scoreOfOverride) {
+    const effScoreOf = scoreOfOverride !== undefined ? scoreOfOverride : scoreOf;
     const min = rank(level);
     const th = thresholdFor ? thresholdFor(level) : threshold(level, 0);
     const items = {};
@@ -183,12 +267,12 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
       // ponytail: 표면형이 목록에서 이미 기준 미만이면 원형 확인 없이 쉬움. 흔한 단어는 표제어가 많아 사전이 20ms 쯤 걸리기 때문이고, 어긋나면 주석이 덜 붙을 뿐이다.
       // scoreOf가 있을 때: 그 등급의 바탕 p가 기준보다 낮고 표면형이 단어장·찾아본 기록에 없으면 사전 없이 건너뛴다(감소는 p를 낮출 뿐이라 결과가 같다).
       const own = levels.get(w);
-      if (scoreOf) {
+      if (effScoreOf) {
         const bp = own !== undefined ? baseP(own) : null;
         if (bp !== null && bp < th - 1e-9) {
-          const hasSavedOrLookup = typeof scoreOf.hasSavedOrLookup === 'function'
-            ? scoreOf.hasSavedOrLookup(w)
-            : (scoreOf(w, own) >= 0.90);
+          const hasSavedOrLookup = typeof effScoreOf.hasSavedOrLookup === 'function'
+            ? effScoreOf.hasSavedOrLookup(w)
+            : (effScoreOf(w, own) >= 0.90);
           if (!hasSavedOrLookup) continue;
         }
       } else {
@@ -207,8 +291,8 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
       }
       // 아는 단어 판정은 캐시(resolve) 밖에서 한다: 취소하면 사전을 다시 부르지 않고 바로 다시 나온다
       if (v && !isKnown(v.lemma)) {
-        if (scoreOf) {
-          const p = scoreOf(v.lemma, v.level, w);
+        if (effScoreOf) {
+          const p = effScoreOf(v.lemma, v.level, w);
           if (p >= th - 1e-9) items[w] = v;
         } else {
           if (v.level === null || rank(v.level) >= min) items[w] = v;

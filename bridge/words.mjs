@@ -239,6 +239,18 @@ export function createWords({ file, db, now = Date.now }) {
   return {
     all,
     isKnown: (lemma) => known.has(lemma),
+    historyLemmas(days) {
+      const cutoff = Number.isFinite(days) ? now() - days * 86_400_000 : -Infinity;
+      const out = new Map();
+      for (const h of history) {
+        if (h.ts >= cutoff) {
+          if (!out.has(h.lemma) || h.ts > out.get(h.lemma)) {
+            out.set(h.lemma, h.ts);
+          }
+        }
+      }
+      return out;
+    },
     // parseWordsOp 를 통과한 요청만 받는다. 바뀐 전체 상태를 돌려준다. memo 대상이 없으면 null(404).
     // ponytail: 메모리를 먼저 바꾸고 쓴다. 디스크 쓰기가 실패하면 이 실행 동안만 메모리와 파일이 어긋난다(파일 자체는 rename 으로 안 깨진다).
     apply({ op, lemma, word, gloss, sentence, url, id, text, translation, context, title, kind, memo, headings }) {

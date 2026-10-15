@@ -11,7 +11,7 @@ import { AiParseError } from './parse.mjs';
 import { SYSTEM_PROMPT, WORD_RE, buildPrompt, createLookup } from './lookup.mjs';
 import { DictUnavailableError, createDict } from './dict.mjs';
 import { MtUnavailableError, createMt } from './mt.mjs';
-import { ANNOTATE_LEVELS, DEFAULT_LEVEL, createAnnotate, isCommon, loadWordLevels, pickEntry, pickSense, shortGloss, taggedGlosses } from './annotate.mjs';
+import { ANNOTATE_LEVELS, DEFAULT_LEVEL, createAnnotate, formsOf, isCommon, loadWordLevels, pickEntry, pickSense, shortGloss, taggedGlosses } from './annotate.mjs';
 import { createWords, parseWordsOp } from './words.mjs';
 import { MAX_TERMS, createGlossary } from './glossary.mjs';
 import { MAX_TEXT, buildTranslatePrompt, createTranslate, normalizeText } from './translate.mjs';
@@ -56,6 +56,22 @@ function loadOrCreateToken(file) {
   writeFileSync(file, t, { mode: 0o600 });
   chmodSync(file, 0o600); // mode 는 새 파일에만 적용되므로 한 번 더
   return t;
+}
+
+// scoreOf는 신호 표에서 lemma·surface 둘 다 본다(Map/Set has만 사용하여 constructor 등 방지)
+export function createScoreOf(signals, wstat = null) {
+  const fn = (lemma, level, surface) => {
+    const saved = signals?.saved ? signals.saved.has(lemma) || (surface ? signals.saved.has(surface) : false) : false;
+    const n1 = signals?.looked && signals.looked.has(lemma) ? (signals.looked.get(lemma) ?? 0) : 0;
+    const n2 = (surface && surface !== lemma && signals?.looked && signals.looked.has(surface)) ? (signals.looked.get(surface) ?? 0) : 0;
+    const totalLookups = Math.max(n1, n2);
+    const stat = wstat ? wstat.get(lemma) : null;
+    return probability({ level, saved, lookups: totalLookups, stat });
+  };
+  fn.hasSavedOrLookup = (word) => {
+    return Boolean((signals?.saved && signals.saved.has(word)) || (signals?.looked && signals.looked.has(word)));
+  };
+  return fn;
 }
 
 function send(res, status, body, headers = {}) {
@@ -219,20 +235,66 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     }
     return study.lookups(days);
   }
+  function clearLookupsCache() {
+    lookupsCache = null;
+    lookupsCacheTs = 0;
+    signalsCache = null; // 신호 표도 다시 만든다
+  }
+  // 신호 표는 만들기가 비싸서(활용형 펼치기) 한 번 만들어 두고, 단어장·찾아봄이 바뀌거나 1분이 지나면 다시 만든다
+  let signalsCache = null;
+  let signalsCacheTs = 0;
+  function getSignals() {
+    const t = typeof now === 'function' ? now() : now;
+    if (!signalsCache || t - signalsCacheTs >= LOOKUPS_TTL) {
+      signalsCache = buildSignals();
+      signalsCacheTs = t;
+    }
+    return signalsCache;
+  }
+
+  // 신호 표: saved 원형, history 원형(60일, 횟수 1), study.lookups(60) 표면형 횟수를 흔한 활용형으로 펼친다.
+  // ponytail: 불규칙 활용(ran→run)은 사전이 원형을 줄 때만 이어진다.
+  function buildSignals() {
+    const savedSet = new Set();
+    const allWords = words.all();
+    if (allWords && typeof allWords.saved === 'object' && allWords.saved !== null) {
+      for (const k of Object.keys(allWords.saved)) {
+        if (typeof k === 'string') {
+          savedSet.add(k);
+          for (const f of formsOf(k)) {
+            savedSet.add(f);
+          }
+        }
+      }
+    }
+
+    const lookedMap = new Map();
+    if (typeof words.historyLemmas === 'function') {
+      const hl = words.historyLemmas(60);
+      for (const [lemma] of hl.entries()) {
+        lookedMap.set(lemma, Math.max(lookedMap.get(lemma) ?? 0, 1));
+      }
+    }
+    const lookups60 = getLookups(60);
+    for (const [w, cnt] of lookups60.entries()) {
+      lookedMap.set(w, Math.max(lookedMap.get(w) ?? 0, cnt));
+    }
+
+    const entries = [...lookedMap.entries()];
+    for (const [w, cnt] of entries) {
+      for (const f of formsOf(w)) {
+        lookedMap.set(f, Math.max(lookedMap.get(f) ?? 0, cnt));
+      }
+    }
+
+    return { saved: savedSet, looked: lookedMap };
+  }
 
   function scoreOf(lemma, level, surface) {
-    const saved = Boolean(words.all().saved?.[lemma]);
-    const lookupsMap = getLookups(60);
-    const n1 = lookupsMap.get(lemma) ?? 0;
-    const n2 = (surface && surface !== lemma) ? (lookupsMap.get(surface) ?? 0) : 0;
-    const totalLookups = n1 + n2;
-    const stat = wstat ? wstat.get(lemma) : null;
-    return probability({ level, saved, lookups: totalLookups, stat });
+    return createScoreOf(getSignals(), wstat)(lemma, level, surface);
   }
   scoreOf.hasSavedOrLookup = (word) => {
-    if (Boolean(words.all().saved?.[word])) return true;
-    const lookupsMap = getLookups(60);
-    return (lookupsMap.get(word) ?? 0) > 0;
+    return createScoreOf(getSignals(), wstat).hasSavedOrLookup(word);
   };
 
   function thresholdFor(level) {
@@ -375,7 +437,10 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       const ac = ACRONYM_RE.test(word) ? glossary.acronym(lower) : null;
       const acronym = ac && { exp: ac.exp, ko: ac.ko };
       // nolog: 드래그로 연 카드는 공부 기록에 남기지 않는다(요청이 그렇게 실어 보낸다).
-      if (value.nolog !== true && (r.found || mine || t || acronym)) log('dict', word, mine?.ko || t?.ko || sense?.ko || (e && shortGloss(e.senses?.[0]?.text)) || acronym?.ko, value);
+      if (value.nolog !== true && (r.found || mine || t || acronym)) {
+        log('dict', word, mine?.ko || t?.ko || sense?.ko || (e && shortGloss(e.senses?.[0]?.text)) || acronym?.ko, value);
+        clearLookupsCache();
+      }
       send(res, 200, { ...r, lemma, ...(e ? { gloss: shortGloss(e.senses?.[0]?.text) } : {}), ...(t ? { term: { ko: t.ko, domain: t.domain } } : {}), ...(sense ? { sense } : {}), ...(mine ? { mine } : {}), ...(acronym ? { acronym } : {}) }, cors);
     } catch (e) {
       if (e instanceof DictUnavailableError) send(res, 503, { error: 'dict-unavailable' }, cors);
@@ -398,10 +463,10 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       const lastDay = wstat.getOffsetDay();
       if (lastDay !== today) {
         const last7 = wstat.last7();
-        const dictLookups7 = getLookups(7);
+        const history7 = typeof words.historyLemmas === 'function' ? words.historyLemmas(7) : new Map();
         let missedLookups = 0;
-        for (const word of dictLookups7.keys()) {
-          const stat = wstat.get(word);
+        for (const lemma of history7.keys()) {
+          const stat = wstat.get(lemma);
           if (!stat || !stat.shown || stat.shown === 0) {
             missedLookups++;
           }
@@ -413,8 +478,10 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       }
     }
 
+    const reqSignals = getSignals();
+    const reqScoreOf = createScoreOf(reqSignals, wstat);
     try {
-      send(res, 200, { items: await annotate(words.map((w) => w.toLowerCase()).filter((w) => WORD_RE.test(w)), level, glossary.domains(value), acronyms.filter((a) => ACRONYM_RE.test(a))) }, cors);
+      send(res, 200, { items: await annotate(words.map((w) => w.toLowerCase()).filter((w) => WORD_RE.test(w)), level, glossary.domains(value), acronyms.filter((a) => ACRONYM_RE.test(a)), reqScoreOf) }, cors);
     } catch (e) {
       if (e instanceof DictUnavailableError) send(res, 503, { error: 'dict-unavailable' }, cors);
       else send(res, 502, { error: 'dict-failed' }, cors);
@@ -430,10 +497,10 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
       const auto = wstat.getAuto();
       const updated = wstat.getOffsetDay() ?? null;
       const last7Stats = wstat.last7();
-      const dictLookups7 = getLookups(7);
+      const history7 = typeof words.historyLemmas === 'function' ? words.historyLemmas(7) : new Map();
       let missedLookups = 0;
-      for (const word of dictLookups7.keys()) {
-        const stat = wstat.get(word);
+      for (const lemma of history7.keys()) {
+        const stat = wstat.get(lemma);
         if (!stat || !stat.shown || stat.shown === 0) {
           missedLookups++;
         }
@@ -506,6 +573,7 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
     const op = parseWordsOp(value);
     if (!op) return send(res, 400, { error: 'bad-request' }, cors);
     const out = words.apply(op);
+    signalsCache = null; // 단어장·아는 단어·찾아봄이 바뀌었을 수 있다
     if (!out) return send(res, 404, { error: 'not-found' }, cors); // memo 대상(saved·phrases)이 없다
     if (op.op === 'save') log('save', op.word, op.gloss, value, op.url);
     else if (op.op === 'save-phrase') log('save', op.text, op.translation, value, op.url);
@@ -757,6 +825,11 @@ export function createBridge({ ask, askTranslate, askContext, cacheFile, transla
   return {
     db,
     migration,
+    words,
+    scoreOf,
+    thresholdFor,
+    annotate,
+    buildSignals,
     // 127.0.0.1 에만 바인딩한다. port 0 이면 임시 포트(테스트용). 실제 포트를 돌려준다.
     listen: (port = PORT) =>
       new Promise((resolve, reject) => {
