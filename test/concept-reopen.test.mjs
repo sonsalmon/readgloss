@@ -67,7 +67,7 @@ test('마지막 저장 기억: 개념(칸·나중에 볼 것·상세)과 메모 
   const concept = read('concept.js');
   const panel = read('panel-concepts.js');
   const memo = read('memo-pad.js');
-  assert.equal((concept.match(/globalThis\.readglossLastSave = \{ kind: 'concept', id \}/g) || []).length, 2, 'concept.js 칸 저장·나중에 볼 것 저장');
+  assert.equal((concept.match(/globalThis\.readglossLastSave = \{ kind: 'concept', id \}/g) || []).length, 3, 'concept.js 칸 저장·같은 이름 합치기(FX-D)·나중에 볼 것 저장');
   assert.ok(panel.includes("globalThis.readglossLastSave = { kind: 'concept', id: concept.id }"), '패널 상세 저장');
   assert.ok(memo.includes("globalThis.readglossLastSave = { kind: 'memo', id: res.memo.id }"), '메모 저장 성공');
 });

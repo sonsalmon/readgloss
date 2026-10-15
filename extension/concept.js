@@ -491,6 +491,99 @@
     return Boolean(isNew || hasRange || hasSentence);
   }
 
+  // 순수 함수: 기존 개념과 새 입력을 합치는 규칙 (FX-D)
+  // definition: 옛 정의가 비면 새 정의, 둘 다 있으면 옛 정의 + 줄바꿈 + 새 정의(같은 줄은 한 번만). 500자 초과 시 tooLong: true
+  // aliases·tags·related: 합집합(별칭 5개, 태그 5개, 관련 10개 상한)
+  function mergeConcept(old, input) {
+    const oldDef = (typeof old?.definition === 'string' ? old.definition : '').trim();
+    const newDef = (typeof input?.definition === 'string' ? input.definition : '').trim();
+
+    let definition = '';
+    if (!oldDef) {
+      definition = newDef;
+    } else if (!newDef) {
+      definition = oldDef;
+    } else {
+      const oldLines = oldDef.split('\n');
+      const newLines = newDef.split('\n');
+      const seenLines = new Set();
+      const lines = [];
+      for (const l of oldLines) {
+        if (!seenLines.has(l)) {
+          seenLines.add(l);
+          lines.push(l);
+        }
+      }
+      for (const l of newLines) {
+        if (!seenLines.has(l)) {
+          seenLines.add(l);
+          lines.push(l);
+        }
+      }
+      definition = lines.join('\n');
+    }
+
+    // aliases (최대 5개)
+    const rawOldAliases = Array.isArray(old?.aliases) ? old.aliases : [];
+    const rawInputAliases = Array.isArray(input?.aliases)
+      ? input.aliases
+      : (input?.aliases instanceof Set ? [...input.aliases] : []);
+    const aliasSet = new Set();
+    const aliases = [];
+    for (const a of [...rawOldAliases, ...rawInputAliases]) {
+      if (typeof a !== 'string') continue;
+      const clean = a.trim().replace(/\s+/g, ' ');
+      if (clean && !aliasSet.has(clean)) {
+        aliasSet.add(clean);
+        aliases.push(clean);
+        if (aliases.length >= 5) break;
+      }
+    }
+
+    // tags (최대 5개)
+    const rawOldTags = Array.isArray(old?.tags) ? old.tags : [];
+    const rawInputTags = Array.isArray(input?.tags)
+      ? input.tags
+      : (input?.tags instanceof Set ? [...input.tags] : []);
+    const tagSet = new Set();
+    const tags = [];
+    for (const t of [...rawOldTags, ...rawInputTags]) {
+      if (typeof t !== 'string') continue;
+      const clean = t.trim().replace(/\s+/g, ' ');
+      if (clean && !tagSet.has(clean)) {
+        tagSet.add(clean);
+        tags.push(clean);
+        if (tags.length >= 5) break;
+      }
+    }
+
+    // related (최대 10개, 객체 { id, name } 또는 문자열)
+    const rawOldRelated = Array.isArray(old?.related) ? old.related : [];
+    const rawInputRelated = Array.isArray(input?.related)
+      ? input.related
+      : (input?.related instanceof Set ? [...input.related] : []);
+    const relSet = new Set();
+    const related = [];
+    for (const r of [...rawOldRelated, ...rawInputRelated]) {
+      const val = typeof r === 'object' && r !== null ? r.name : r;
+      if (typeof val !== 'string') continue;
+      const clean = val.trim().replace(/\s+/g, ' ');
+      if (clean && !relSet.has(clean)) {
+        relSet.add(clean);
+        related.push(clean);
+        if (related.length >= 10) break;
+      }
+    }
+
+    return {
+      definition,
+      aliases,
+      tags,
+      related,
+      tooLong: definition.length > 500,
+    };
+  }
+
   async function openForm(seed = {}) {
     closeForm();
     closeCard();
@@ -1063,10 +1156,93 @@
       saveBtn.disabled = false;
       saveBtn.textContent = '저장';
 
-      // 409면 칸을 닫고 그 개념 상세를 연다
+      // 409면 기존 개념에 합쳐 다시 저장한다 (FX-D)
       if (res?.error === 'exists' && res?.id) {
-        closeForm();
-        window.dispatchEvent(new CustomEvent('readgloss:open-panel', { detail: { tab: 'concepts', conceptId: res.id } }));
+        let old = null;
+        try {
+          const getRes = await send({ type: 'concepts', op: 'get' });
+          if (Array.isArray(getRes?.concepts)) {
+            old = getRes.concepts.find((c) => c.id === res.id) || null;
+          }
+        } catch {
+          // get 실패 시 null 유지
+        }
+
+        if (!old) {
+          // 옛 개념을 못 읽으면 합치지 않는다(새 글만으로 덮어쓰면 옛 정의가 사라진다). 칸은 열어 둔다.
+          saveBtn.disabled = false;
+          saveBtn.textContent = '저장';
+          errEl.hidden = false;
+          errEl.textContent = '같은 이름 개념을 읽지 못했어요 — 다시 눌러 주세요';
+          return;
+        }
+
+        const merged = mergeConcept(old, {
+          definition,
+          aliases,
+          tags: [...activeTags],
+          related: [...relatedSet],
+        });
+
+        if (merged.tooLong) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = '저장';
+          errEl.hidden = false;
+          errEl.textContent = '합치면 500자를 넘어요 — 줄여 주세요';
+          defIn.focus();
+          return;
+        }
+
+        const oldHasTask = Boolean(old?.task || old?.firstTask);
+        const oldHasScrap = Boolean(old?.scrapId || (Array.isArray(old?.appears) && old.appears.length > 0));
+
+        saveBtn.disabled = true;
+        saveBtn.textContent = '저장 중…';
+
+        const mergePayload = {
+          type: 'concepts',
+          op: 'save',
+          id: res.id,
+          name: cleanName,
+          aliases: merged.aliases,
+          tags: merged.tags,
+          definition: merged.definition,
+          related: merged.related,
+          // 옛 값이 있으면 키를 빼서 다리가 옛 값을 지킨다
+          ...(oldHasTask ? {} : { task }),
+          ...(oldHasScrap ? {} : { scrapId }),
+        };
+
+        const mergeRes = await send(mergePayload);
+
+        saveBtn.disabled = false;
+        saveBtn.textContent = '저장';
+
+        if (mergeRes && !mergeRes.error) {
+          const id = mergeRes.concept?.id || res.id;
+          const anchor = seed.anchor;
+          closeForm();
+          conceptsCache = null; // 캐시 무효화
+
+          // 개념 저장 직후 패널 등 다른 뷰가 즉시 최신 상태를 반영하도록 이벤트 발송
+          window.dispatchEvent(new CustomEvent('readgloss:concepts-updated', { detail: { id } }));
+          if (id) globalThis.readglossLastSave = { kind: 'concept', id };
+
+          // 저장 확인 토스트
+          globalThis.readglossToast?.show({
+            text: '기존 개념에 더했어요',
+            anchor,
+          });
+
+          // 다시 칠하기
+          chrome.runtime.sendMessage({ type: 'concepts', op: 'names' }, (r) => {
+            if (r?.terms) paint(r.terms);
+          });
+          return;
+        }
+
+        errEl.hidden = false;
+        errEl.textContent = mergeRes?.error || '저장하지 못했어요';
         return;
       }
 
@@ -1253,6 +1429,7 @@
     closeCard,
     saveLater,
     shouldSendSeen,
+    mergeConcept,
   };
 
   globalThis.readglossConceptReopen = {
