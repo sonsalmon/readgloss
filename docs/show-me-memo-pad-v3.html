@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>메모장 v3</title>
+<style>
+:root{--bg:#fbfaf7;--fg:#222;--mut:#666;--card:#fff;--bd:#e3e0d8;--acc:#534AB7;--hl:#efedfc;--q:#fff6d6}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1b1a;--fg:#eee;--mut:#aaa;--card:#252524;--bd:#3a3936;--acc:#AFA9EC;--hl:#2d2a45;--q:#3a3420}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Apple SD Gothic Neo",sans-serif}
+main{max-width:900px;margin:auto;padding:16px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:16px 0;overflow-x:auto}
+h1{font-size:22px}h2{font-size:18px;margin:0 0 8px}.mut{color:var(--mut);font-size:14px}
+.row{display:flex;gap:16px;flex-wrap:wrap}
+.pad{flex:1;min-width:260px;border:2px solid var(--acc);border-radius:10px;padding:8px;font-size:14px}
+.pad .toc{padding:4px 8px;border-bottom:1px dashed var(--bd);color:var(--mut)}
+.pad .toc b{color:var(--fg);font-weight:500}
+.pad .act{background:var(--hl);border-radius:8px;padding:8px;margin:4px 0}
+.pad .act b{color:var(--acc)}
+.pad .ta{border:1px solid var(--acc);border-radius:6px;min-height:110px;padding:6px;background:var(--card);margin-top:6px}
+.pad .ql{background:var(--q);border-radius:6px;padding:4px 6px;margin-top:4px;font-size:13px}
+.pad .scroll{max-height:320px;overflow:auto}
+code{font-size:13px}
+table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-top:1px solid var(--bd);padding:6px;text-align:left;vertical-align:top}
+</style></head><body><main>
+<h1>메모장 v3 — 목차 + 지금 칸만 크게 + 인용 링크</h1>
+<p class="mut">readgloss 변경 기록 17 · 2026-10-15 · 정범 요청</p>
+
+<section><h2>1. 메모장 모양</h2>
+<div class="row">
+<div class="pad"><div class="mut">지금 (문제)</div>
+<div class="toc"><b>How Logistic Regression Works</b><div class="ta" style="min-height:24px"></div></div>
+<div class="toc"><b>What is a Sigmoid Function?</b><div class="ta" style="min-height:24px"></div></div>
+<div class="act"><b>Understanding Hyperplanes</b><div class="ta">초평면.<br>|</div></div>
+<div class="toc">… 칸마다 쓰는 칸 → 메모장이 위아래로 길어진다</div>
+</div>
+<div class="pad"><div class="mut">바뀐 뒤</div>
+<div class="scroll">
+<div class="toc"><b>How Logistic Regression Works</b> · 메모 2</div>
+<div class="toc"><b>What is a Sigmoid Function?</b></div>
+<div class="toc"><b>Decision Boundary</b> · 메모 1</div>
+<div class="act"><b>Understanding Hyperplanes</b>
+<div class="ql">❝ A hyperplane is a subspace … <span class="mut">↗</span></div>
+<div>- 2차원이면 선, 3차원이면 면</div>
+<div class="ta">초평면.<br>|</div></div>
+<div class="toc"><b>Threshold Probability</b></div>
+<div class="toc"><b>Data Assumptions</b></div>
+</div></div>
+</div>
+<ul>
+<li>메모장 높이는 고정이다. 글을 쳐도 메모장이 커지지 않는다. 안쪽만 스크롤한다.</li>
+<li>다른 소제목은 <b>목차 한 줄</b>(소제목 글 · 메모 개수)만 보인다.</li>
+<li>지금 소제목 칸만 펼친다: 그 칸의 인용·메모·개념 줄 + <b>큰 쓰는 칸</b>(처음 5줄, 치면 늘어남, 메모장 높이의 절반까지).</li>
+<li>목차 줄을 누르면: 본문이 그 소제목으로 스크롤 → 그 칸이 펼쳐지고 쓰는 칸에 커서.</li>
+<li>본문을 읽어 내려가면 지금 칸이 바뀐다(지금처럼). 메모장 안 스크롤이 지금 칸을 따라간다.</li>
+<li>쓰던 글은 칸마다 남는다(지금처럼). 접힌 칸에 쓰던 글이 있으면 목차 줄에 "쓰는 중" 표시.</li>
+</ul></section>
+
+<section><h2>2. 본문 인용 (이미 있음 + 링크 추가)</h2>
+<ul>
+<li>이미 있음: 본문에서 글을 고른 채 <b>⌥M</b> → 지금 칸 쓰는 칸 위에 인용이 붙는다. ⌘Enter로 메모와 같이 저장. 메모장에서 인용 줄을 누르면 본문 그 문장으로 스크롤하고 깜빡인다.</li>
+<li>추가: 학습노트에서 인용 끝에 <code>[↗](주소#:~:text=문장)</code> 링크. 누르면 브라우저가 그 페이지를 열고 <b>그 문장으로 스크롤해 칠한다</b>(크롬 계열 브라우저 기본 기능, 확장 없이 됨).</li>
+</ul></section>
+
+<section><h2>3. 튜터 메시지 인용 (새로)</h2>
+<pre class="mermaid">
+flowchart LR
+  A["튜터 답에서 문장 고르기<br/>⌘C"] --> B["메모장 쓰는 칸에<br/>⌘V"]
+  B --> C{"본문에 있는 글?"}
+  C -->|예| D["본문 인용으로 붙임<br/>(2와 같음)"]
+  C -->|아니오| E["다리가 오늘·어제<br/>튜터 대화에서 찾음"]
+  E -->|찾음| F["튜터 인용으로 붙임<br/>❝ 튜터 10:32"]
+  E -->|못 찾음| G["그냥 글로 붙여넣기"]
+  F --> H["학습노트:<br/>[!tutor] 인용 +<br/>tutor-logs 그 질문으로 링크"]
+</pre>
+<ul>
+<li>튜터 창은 확장이 들여다볼 수 없다(브라우저 옆 칸). 그래서 <b>복사 → 메모장에 붙여넣기</b>로 한다.</li>
+<li>다리는 맥 안의 Aside 대화 기록(<code>~/.aside/u/0/sessions</code>)을 <b>읽기만</b> 한다. 밖으로 보내지 않는다.</li>
+<li>학습노트의 링크는 <code>tutor-logs/날짜.md</code>의 <b>그 질문 제목</b>으로 간다(옵시디언 제목 링크). 문장 한 줄 위치까지는 못 간다 — 마크다운 파일 안 문장 위치로 가는 표준이 없다.</li>
+<li>메모장에서 튜터 인용 줄을 누르면 전문을 펼친다(본문으로 스크롤하지 않음).</li>
+</ul></section>
+
+<section><h2>4. 순서</h2>
+<table>
+<tr><th>티켓</th><th>내용</th><th>언제</th></tr>
+<tr><td>T36</td><td>메모장 모양(1)</td><td>지금 도는 T33c 다음</td></tr>
+<tr><td>T37a</td><td>학습노트 인용 링크(2) + 다리 튜터 글 찾기 + 메모 인용에 출처</td><td>T36과 같이</td></tr>
+<tr><td>T37b</td><td>메모장 붙여넣기 → 튜터 인용(3)</td><td>T36 다음</td></tr>
+</table></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'default'});</script>
+</body></html>
