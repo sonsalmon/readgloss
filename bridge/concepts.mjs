@@ -16,6 +16,8 @@ export const LIMIT = {
   seenSentence: 300,
   seenTitle: 300,
   seenUrl: 2000,
+  headingsCount: 3,
+  heading: 200,
 };
 
 // 개념 key: 이름을 소문자로 바꾸고 공백을 하나로 줄인 값 (유일)
@@ -113,10 +115,22 @@ export function parseConceptOp(v) {
       if (!normUrl) return null;
       if (typeof v.seen.title !== 'string' || v.seen.title.length > LIMIT.seenTitle) return null;
       if (typeof v.seen.sentence !== 'string' || v.seen.sentence.length > LIMIT.seenSentence) return null;
+
+      let headings = undefined;
+      if (v.seen.headings !== undefined && v.seen.headings !== null) {
+        if (!Array.isArray(v.seen.headings) || v.seen.headings.length > LIMIT.headingsCount) return null;
+        headings = [];
+        for (const h of v.seen.headings) {
+          if (typeof h !== 'string' || h.length > LIMIT.heading) return null;
+          headings.push(h);
+        }
+      }
+
       seen = {
         url: normUrl,
         title: v.seen.title,
         sentence: v.seen.sentence,
+        ...(headings !== undefined && { headings }),
       };
     }
 

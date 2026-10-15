@@ -23,6 +23,18 @@ const PHRASE_ID = /^[0-9a-f]{12}$/;
 // 문자열 칸 하나: 없으면 '', 문자열이 아니거나 상한을 넘으면 null(자르지 않고 거절)
 const field = (v, max) => (v === undefined || v === null ? '' : typeof v === 'string' && v.length <= max ? v : null);
 
+// 소제목 사슬 칸(선택): 없거나 null이면 undefined, 배열 ≤3개·각 문자열 ≤200자면 배열, 틀리면 null
+function parseHeadings(v) {
+  if (v === undefined || v === null) return undefined;
+  if (!Array.isArray(v) || v.length > 3) return null;
+  const out = [];
+  for (const h of v) {
+    if (typeof h !== 'string' || h.length > 200) return null;
+    out.push(h);
+  }
+  return out;
+}
+
 // save-phrase / unsave-phrase 요청 -> 정규화한 요청 | null
 function parsePhraseOp(v) {
   if (v.op === 'unsave-phrase') return typeof v.id === 'string' && PHRASE_ID.test(v.id) ? { op: 'unsave-phrase', id: v.id } : null;
@@ -32,7 +44,8 @@ function parsePhraseOp(v) {
   const title = field(v.title, PHRASE.title);
   const sentence = field(v.sentence, PHRASE.sentence);
   const kind = v.kind ?? 'sentence';
-  if (!text || text.length > PHRASE.text || translation === null || url === null || title === null || sentence === null || !KINDS.includes(kind) || (url && !/^https?:\/\//i.test(url))) return null;
+  const headings = parseHeadings(v.headings);
+  if (!text || text.length > PHRASE.text || translation === null || url === null || title === null || sentence === null || headings === null || !KINDS.includes(kind) || (url && !/^https?:\/\//i.test(url))) return null;
   let context;
   if (v.context !== undefined && v.context !== null) {
     const c = v.context;
@@ -42,7 +55,7 @@ function parsePhraseOp(v) {
     if (ct === null || note === null) return null;
     context = { translation: ct, ...(note && { note }), ...(c.wide && { wide: true }) };
   }
-  return { op: 'save-phrase', text, translation, ...(context && { context }), url, title, kind, sentence };
+  return { op: 'save-phrase', text, translation, ...(context && { context }), url, title, kind, sentence, ...(headings !== undefined && { headings }) };
 }
 
 // memo: {op:'memo', lemma, memo} 또는 {op:'memo', id, memo} 중 정확히 하나. memo 는 0~1000자('' 이면 지움).
@@ -55,7 +68,7 @@ function parseMemoOp(v) {
   return typeof v.id === 'string' && PHRASE_ID.test(v.id) ? { op: 'memo', id: v.id, memo: v.memo } : null;
 }
 
-// 요청 본문 -> 정규화된 { op, lemma[, word, gloss, sentence, url] }. 틀리면 null. 문장·주소는 상한에서 자른다.
+// 요청 본문 -> 정규화된 { op, lemma[, word, gloss, sentence, url, headings] }. 틀리면 null. 문장·주소는 상한에서 자른다.
 export function parseWordsOp(v) {
   if (v && typeof v === 'object' && v.op === 'memo') return parseMemoOp(v);
   if (v && typeof v === 'object' && (v.op === 'save-phrase' || v.op === 'unsave-phrase')) return parsePhraseOp(v);
@@ -66,9 +79,11 @@ export function parseWordsOp(v) {
   const gloss = str(v.gloss ?? '', MAX_GLOSS);
   const sentence = str(v.sentence ?? '', MAX_SENTENCE);
   const url = str(v.url ?? '', MAX_URL);
+  const headings = v.op === 'save' ? parseHeadings(v.headings) : undefined;
+  if (headings === null) return null;
   if (typeof word !== 'string' || !WORD_RE.test(word) || gloss === null || sentence === null || url === null) return null;
   if (url && !/^https?:\/\//i.test(url)) return null; // 패널이 주소를 링크로 쓸 수 있으니 http(s) 만
-  return { op: v.op, lemma, word, gloss, sentence, url };
+  return { op: v.op, lemma, word, gloss, sentence, url, ...(headings !== undefined && { headings }) };
 }
 
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
@@ -113,7 +128,7 @@ export function createWords({ file, db, now = Date.now }) {
       const d = w.data;
       if (isObj(d)) {
         if (isObj(d.known)) known.set(w.key, { ts: ts(d.known) });
-        if (isObj(d.saved)) saved.set(w.key, { ...info(d.saved), ...withMemo(memoOf(d.saved)), ts: ts(d.saved) });
+        if (isObj(d.saved)) saved.set(w.key, { ...info(d.saved), ...(Array.isArray(d.saved.headings) && { headings: d.saved.headings.slice(0, 3) }), ...withMemo(memoOf(d.saved)), ts: ts(d.saved) });
         if (isObj(d.history) && isLemma(d.history.lemma)) {
           history.push({ lemma: d.history.lemma, ...info(d.history), ts: ts(d.history) });
         }
@@ -134,6 +149,7 @@ export function createWords({ file, db, now = Date.now }) {
           ...(isObj(v.context) && { context: v.context }),
           ...(v.url && { url: str(v.url, PHRASE.url) }),
           ...(v.title && { title: str(v.title, PHRASE.title) }),
+          ...(Array.isArray(v.headings) && { headings: v.headings.slice(0, 3) }),
           ...withMemo(memoOf(v)),
           ts: ts(v),
         });
@@ -145,7 +161,7 @@ export function createWords({ file, db, now = Date.now }) {
       if (isLemma(k) && isObj(v)) known.set(k, { ts: ts(v) });
     }
     for (const [k, v] of Object.entries(isObj(raw.saved) ? raw.saved : {})) {
-      if (isLemma(k) && isObj(v)) saved.set(k, { ...info(v), ...withMemo(memoOf(v)), ts: ts(v) });
+      if (isLemma(k) && isObj(v)) saved.set(k, { ...info(v), ...(Array.isArray(v.headings) && { headings: v.headings.slice(0, 3) }), ...withMemo(memoOf(v)), ts: ts(v) });
     }
     history = (Array.isArray(raw.history) ? raw.history : [])
       .filter((h) => isObj(h) && isLemma(h.lemma))
@@ -162,6 +178,7 @@ export function createWords({ file, db, now = Date.now }) {
           ...(isObj(v.context) && { context: v.context }),
           ...(v.url && { url: str(v.url, PHRASE.url) }),
           ...(v.title && { title: str(v.title, PHRASE.title) }),
+          ...(Array.isArray(v.headings) && { headings: v.headings.slice(0, 3) }),
           ...withMemo(memoOf(v)),
           ts: ts(v),
         });
@@ -224,7 +241,7 @@ export function createWords({ file, db, now = Date.now }) {
     isKnown: (lemma) => known.has(lemma),
     // parseWordsOp 를 통과한 요청만 받는다. 바뀐 전체 상태를 돌려준다. memo 대상이 없으면 null(404).
     // ponytail: 메모리를 먼저 바꾸고 쓴다. 디스크 쓰기가 실패하면 이 실행 동안만 메모리와 파일이 어긋난다(파일 자체는 rename 으로 안 깨진다).
-    apply({ op, lemma, word, gloss, sentence, url, id, text, translation, context, title, kind, memo }) {
+    apply({ op, lemma, word, gloss, sentence, url, id, text, translation, context, title, kind, memo, headings }) {
       if (op === 'memo') {
         // memo 대상이 없으면 404. memo '' 이면 칸을 지운다. ts 는 건드리지 않는다.
         const target = lemma !== undefined ? saved : phrases;
@@ -245,8 +262,13 @@ export function createWords({ file, db, now = Date.now }) {
       }
       if (op === 'save-phrase' || op === 'unsave-phrase') {
         const key = op === 'save-phrase' ? phraseId(text) : id;
-        if (op === 'save-phrase') phrases.set(key, { text, translation, kind, ...(sentence && { sentence }), ...(context && { context }), ...(url && { url }), ...(title && { title }), ...withMemo(phrases.get(key)?.memo), ts: now() }); // 다시 저장해도 메모는 남긴다
-        else phrases.delete(key);
+        if (op === 'save-phrase') {
+          const prev = phrases.get(key);
+          const effectiveHeadings = headings !== undefined ? headings : prev?.headings;
+          phrases.set(key, { text, translation, kind, ...(sentence && { sentence }), ...(context && { context }), ...(url && { url }), ...(title && { title }), ...(effectiveHeadings && { headings: effectiveHeadings }), ...withMemo(prev?.memo), ts: now() }); // 다시 저장해도 메모는 남긴다
+        } else {
+          phrases.delete(key);
+        }
         if (db) persistPhrase(key);
         else persist();
         return { id: key, phrases: Object.fromEntries(phrases) };
@@ -260,7 +282,9 @@ export function createWords({ file, db, now = Date.now }) {
         if (db) persistWord(lemma);
         else persist();
       } else if (op === 'save') {
-        saved.set(lemma, { word, gloss, sentence, url, ...withMemo(saved.get(lemma)?.memo), ts: now() }); // 다시 저장해도 메모는 남긴다
+        const prev = saved.get(lemma);
+        const effectiveHeadings = headings !== undefined ? headings : prev?.headings;
+        saved.set(lemma, { word, gloss, sentence, url, ...(effectiveHeadings && { headings: effectiveHeadings }), ...withMemo(prev?.memo), ts: now() }); // 다시 저장해도 메모는 남긴다
         if (db) persistWord(lemma);
         else persist();
       } else if (op === 'unsave') {

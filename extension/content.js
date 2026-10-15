@@ -369,7 +369,7 @@
       if (!current) return;
       const name = current.lemma || current.word;
       const anchor = rectOf(current.range);
-      globalThis.readglossConceptPage?.openForm({ name, anchor });
+      globalThis.readglossConceptPage?.openForm({ name, anchor, range: current.range });
       getSelection().removeAllRanges();
       close();
     });
@@ -381,7 +381,7 @@
       const name = current.word || current.lemma || '';
       const anchor = rectOf(current.range);
       const sentence = current.sentence || '';
-      globalThis.readglossConceptPage?.saveLater({ name, sentence, anchor });
+      globalThis.readglossConceptPage?.saveLater({ name, sentence, anchor, range: current.range });
       getSelection().removeAllRanges();
       close();
     });
@@ -491,7 +491,12 @@
     const lemma = current.lemma;
     const anchor = rectOf(current.range); // 확인 메시지 자리: 저장을 누른 순간의 단어 위치(응답 뒤엔 선택이 풀릴 수 있다)
     ui[`${key}Btn`].setAttribute('aria-disabled', 'true');
-    const r = await send(W.messageFor(op, { lemma, word: current.word, gloss: current.gloss, sentence: current.sentence, url: sourceUrl() }));
+    const msg = W.messageFor(op, { lemma, word: current.word, gloss: current.gloss, sentence: current.sentence, url: sourceUrl() });
+    if (op === 'save') {
+      const headings = globalThis.readglossSelectionUi?.headingsFor?.(current.range?.startContainer ?? current.range) ?? [];
+      msg.headings = headings;
+    }
+    const r = await send(msg);
     if (my !== seq) return;
     if (r?.known && r.saved) {
       current.state = r;

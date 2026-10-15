@@ -139,8 +139,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function words(msg, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
-  const { op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page } = msg; // 구·문장(save-phrase·unsave-phrase) 필드는 T14, kind('expression'|'sentence')는 T17, memo 는 T19
-  const init = op === 'get' ? { headers: { 'X-Bridge-Token': token } } : { method: 'POST', headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page }) };
+  const { op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page, headings } = msg; // 구·문장(save-phrase·unsave-phrase) 필드는 T14, kind('expression'|'sentence')는 T17, memo 는 T19, headings 는 T33a
+  const init = op === 'get' ? { headers: { 'X-Bridge-Token': token } } : { method: 'POST', headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page, headings }) };
   const res = await bridgeFetch('/words', init);
   if (res.status === 401 && !retried) return words(msg, true);
   const data = await res.json().catch(() => ({}));
@@ -407,4 +407,44 @@ chrome.commands?.onCommand?.addListener((cmd, tab) => {
     chrome.tabs.sendMessage(tab.id, { type: 'memo-command', cmd }).catch(() => {});
   }
 });
+
+// --- 공부 모드(T33a, 16-6): 전체 화면 전환 및 이전 창 상태(normal/maximized) 복원 ---
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'study-mode') return;
+  const windowId = sender.tab?.windowId;
+  if (windowId == null) {
+    sendResponse({ ok: false, error: 'no-window' });
+    return;
+  }
+  const storage = chrome.storage.session ?? chrome.storage.local;
+  const key = `study_mode_win_${windowId}`;
+
+  (async () => {
+    try {
+      if (msg.on) {
+        const cur = await chrome.windows.get(windowId);
+        if (cur.state && cur.state !== 'fullscreen') {
+          await storage.set({ [key]: cur.state });
+        }
+        const updated = await chrome.windows.update(windowId, { state: 'fullscreen' });
+        sendResponse({ ok: true, state: updated?.state ?? 'fullscreen' });
+      } else {
+        const data = await storage.get(key);
+        const prevState = data?.[key] || 'normal';
+        await storage.remove(key);
+        const updated = await chrome.windows.update(windowId, { state: prevState });
+        sendResponse({ ok: true, state: updated?.state ?? prevState });
+      }
+    } catch (e) {
+      sendResponse({ ok: false, error: e?.message || 'window-update-failed' });
+    }
+  })();
+  return true; // 비동기 응답
+});
+
+chrome.windows?.onRemoved?.addListener((winId) => {
+  const storage = chrome.storage.session ?? chrome.storage.local;
+  storage.remove(`study_mode_win_${winId}`).catch(() => {});
+});
+
 

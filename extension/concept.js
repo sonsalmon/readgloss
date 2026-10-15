@@ -491,6 +491,9 @@
     const initialName = (seed.name || '').trim().slice(0, 80);
     const scrapId = seed.scrapId || null;
 
+    const targetNode = seed.range?.startContainer ?? seed.range ?? (window.getSelection()?.anchorNode ?? document.body);
+    const headings = globalThis.readglossSelectionUi?.headingsFor?.(targetNode) ?? [];
+
     // 할 일(task): seed에 task가 있으면 그것을 쓰고 guess를 하지 않는다.
     let task = null;
     if (seed && 'task' in seed) {
@@ -1013,6 +1016,13 @@
       saveBtn.disabled = true;
       saveBtn.textContent = '저장 중…';
 
+      const seen = {
+        url: location.href,
+        title: document.title || '',
+        sentence: (seed.sentence || '').slice(0, 300),
+        ...(headings.length > 0 ? { headings } : {}),
+      };
+
       const payload = {
         type: 'concepts',
         op: 'save',
@@ -1023,6 +1033,7 @@
         related: [...relatedSet],
         task,
         scrapId,
+        seen,
       };
       if (conceptId) {
         payload.id = conceptId;
@@ -1108,7 +1119,7 @@
   }
 
   // --- saveLater: 칸 없이 바로 나중에 볼 것으로 저장 ---
-  async function saveLater({ name, sentence, anchor }) {
+  async function saveLater({ name, sentence, anchor, range }) {
     const cleanName = (name || '').trim().replace(/\s+/g, ' ').slice(0, 80);
     if (!cleanName) return;
 
@@ -1120,10 +1131,14 @@
       // 짐작 실패는 무시
     }
 
+    const targetNode = range?.startContainer ?? range ?? (window.getSelection()?.anchorNode ?? document.body);
+    const headings = globalThis.readglossSelectionUi?.headingsFor?.(targetNode) ?? [];
+
     const seen = {
       url: location.href,
       title: document.title || '',
       sentence: (sentence || '').slice(0, 300),
+      ...(headings.length > 0 ? { headings } : {}),
     };
 
     const res = await send({

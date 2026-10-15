@@ -176,13 +176,20 @@
 
   // 선택 시작 위쪽의 h1~h3 (문서 순서, 가까운 것이 끝). 셋만 쓰니 요소를 먼저 고른 뒤 글을 뽑는다.
   function headingsAbove(node) {
+    if (!node) return [];
+    const n = node.nodeType ? node : (node.startContainer ?? node);
+    if (!n) return [];
     const found = [];
     for (const h of document.querySelectorAll('h1, h2, h3')) {
-      if (!(h.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)) break; // 문서 순서라 선택을 지나면 끝
+      if (!(h.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING)) break; // 문서 순서라 선택을 지나면 끝
       found.push(h);
     }
     return found.slice(-core.MAX_HEADINGS).map((h) => textOf(h, { isHidden }));
   }
+  globalThis.readglossSelectionUi = {
+    ...(globalThis.readglossSelectionUi || {}),
+    headingsFor: (node) => headingsAbove(node),
+  };
 
   // [더 넓게 보기]용 페이지 목차: 문서 전체 h1~h3 중 20개(많으면 선택 근처). 선택 위쪽 제목 수를 세서 pickHeadings 에 맡긴다.
   function pageHeadings(node) {
@@ -441,6 +448,7 @@
           name: current.text,
           scrapId,
           anchor,
+          range: current.range,
         });
         getSelection().removeAllRanges();
         close();
@@ -464,6 +472,7 @@
           name: current.text,
           sentence,
           anchor,
+          range: current.range,
         });
         getSelection().removeAllRanges();
         close();
@@ -588,9 +597,13 @@
     const saved = current.phraseId != null;
     ui.saveBtn.setAttribute('aria-disabled', 'true');
     notify('');
+    const headings = headingsAbove(current.range?.startContainer ?? current.range);
     const message = saved
       ? { type: 'words', op: 'unsave-phrase', id: current.phraseId }
-      : core.phraseMessage({ text: current.text, mt: current.mt, ctx: current.wide ?? current.ctx, ctxNote: current.wide !== undefined ? current.wideNote : current.ctxNote, wide: current.wide !== undefined, url: location.href, title: document.title });
+      : {
+          ...core.phraseMessage({ text: current.text, mt: current.mt, ctx: current.wide ?? current.ctx, ctxNote: current.wide !== undefined ? current.wideNote : current.ctxNote, wide: current.wide !== undefined, url: location.href, title: document.title }),
+          headings,
+        };
     const r = await send(message);
     if (my !== seq) return;
     ui.saveBtn.removeAttribute('aria-disabled');
