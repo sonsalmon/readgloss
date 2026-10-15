@@ -295,16 +295,16 @@ test('G: 같은 할 일에 제목 같은 페이지 둘 → 개념 문서 링크�
   const docContent = conceptDocs.get('test-concept.md');
   assert.ok(docContent);
 
-  // [[../scraps/S1-04/same-title]] 와 [[../scraps/S1-04/same-title-2]] 둘 다 포함
-  assert.match(docContent, /\[\[\.\.\/scraps\/S1-04\/same-title\]\]/);
-  assert.match(docContent, /\[\[\.\.\/scraps\/S1-04\/same-title-2\]\]/);
+  // [[notes/S1-04/same-title]] 와 [[notes/S1-04/same-title-2]] 둘 다 포함(16-5 학습노트 경로)
+  assert.match(docContent, /\[\[notes\/S1-04\/same-title\]\]/);
+  assert.match(docContent, /\[\[notes\/S1-04\/same-title-2\]\]/);
 
   // 개념에 남은 주소 원문(끝 슬래시·#조각)이 페이지 주소와 달라도 같은 파일로 간다
   const rawUrlDoc = renderConceptDocs(
     [{ ...concepts[0], appears: [{ ...concepts[0].appears[1], url: 'https://example.com/p2/#top' }] }],
     fileNames,
   ).get('test-concept.md');
-  assert.match(rawUrlDoc, /\[\[\.\.\/scraps\/S1-04\/same-title-2\]\]/);
+  assert.match(rawUrlDoc, /\[\[notes\/S1-04\/same-title-2\]\]/);
 });
 
 // -------------------------------------------------------------
@@ -322,8 +322,9 @@ test('H: 개념 문서 머리는 "고치려면 확장 개념 탭에서", 손으�
     const concepts = [{ id: 'c_01', name: 'Alpha Concept', definition: 'Alpha' }];
     const docs = renderConceptDocs(concepts);
     const acDoc = docs.get('alpha-concept.md');
-    const firstLine = acDoc.split('\n')[0].trim();
-    assert.equal(firstLine, '<!-- 자동 생성 — 고치려면 확장 개념 탭에서 -->');
+    // 16-5: 앞머리가 첫 줄, 머리 주석은 앞머리 바로 다음 줄
+    assert.equal(acDoc.split('\n')[0], '---');
+    assert.match(acDoc, /\n---\n<!-- 자동 생성 — 고치려면 확장 개념 탭에서 -->\n/);
 
     // 디렉토리에 3개 파일 생성:
     // 1. 기존 스크랩 문서 머리
