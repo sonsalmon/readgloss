@@ -44,8 +44,8 @@
     { path: 'maxPerParagraph', min: 0, max: 10, step: 1 },
     { path: 'annotation.sizePct', min: 40, max: 100, step: 5 },
     { path: 'annotation.opacityPct', min: 30, max: 100, step: 5 },
-    // 단어 간격은 0~0.3em 을 정수 0~6 단계(0.05em)로 — 소수 슬라이더의 부동소수 오차를 피한다
-    { path: 'annotation.gapEm', min: 0, max: 6, step: 1, to: (v) => Math.round(v / 0.05), from: (n) => Math.round(n * 5) / 100 },
+    // 뜻 높이는 -0.5~0.3em 을 정수 -10~6 단계(0.05em)로 — 소수 슬라이더의 부동소수 오차를 피한다
+    { path: 'annotation.liftEm', min: -10, max: 6, step: 1, to: (v) => Math.round(v / 0.05), from: (n) => Math.round(n * 5) / 100 },
     { path: 'opacityInput', min: 40, max: 100, step: 5 },
     { path: 'opacityUi', min: 40, max: 100, step: 5 },
   ];
@@ -669,13 +669,13 @@
     maxPerParagraph: (n) => (n === 0 ? '제한 없음' : `${n}개`),
     'annotation.sizePct': (n) => `${n}%`,
     'annotation.opacityPct': (n) => `${n}%`,
-    'annotation.gapEm': (n) => `${(n * 5) / 100}em`,
+    'annotation.liftEm': (n) => `${(n * 5) / 100}em`,
     opacityInput: (n) => `${n}%`,
     opacityUi: (n) => `${n}%`,
   };
   const LABEL = {
     level: '수준', maxPerParagraph: '문단당 최대', repeat: '반복', 'annotation.position': '위치', 'annotation.sizePct': '크기',
-    'annotation.color': '색', 'annotation.opacityPct': '불투명도', 'annotation.weight': '굵기', 'annotation.gapEm': '단어 간격',
+    'annotation.color': '색', 'annotation.opacityPct': '불투명도', 'annotation.weight': '굵기', 'annotation.liftEm': '뜻 높이',
     mark: '단어 표시', theme: '테마', glossary: '분야 용어집', enabled: '주석 켜기', allowCopy: '주석 글자 복사 허용', selectionTranslate: '드래그 번역', 'floatingButton.show': '떠 있는 버튼 보이기',
     opacityInput: '입력 칸 투명도', opacityUi: '나머지 투명도', dimWhileReading: '읽는 동안 흐리게',
     structureHints: '문장 구조 표시',
@@ -873,7 +873,7 @@
       h('h3', { class: 'sec', text: '켜기' }), toggle('enabled'), offRow,
       h('h3', { class: 'sec', text: '어떤 단어에' }), slider('level'), slider('maxPerParagraph'), choice('repeat'), choice('glossary', null, '전치행렬처럼 분야 용어로 보여 줘요. 끄면 사전 뜻만 나와요.'), glossBox,
       h('h3', { class: 'sec', text: '주석 모양' }), choice('annotation.position'), slider('annotation.sizePct'), choice('annotation.color', color),
-      slider('annotation.opacityPct'), choice('annotation.weight'), slider('annotation.gapEm'), toggle('structureHints'),
+      slider('annotation.opacityPct'), choice('annotation.weight'), slider('annotation.liftEm'), toggle('structureHints'),
       h('h3', { class: 'sec', text: '내게 맞추기' }), autoRow, offsetRow, statsHint, adaptiveMsg,
       h('h3', { class: 'sec', text: '단어 표시' }), choice('mark'),
       h('h3', { class: 'sec', text: '화면' }), slider('opacityInput'), slider('opacityUi'), toggle('dimWhileReading', '메모할 때만 진해지고, 읽을 때는 설정한 투명도로 보여요.'),

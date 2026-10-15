@@ -192,7 +192,7 @@ test('structuralKey: 위치·단어 표시·반복·개수·수준·분야 용�
 test('cssVars: 크기·색(본문색/강조색/직접)·불투명도·굵기·간격·복사 허용', () => {
   const v = cssVars(cfg());
   assert.deepEqual(v, {
-    '--rg-ann-size': '55%', '--rg-ann-color': 'currentColor', '--rg-ann-opacity': '0.7', '--rg-ann-weight': '400', '--rg-ann-gap': '0em', '--rg-ann-select': 'none',
+    '--rg-ann-size': '55%', '--rg-ann-color': 'currentColor', '--rg-ann-opacity': '0.7', '--rg-ann-weight': '400', '--rg-ann-gap': '0em', '--rg-ann-lift': '-0.15em', '--rg-ann-select': 'none',
     '--rg-mark-color': 'currentColor', '--rg-mark-bg': 'transparent', '--rg-mark-line': 'none',
   });
   const t = cssVars(cfg({ annotation: { sizePct: 80, color: 'accent', opacityPct: 100, weight: 'light', gapEm: 0.15 }, allowCopy: true }), false);

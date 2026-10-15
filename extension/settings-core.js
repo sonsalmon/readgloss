@@ -5,7 +5,7 @@
   const LEVELS = ['A2', 'B1', 'B2', 'C1', 'C2'];
   const DEFAULTS = Object.freeze({
     enabled: true, level: 'C1', maxPerParagraph: 3, repeat: 'page',
-    annotation: { position: 'top', sizePct: 55, color: 'text', customColor: '#2f6feb', opacityPct: 70, weight: 'normal', gapEm: 0 },
+    annotation: { position: 'top', sizePct: 55, color: 'text', customColor: '#2f6feb', opacityPct: 70, weight: 'normal', gapEm: 0, liftEm: -0.15 },
     mark: 'none', allowCopy: false, selectionTranslate: true, theme: 'auto', glossary: 'auto', sites: [],
     opacityInput: 100, opacityUi: 100, dimWhileReading: true,
     structureHints: true,
@@ -50,6 +50,7 @@
         opacityPct: num(a.opacityPct, 30, 100, DA.opacityPct),
         weight: pickEnum(a.weight, ENUMS.weight, DA.weight),
         gapEm: num(a.gapEm, 0, 0.3, DA.gapEm, false),
+        liftEm: num(a.liftEm, -0.5, 0.3, DA.liftEm, false),
       },
       mark: pickEnum(r.mark, ENUMS.mark, D.mark),
       allowCopy: bool(r.allowCopy, D.allowCopy),

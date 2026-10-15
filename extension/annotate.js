@@ -333,6 +333,7 @@
     const opacity = String(a.opacityPct / 100);
     const fontWeight = String(WEIGHT_MAP[a.weight] ?? 400);
 
+    entry.parentFs = parentFs;
     entry.fontSize = labelFs;
     entry.color = color;
     entry.opacity = opacity;
@@ -558,9 +559,11 @@
           e.labelHeight = lr.height;
         }
 
+        const liftEm = typeof a.liftEm === 'number' ? a.liftEm : -0.15;
+        const liftPx = liftEm * (e.parentFs || 16);
         const box = core.labelBox
-          ? core.labelBox(rect, e.labelWidth, e.labelHeight)
-          : { left: rect.left + rect.width / 2 - e.labelWidth / 2, top: rect.top - e.labelHeight - 1 };
+          ? core.labelBox(rect, e.labelWidth, e.labelHeight, liftPx)
+          : { left: rect.left + rect.width / 2 - e.labelWidth / 2, top: rect.top - e.labelHeight - 1 - liftPx };
         updates.push({ entry: e, visible: true, left: box.left, top: box.top });
       }
     }

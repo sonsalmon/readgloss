@@ -46,16 +46,16 @@ test('sliderPatch: 값을 범위로 고치고 설정 patch 로 바꾼다', () =>
   assert.deepEqual(C.sliderPatch(R('maxPerParagraph'), 99), { maxPerParagraph: 10 });
   assert.deepEqual(C.sliderPatch(R('annotation.sizePct'), '73'), { annotation: { sizePct: 75 } }, '5 단위로 맞춘다');
   assert.deepEqual(C.sliderPatch(R('annotation.opacityPct'), 0), { annotation: { opacityPct: 30 } });
-  assert.deepEqual(C.sliderPatch(R('annotation.gapEm'), '3'), { annotation: { gapEm: 0.15 } }, '정수 단계 0~6 → 0.05em');
-  assert.deepEqual(C.sliderPatch(R('annotation.gapEm'), 6), { annotation: { gapEm: 0.3 } });
+  assert.deepEqual(C.sliderPatch(R('annotation.liftEm'), '-3'), { annotation: { liftEm: -0.15 } }, '정수 단계 -10~6 → 0.05em');
+  assert.deepEqual(C.sliderPatch(R('annotation.liftEm'), 6), { annotation: { liftEm: 0.3 } });
   assert.equal(C.sliderPatch(R('level'), 'abc'), null, '숫자가 아니면 바꾸지 않는다');
 });
 
 test('sliderValue: 설정 값 → 슬라이더 위치', () => {
   const R = (path) => C.RANGES.find((r) => r.path === path);
-  const s = S.merge({}, { level: 'B2', annotation: { gapEm: 0.15, sizePct: 80 } });
+  const s = S.merge({}, { level: 'B2', annotation: { liftEm: -0.15, sizePct: 80 } });
   assert.equal(C.sliderValue(R('level'), s), 2);
-  assert.equal(C.sliderValue(R('annotation.gapEm'), s), 3);
+  assert.equal(C.sliderValue(R('annotation.liftEm'), s), -3);
   assert.equal(C.sliderValue(R('annotation.sizePct'), s), 80);
   assert.equal(C.sliderValue(R('maxPerParagraph'), S.DEFAULTS), 3);
 });

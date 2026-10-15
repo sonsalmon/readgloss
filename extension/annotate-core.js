@@ -237,13 +237,13 @@
     }));
   }
 
-  // 위치 계산: 단어 사각형(rect) 위 가운데(가로 = 사각형 가운데 − 글자 폭/2, 세로 = 사각형 top − 글자 높이 − 1px)
-  function labelBox(rect, labelW, labelH) {
+  // 위치 계산: 단어 사각형(rect) 위 가운데(가로 = 사각형 가운데 − 글자 폭/2, 세로 = 사각형 top − 글자 높이 − 1px − liftPx)
+  function labelBox(rect, labelW, labelH, liftPx = 0) {
     const width = rect.width ?? ((rect.right ?? rect.left) - rect.left);
     const midX = rect.left + width / 2;
     return {
       left: midX - labelW / 2,
-      top: rect.top - labelH - 1,
+      top: rect.top - labelH - 1 - liftPx,
     };
   }
 
@@ -273,12 +273,14 @@
   function cssVars(s, dark = false) {
     const a = s.annotation;
     const accent = dark ? ACCENT_DARK : ACCENT;
+    const liftEm = typeof a?.liftEm === 'number' ? a.liftEm : -0.15;
     return {
       '--rg-ann-size': `${a.sizePct}%`,
       '--rg-ann-color': a.color === 'text' ? 'currentColor' : a.color === 'accent' ? accent : a.customColor,
       '--rg-ann-opacity': String(a.opacityPct / 100),
       '--rg-ann-weight': String(WEIGHT[a.weight]),
       '--rg-ann-gap': `${a.gapEm}em`,
+      '--rg-ann-lift': `${liftEm}em`,
       '--rg-ann-select': s.allowCopy ? 'text' : 'none',
       '--rg-mark-color': s.mark === 'color' ? accent : 'currentColor',
       '--rg-mark-bg': s.mark === 'background' ? (dark ? 'rgba(107,155,255,.22)' : 'rgba(47,111,235,.14)') : 'transparent',
@@ -289,7 +291,7 @@
   // 간격(gapEm): 위 = 주석 단어 좌우 바깥 여백, 오른쪽 = 단어와 "(뜻)" 사이.
   const ANNOT_CSS = `
 ruby[data-readgloss="ann"] { ruby-position: over; ruby-align: center; margin-inline: var(--rg-ann-gap, 0em); }
-rt[data-readgloss="gloss"] { white-space: nowrap; }
+rt[data-readgloss="gloss"] { white-space: nowrap; position: relative; top: calc(-1 * var(--rg-ann-lift, 0em)); }
 [data-rg-word] { color: var(--rg-mark-color, currentColor); background-color: var(--rg-mark-bg, transparent); text-decoration-line: var(--rg-mark-line, none);
   text-decoration-style: dotted; text-decoration-thickness: 1.5px; text-underline-offset: .18em; border-radius: 2px; }
 [data-readgloss="gloss"] { font-size: var(--rg-ann-size, 55%); color: var(--rg-ann-color, currentColor); opacity: var(--rg-ann-opacity, .7); font-weight: var(--rg-ann-weight, 400);
