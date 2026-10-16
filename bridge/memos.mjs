@@ -163,10 +163,18 @@ export function parseMemoOp(v) {
   if (v.op === 'edit') {
     if (typeof v.id !== 'string' || !MEMO_ID_RE.test(v.id)) return null;
     if (typeof v.text !== 'string' || v.text.length < 1 || v.text.length > LIMIT.text) return null;
+
+    let dropQuote = false;
+    if (v.dropQuote !== undefined && v.dropQuote !== null) {
+      if (v.dropQuote !== true) return null;
+      dropQuote = true;
+    }
+
     return {
       op: 'edit',
       id: v.id,
       text: v.text,
+      ...(dropQuote ? { dropQuote: true } : {}),
     };
   }
 
@@ -306,6 +314,10 @@ export function createMemos({ db, now = Date.now }) {
         ...(existing.data || {}),
         text: op.text,
       };
+
+      if (op.dropQuote === true) {
+        delete data.quote;
+      }
 
       // ts 는 유지한다
       db.put({

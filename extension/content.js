@@ -564,7 +564,17 @@
     host?.remove();
     host = ui = null;
   }
-  globalThis.readglossDictCardUi = { close };
+  // 밖(단어장 형광펜 saved-marks.js)에서 그 낱말 범위로 사전 카드를 연다. 문장은 더블클릭과 같은 방식으로 자른다.
+  function openFromRange({ range, rect } = {}) {
+    if (!range) return;
+    const picked = cleanSelection(range.toString());
+    if (!picked) return;
+    const block = blockOf(range.startContainer);
+    const { text, offset } = plainTextAt(block, range.startContainer, range.startOffset);
+    const sentence = extractSentence(text, offset + picked.start, picked.word.length);
+    openCard(picked.word, sentence, rect ?? range.getBoundingClientRect(), range);
+  }
+  globalThis.readglossDictCardUi = { close, open: openFromRange };
 
   async function send(message) {
     try {

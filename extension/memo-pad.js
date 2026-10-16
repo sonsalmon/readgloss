@@ -467,6 +467,7 @@
   let currentMemos = []; // 이 페이지의 저장된 메모 목록
   let currentPageItems = []; // 이 페이지의 모든 모양 항목 목록 (메모, 스크랩, 개념, 나중에, 단어, 구문장)
   let activeConceptEditId = null; // 인라인 편집기가 열려 있는 개념 id
+  let activeScrapEditId = null; // 인라인 편집기가 열려 있는 스크랩 id (한 번에 하나만 열림)
   let conceptSaveTimers = {}; // 개념 id별 0.8초 자동 저장 타이머
   let pendingConceptSaves = {}; // 개념 id별 대기 중인 저장 콜백
   let currentActiveKey = '_page'; // 현재 활성화된 소제목 key
@@ -873,13 +874,13 @@
       padding: 2px 6px;
       font-size: 11px;
       line-height: 1.3;
-      cursor: pointer;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 4px;
       word-break: break-all;
       user-select: none;
+      position: relative;
     }
     @media (prefers-color-scheme: dark) {
       .sec-memo-quote-line {
@@ -887,8 +888,106 @@
         color: #FAC775;
       }
     }
-    .sec-memo-quote-line:hover {
-      opacity: 0.85;
+    .sec-memo-quote-text {
+      flex: 1;
+      min-width: 0;
+      cursor: pointer;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .sec-memo-quote-del {
+      all: unset;
+      box-sizing: border-box;
+      cursor: pointer;
+      font-size: 11px;
+      line-height: 1;
+      padding: 0 2px;
+      color: inherit;
+      opacity: 0;
+      flex-shrink: 0;
+    }
+    .sec-memo-quote-line:hover .sec-memo-quote-del,
+    .sec-memo-quote-del:focus,
+    .sec-memo-quote-del:focus-visible {
+      opacity: 0.7;
+    }
+    .sec-memo-quote-del:hover {
+      opacity: 1;
+    }
+    .sec-shape-line.scrap-line {
+      cursor: pointer;
+    }
+    .sec-shape-line.scrap-line.active {
+      background: var(--accbg);
+      color: var(--acc);
+      font-weight: 500;
+    }
+    .scrap-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      margin-right: 4px;
+      flex-shrink: 0;
+      vertical-align: middle;
+      user-select: none;
+    }
+    .scrap-badge-bar {
+      display: inline-block;
+      width: 3px;
+      height: 10px;
+      background: #eab308;
+      border-radius: 1px;
+    }
+    .scrap-badge-label {
+      font-size: 10.5px;
+      color: var(--mut);
+      font-weight: 500;
+    }
+    .scrap-memo-text {
+      font-size: 11px;
+      color: var(--mut);
+      line-height: 1.3;
+      margin: 1px 0 2px 14px;
+      word-break: break-all;
+    }
+    .scrap-inline-edit {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin: 2px 0 4px 8px;
+      padding: 6px;
+      border-radius: 6px;
+      background: var(--bg);
+      border: 1px solid var(--acc);
+      box-sizing: border-box;
+    }
+    .scrap-edit-textarea {
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 48px;
+      border: 1px solid var(--bd);
+      border-radius: 4px;
+      background: var(--card);
+      color: var(--fg);
+      font: inherit;
+      font-size: 12px;
+      line-height: 1.4;
+      padding: 4px 6px;
+      resize: none;
+      outline: none;
+    }
+    .scrap-edit-textarea:focus {
+      border-color: var(--acc);
+    }
+    .scrap-edit-mut {
+      font-size: 11px;
+      color: var(--mut);
+      user-select: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
     .sec-textarea {
       width: calc(100% - 8px);
@@ -1671,30 +1770,76 @@
     if (m.quote && typeof m.quote.exact === 'string' && m.quote.exact.length > 0) {
       const qLine = document.createElement('div');
       qLine.className = 'sec-memo-quote-line';
+
+      const qText = document.createElement('div');
+      qText.className = 'sec-memo-quote-text';
+
+      const dropBtn = document.createElement('button');
+      dropBtn.className = 'sec-memo-quote-del';
+      dropBtn.type = 'button';
+      dropBtn.setAttribute('aria-label', '인용 뺌');
+      dropBtn.textContent = '✕';
+      dropBtn.onclick = (e) => {
+        e.stopPropagation();
+        const currentText = (m.text || '').trim();
+        if (!currentText) {
+          showPadToastNotice('글이 없는 메모는 인용을 뺄 수 없어요', 1500);
+          return;
+        }
+        chrome.runtime.sendMessage({
+          type: 'memos',
+          op: 'edit',
+          id: m.id,
+          text: m.text,
+          dropQuote: true,
+        }, (res) => {
+          if (res?.memo) {
+            m.quote = null;
+            const idx = currentMemos.findIndex((item) => item.id === m.id);
+            if (idx !== -1) currentMemos[idx] = res.memo;
+            const pIdx = currentPageItems.findIndex((item) => item.kind === 'memo' && item.id === m.id);
+            if (pIdx !== -1) {
+              currentPageItems[pIdx].quote = null;
+            }
+            qLine.remove();
+            showSuccessMeta('고쳤어요');
+          } else {
+            const errMsg = res?.error === 'bridge-off' ? BRIDGE_OFF_TEXT : '저장하지 못했어요';
+            showErrorMeta(errMsg);
+          }
+        });
+      };
+
       if (m.quote.source === 'tutor') {
         const timeStr = m.quote.tutor?.time || '';
         let isExpanded = false;
         const renderText = () => {
-          qLine.textContent = isExpanded ? `❝ 튜터 ${timeStr}\n${m.quote.exact}` : `❝ 튜터 ${timeStr} · ${m.quote.exact.slice(0, 60)}${m.quote.exact.length > 60 ? '…' : ''}`;
+          qText.textContent = isExpanded ? `❝ 튜터 ${timeStr}\n${m.quote.exact}` : `❝ 튜터 ${timeStr} · ${m.quote.exact.slice(0, 60)}${m.quote.exact.length > 60 ? '…' : ''}`;
         };
         renderText();
-        qLine.title = '전문 펼치기/접기';
-        qLine.onclick = () => {
+        qText.title = '전문 펼치기/접기';
+        qText.onclick = (e) => {
+          if (e.target === dropBtn) return;
           isExpanded = !isExpanded;
           if (isExpanded) {
-            qLine.style.webkitLineClamp = 'unset';
-            qLine.style.whiteSpace = 'pre-wrap';
+            qText.style.webkitLineClamp = 'unset';
+            qText.style.whiteSpace = 'pre-wrap';
           } else {
-            qLine.style.webkitLineClamp = '2';
-            qLine.style.whiteSpace = '';
+            qText.style.webkitLineClamp = '2';
+            qText.style.whiteSpace = '';
           }
           renderText();
         };
       } else {
-        qLine.textContent = `“${m.quote.exact}”`;
-        qLine.title = '인용 자리로 이동';
-        qLine.onclick = () => jumpToMemo(m);
+        qText.textContent = `“${m.quote.exact}”`;
+        qText.title = '인용 자리로 이동';
+        qText.onclick = (e) => {
+          if (e.target === dropBtn) return;
+          jumpToMemo(m);
+        };
       }
+
+      qLine.append(qText, dropBtn);
       wrap.append(qLine);
     }
 
@@ -1872,6 +2017,119 @@
     }, 0);
   }
 
+  // 스크랩 인라인 편집기 닫기 (Esc 또는 같은 줄 다시 누름, T45c)
+  function closeScrapInlineEdit(scrapId) {
+    if (!scrapId) return;
+    if (activeScrapEditId === scrapId) {
+      activeScrapEditId = null;
+    }
+    if (shadow) {
+      const editBox = shadow.querySelector(`.scrap-inline-edit[data-id="${CSS.escape(scrapId)}"]`);
+      editBox?.remove();
+      const lineEl = shadow.querySelector(`.sec-shape-line.scrap-line[data-id="${CSS.escape(scrapId)}"]`);
+      lineEl?.classList.remove('active');
+    }
+  }
+
+  // 스크랩 인라인 편집기 열기 / 토글 (T45c)
+  function toggleScrapInlineEdit(item, lineEl, wrap) {
+    if (!item || !lineEl || !wrap) return;
+    const id = item.id;
+    if (activeScrapEditId === id) {
+      closeScrapInlineEdit(id);
+      return;
+    }
+    if (activeScrapEditId) {
+      closeScrapInlineEdit(activeScrapEditId);
+    }
+    if (activeConceptEditId) {
+      closeConceptInlineEdit(activeConceptEditId);
+    }
+
+    activeScrapEditId = id;
+    lineEl.classList.add('active');
+
+    const editBox = document.createElement('div');
+    editBox.className = 'scrap-inline-edit';
+    editBox.dataset.id = id;
+
+    const ta = document.createElement('textarea');
+    ta.className = 'scrap-edit-textarea';
+    ta.maxLength = 1000;
+    ta.placeholder = '스크랩 메모를 적으세요...';
+    ta.value = item.memo || '';
+    autoResize(ta);
+
+    const performScrapMemoSave = () => {
+      const memoText = ta.value.trim().slice(0, 1000);
+      chrome.runtime.sendMessage({
+        type: 'scraps',
+        op: 'memo',
+        id: item.id,
+        memo: memoText,
+      }, (res) => {
+        if (res?.scraps || res?.ok) {
+          item.memo = memoText;
+          const pIdx = currentPageItems.findIndex((i) => i.kind === 'scrap' && i.id === item.id);
+          if (pIdx !== -1) {
+            currentPageItems[pIdx].memo = memoText;
+          }
+          closeScrapInlineEdit(id);
+          // 줄 아래에 메모 한 줄 표시 갱신
+          let memoLine = wrap.querySelector('.scrap-memo-text');
+          if (memoText) {
+            if (!memoLine) {
+              memoLine = document.createElement('div');
+              memoLine.className = 'scrap-memo-text';
+              wrap.append(memoLine);
+            }
+            memoLine.textContent = `↳ ${memoText}`;
+          } else if (memoLine) {
+            memoLine.remove();
+          }
+          showSuccessMeta('메모했어요');
+        } else {
+          const errMsg = res?.error === 'bridge-off' ? BRIDGE_OFF_TEXT : '저장하지 못했어요';
+          showErrorMeta(errMsg);
+        }
+      });
+    };
+
+    ta.addEventListener('input', () => {
+      autoResize(ta);
+    });
+
+    ta.addEventListener('keydown', (e) => {
+      if (e.isComposing) return;
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        e.stopPropagation();
+        performScrapMemoSave();
+        return;
+      }
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        e.preventDefault();
+        e.stopPropagation();
+        e.readglossCardClosed = true;
+        closeScrapInlineEdit(id);
+        return;
+      }
+    });
+
+    const mutInfo = document.createElement('div');
+    mutInfo.className = 'scrap-edit-mut';
+    mutInfo.textContent = '⌘Enter 저장 · Esc 닫기';
+
+    editBox.append(ta, mutInfo);
+    lineEl.after(editBox);
+
+    setTimeout(() => {
+      ta.focus();
+      const len = ta.value.length;
+      ta.setSelectionRange(len, len);
+    }, 0);
+  }
+
   // 모양 줄 렌더링 (메모 줄과 같은 목록, 시간 순서, 작고 옅게, 메모 줄과 구별)
   function createShapeLine(item, sectionKey) {
     if (item.kind === 'memo') {
@@ -1895,11 +2153,31 @@
       line.dataset.conceptId = item.id;
       line.onclick = () => toggleConceptInlineEdit(item, line);
     } else if (item.kind === 'scrap') {
-      line.onclick = () => jumpToMemo({ quote: item.quote, pos: item.pos, url: item.url });
+      line.classList.add('scrap-line');
+      line.dataset.id = item.id;
+
+      const badge = document.createElement('span');
+      badge.className = 'scrap-badge';
+      const bar = document.createElement('span');
+      bar.className = 'scrap-badge-bar';
+      const lbl = document.createElement('span');
+      lbl.className = 'scrap-badge-label';
+      lbl.textContent = '스크랩';
+      badge.append(bar, lbl);
+      line.prepend(badge);
+
+      line.onclick = () => toggleScrapInlineEdit(item, line, wrap);
     }
 
     line.append(textEl);
     wrap.append(line);
+
+    if (item.kind === 'scrap' && item.memo) {
+      const memoEl = document.createElement('div');
+      memoEl.className = 'scrap-memo-text';
+      memoEl.textContent = `↳ ${item.memo}`;
+      wrap.append(memoEl);
+    }
 
     // 이미 열려 있던 편집기면 다시 연결
     if (activeConceptEditId === item.id) {
@@ -1907,6 +2185,14 @@
         if (activeConceptEditId === item.id && shadow && !wrap.querySelector('.concept-inline-edit')) {
           activeConceptEditId = null;
           toggleConceptInlineEdit(item, line);
+        }
+      }, 0);
+    }
+    if (activeScrapEditId === item.id) {
+      setTimeout(() => {
+        if (activeScrapEditId === item.id && shadow && !wrap.querySelector('.scrap-inline-edit')) {
+          activeScrapEditId = null;
+          toggleScrapInlineEdit(item, line, wrap);
         }
       }, 0);
     }
@@ -2060,6 +2346,7 @@
           id: s.id,
           quote: s.quote,
           text: s.quote?.exact || '',
+          memo: s.memo || '',
           headings: s.headings || [],
           pos: s.pos || 0,
           ts: s.ts || 0,
@@ -2196,9 +2483,12 @@
 
       if (!allowSwitch) return;
 
-      // 칸 전환으로 없어지면 activeConceptEditId를 비운다(대기 중 저장은 즉시 보냄, FX-F 5번)
+      // 칸 전환으로 없어지면 activeConceptEditId·activeScrapEditId를 비운다(대기 중 저장은 즉시 보냄, FX-F 5번)
       if (activeConceptEditId) {
         closeConceptInlineEdit(activeConceptEditId);
+      }
+      if (activeScrapEditId) {
+        closeScrapInlineEdit(activeScrapEditId);
       }
 
       currentActiveKey = newKey;
@@ -2310,6 +2600,9 @@
     if (targetKey !== currentActiveKey && activeConceptEditId) {
       closeConceptInlineEdit(activeConceptEditId);
     }
+    if (targetKey !== currentActiveKey && activeScrapEditId) {
+      closeScrapInlineEdit(activeScrapEditId);
+    }
 
     currentActiveKey = targetKey;
     lastTypedAt = 0;
@@ -2325,6 +2618,34 @@
   }
 
   // 작성 모드 렌더링 (소제목 칸 목록)
+  // 쓰는 칸이 비었거나 커서가 맨 앞일 때 Backspace → 그 칸 인용만 뺀다(23-4). 키 처리는 상자 keydown 한 곳에서.
+  function dropQuoteOnBackspace(e) {
+    const ta = e.target;
+    if (!ta?.classList?.contains('sec-textarea')) return false;
+    const key = ta.closest('.sec')?.dataset?.key;
+    if (!key) return false;
+    const memoCore = globalThis.readglossMemo;
+    const hasQuote = Boolean(quotes[key]?.exact);
+    const shouldDrop = memoCore?.shouldDropQuoteOnBackspace?.({
+      key: e.key, composing: e.isComposing,
+      mods: { shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey, meta: e.metaKey },
+      value: ta.value, selStart: ta.selectionStart, selEnd: ta.selectionEnd, hasQuote,
+    });
+    if (!shouldDrop) return false;
+    e.preventDefault();
+    delete quotes[key];
+    saveDrafts();
+    const curStart = ta.selectionStart;
+    const curEnd = ta.selectionEnd;
+    rebuildSectionsUI();
+    const newTa = shadow?.querySelector(`.sec[data-key="${CSS.escape(key)}"] .sec-textarea`);
+    if (newTa) {
+      newTa.focus();
+      try { newTa.setSelectionRange(curStart, curEnd); } catch {}
+    }
+    return true;
+  }
+
   function renderPadUI(root) {
     currentMode = 'pad';
     root.replaceChildren();
@@ -2685,6 +3006,7 @@
 
     // ⌘Enter 저장 · Esc 접기 · ⌥⇧M 목록: 메모장 안 어디에 포커스가 있어도 동작한다. 칸 밖이면 지금 칸 글을 쓴다.
     box.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && dropQuoteOnBackspace(e)) return;
       if ((e.key === 'Escape' || e.key === 'Esc') && e.readglossCardClosed) return;
       const action = memoCore?.padKeyV2 ? memoCore.padKeyV2(e) : null;
       const key = e.target?.closest?.('.sec')?.dataset?.key || currentActiveKey;
@@ -2706,6 +3028,8 @@
         e.preventDefault();
         if (activeConceptEditId) {
           closeConceptInlineEdit(activeConceptEditId);
+        } else if (activeScrapEditId) {
+          closeScrapInlineEdit(activeScrapEditId);
         } else {
           closePad();
         }
@@ -2931,6 +3255,9 @@
     if (activeConceptEditId) {
       closeConceptInlineEdit(activeConceptEditId);
     }
+    if (activeScrapEditId) {
+      closeScrapInlineEdit(activeScrapEditId);
+    }
     if (shadow && currentMode === 'pad') {
       const textareas = shadow.querySelectorAll('.sec-textarea');
       for (const ta of textareas) {
@@ -2951,6 +3278,12 @@
   function openList() {
     clearTimeout(typingTimer);
     stopStudyTimeTimer();
+    if (activeConceptEditId) {
+      closeConceptInlineEdit(activeConceptEditId);
+    }
+    if (activeScrapEditId) {
+      closeScrapInlineEdit(activeScrapEditId);
+    }
     if (shadow && currentMode === 'pad') {
       const textareas = shadow.querySelectorAll('.sec-textarea');
       for (const ta of textareas) {
@@ -3015,6 +3348,26 @@
     });
   }
 
+  // 인용을 소제목 칸에 붙이고 메모장을 열거나 갱신 (T45c 계약)
+  function attachQuote(quote, anchorNode) {
+    if (!quote) return;
+    currentHeadings = collectHeadings();
+    lastHeadingsCount = currentHeadings.length;
+    const targetKey = findHeadingKeyForNode(anchorNode, currentHeadings);
+
+    quotes[targetKey] = quote;
+    currentActiveKey = targetKey;
+    saveDrafts();
+
+    if (isOpen && currentMode === 'pad') {
+      rebuildSectionsUI();
+      lastTypedAt = 0;
+      applyActiveSection(true);
+    } else {
+      openPad(targetKey);
+    }
+  }
+
   // ⌥M with 고른 글 또는 토글 처리
   function handleMemoOpen() {
     const sel = typeof window !== 'undefined' ? window.getSelection() : null;
@@ -3047,25 +3400,8 @@
         return;
       }
 
-      // 3. 고른 글이 든 소제목 칸 key 구하기 (닫힌 사이 바뀌었을 수 있어 지금 페이지 기준으로 다시 모은다)
-      currentHeadings = collectHeadings();
-      lastHeadingsCount = currentHeadings.length;
-      const targetKey = findHeadingKeyForNode(range.startContainer, currentHeadings);
-
-      // 4. 그 칸의 인용으로 quotes[key] = {exact, prefix, suffix}
-      quotes[targetKey] = extracted;
-      currentActiveKey = targetKey;
-      saveDrafts();
-
-      // 5. 접혀 있으면 연다. 칸 화면이 열려 있으면 토글하지 않고 그대로 두고 칸을 다시 그린다.
-      //    목록(⌥⇧M) 화면이면 칸 화면으로 바꿔서 인용이 보이게 한다.
-      if (isOpen && currentMode === 'pad') {
-        rebuildSectionsUI();
-        lastTypedAt = 0;
-        applyActiveSection(true);
-      } else {
-        openPad(targetKey);
-      }
+      // 3. 공통 함수를 통해 인용 붙이고 열기 (T45c)
+      attachQuote(extracted, range.startContainer);
       return;
     }
 
@@ -3270,6 +3606,7 @@
   }
 
   globalThis.readglossMemoPad = globalThis.readglossMemoPad || {};
+  globalThis.readglossMemoPad.attachQuote = attachQuote;
   globalThis.readglossMemoPad.setStudyMode = setStudyMode;
   globalThis.readglossMemoPad.syncPageMargin = syncPageMargin;
   globalThis.readglossMemoPad.getActiveKind = getActiveKind;

@@ -644,6 +644,34 @@
     return { on, width: typeof dockWidthValue === 'number' && Number.isFinite(dockWidthValue) ? dockWidthValue : 360 };
   }
 
+  // Backspace 로 인용 빼기 판정 (순수 함수, T45c)
+  // Backspace이고(조합 중 아님, 조합키 없음) 쓰는 칸 값이 비었거나 커서가 0 위치(선택 없음)이며 그 칸에 인용이 있으면 true
+  function shouldDropQuoteOnBackspace(params) {
+    if (!params || typeof params !== 'object') return false;
+    const { key, composing, mods, value, selStart, selEnd, hasQuote } = params;
+
+    if (key !== 'Backspace') return false;
+    if (composing === true) return false;
+
+    // 조합키 검사 (shift, alt, ctrl, meta)
+    if (typeof mods === 'boolean') {
+      if (mods) return false;
+    } else if (mods && typeof mods === 'object') {
+      if (Boolean(mods.shift || mods.shiftKey || mods.alt || mods.altKey || mods.ctrl || mods.ctrlKey || mods.meta || mods.metaKey)) {
+        return false;
+      }
+    } else if (mods) {
+      return false;
+    }
+
+    if (!hasQuote) return false;
+
+    const isValEmpty = typeof value === 'string' ? value.length === 0 : (value == null || !value);
+    const isZeroNoSel = typeof selStart === 'number' && typeof selEnd === 'number' && selStart === 0 && selEnd === 0;
+
+    return isValEmpty || isZeroNoSel;
+  }
+
   globalThis.readglossMemo = {
     normalizeUrl,
     currentHeading,
@@ -679,6 +707,7 @@
     dockStateToSave,
     formatClock,
     minutesLabel,
+    shouldDropQuoteOnBackspace,
   };
 })();
 

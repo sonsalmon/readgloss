@@ -381,6 +381,33 @@
     return pending;
   }
 
+  // 스크랩 형광펜 클릭 좌표 판정(순수 함수, 23-2).
+  // rectsById: Map 또는 [id, rects][] 또는 { [id]: rects }.
+  // 좌표 (x, y)가 어떤 스크랩 사각형(getClientRects) 안에 들어오면 그 스크랩 id 반환, 없으면 null.
+  function scrapHitAt(rectsById, x, y) {
+    if (!rectsById || typeof x !== 'number' || typeof y !== 'number') return null;
+    const entries = rectsById instanceof Map
+      ? rectsById.entries()
+      : (Array.isArray(rectsById) ? rectsById : Object.entries(rectsById));
+    for (const [id, rects] of entries) {
+      if (!rects) continue;
+      const list = Array.isArray(rects)
+        ? rects
+        : (typeof rects[Symbol.iterator] === 'function' ? [...rects] : [rects]);
+      for (const r of list) {
+        if (!r) continue;
+        const left = r.left ?? r.x ?? 0;
+        const top = r.top ?? r.y ?? 0;
+        const right = r.right ?? (left + (r.width ?? 0));
+        const bottom = r.bottom ?? (top + (r.height ?? 0));
+        if (x >= left && x <= right && y >= top && y <= bottom) {
+          return id;
+        }
+      }
+    }
+    return null;
+  }
+
   globalThis.readglossScrap = {
     quoteOf,
     findQuote,
@@ -395,5 +422,6 @@
     orderInTask,
     buildTree,
     checkPendingScrap,
+    scrapHitAt,
   };
 })();

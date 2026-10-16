@@ -5,17 +5,17 @@
   const FLASH_NAME = 'readgloss-scrap-flash';
   const STYLE_ID = 'readgloss-scrap-style';
 
-  // 스타일 주입: ::highlight(readgloss-scrap){background-color:#FAEEDA}
+  // 스타일 주입: ::highlight(readgloss-scrap) (23-1: 배경만 칠하고 글자색은 정하지 않는다)
   function ensureStyle() {
     if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
       ::highlight(${HIGHLIGHT_NAME}) {
-        background-color: #FAEEDA;
+        background-color: rgba(250, 204, 21, .28);
       }
       ::highlight(${FLASH_NAME}) {
-        background-color: #F7D070;
+        background-color: rgba(250, 204, 21, .55);
       }
     `;
     (document.head || document.documentElement || document.body)?.append(style);
@@ -129,6 +129,7 @@
 
   // 스크랩 하나 형광펜 걷기
   function unpaint(id) {
+    if (activeCardScrapId === id) closeCard();
     knownScraps.delete(id);
     scrapRanges.delete(id);
     found.delete(id);
@@ -162,6 +163,293 @@
       if (core.normText(s.quote?.exact) === exact) return s;
     }
     return null;
+  }
+
+  // 테마(설정 'theme') 동기화
+  let theme = 'auto';
+  try {
+    globalThis.readglossSettings?.load?.().then((s) => {
+      if (s?.theme) theme = s.theme;
+      if (cardHost) {
+        if (theme === 'light' || theme === 'dark') cardHost.setAttribute('data-theme', theme);
+        else cardHost.removeAttribute('data-theme');
+      }
+    }, () => {});
+    globalThis.readglossSettings?.onChange?.((s) => {
+      if (s?.theme) theme = s.theme;
+      if (cardHost) {
+        if (theme === 'light' || theme === 'dark') cardHost.setAttribute('data-theme', theme);
+        else cardHost.removeAttribute('data-theme');
+      }
+    });
+  } catch {}
+
+  // --- 스크랩 카드(Scrap Card, 23-2) ---
+  const CARD_DARK = `--rg-bg: #1e2127; --rg-fg: #e6e8eb; --rg-muted: #9aa3ad; --rg-border: #343a44; --rg-accent: #6b9bff;
+    --rg-accent-soft: rgba(107,155,255,.14); --rg-shadow: 0 8px 28px rgba(0,0,0,.45);`;
+  const CARD_CSS = `
+    .card {
+      --rg-bg: #ffffff;
+      --rg-fg: #1f2328;
+      --rg-muted: #656d76;
+      --rg-border: #e3e6ea;
+      --rg-accent: #2f6feb;
+      --rg-accent-soft: rgba(47,111,235,.10);
+      --rg-shadow: 0 8px 28px rgba(15,23,42,.14), 0 1px 3px rgba(15,23,42,.08);
+      --rg-radius: 8px;
+      box-sizing: border-box;
+      width: 290px;
+      max-width: calc(100vw - 20px);
+      padding: 10px 12px;
+      border-radius: var(--rg-radius);
+      background: var(--rg-bg);
+      color: var(--rg-fg);
+      border: 1px solid var(--rg-border);
+      box-shadow: var(--rg-shadow);
+      font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) { :host(:not([data-theme="light"])) .card { ${CARD_DARK} } }
+    :host([data-theme="dark"]) .card { ${CARD_DARK} }
+    .meta {
+      font-size: 12px;
+      color: var(--rg-muted);
+      margin-bottom: 6px;
+      word-break: keep-all;
+    }
+    .memo-line {
+      font-size: 12.5px;
+      color: var(--rg-fg);
+      background: var(--rg-accent-soft);
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .btn {
+      all: unset;
+      box-sizing: border-box;
+      cursor: pointer;
+      padding: 3px 8px;
+      border-radius: 5px;
+      border: 1px solid var(--rg-border);
+      font-size: 12px;
+      line-height: 1.4;
+      color: var(--rg-fg);
+    }
+    .btn:hover {
+      background: var(--rg-accent-soft);
+      border-color: var(--rg-accent);
+      color: var(--rg-accent);
+    }
+    .btn:focus-visible {
+      outline: 2px solid var(--rg-accent);
+    }
+    .btn-danger:hover {
+      background: #fee2e2;
+      color: #b91c1c;
+      border-color: #fca5a5;
+    }
+    .memobox {
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .memobox[hidden] {
+      display: none;
+    }
+    .memo-input {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 48px;
+      padding: 5px 8px;
+      border-radius: 5px;
+      border: 1px solid var(--rg-border);
+      background: var(--rg-bg);
+      color: var(--rg-fg);
+      font: inherit;
+      font-size: 12px;
+      resize: vertical;
+    }
+    .memo-input:focus-visible {
+      outline: 2px solid var(--rg-accent);
+    }
+  `;
+
+  let cardHost = null;
+  let activeCardScrapId = null;
+
+  function closeCard() {
+    if (cardHost) {
+      cardHost.remove();
+      cardHost = null;
+      activeCardScrapId = null;
+    }
+  }
+
+  function placeCard(cardEl, anchorRect) {
+    if (!cardHost) return;
+    const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    const size = cardEl.getBoundingClientRect();
+    const GAP = 8;
+    const MARGIN = 10;
+    let left = Math.max(MARGIN, Math.min(anchorRect.left, vw - size.width - MARGIN));
+    let top = anchorRect.bottom + GAP;
+    if (top + size.height > vh - MARGIN) {
+      if (anchorRect.top - GAP - size.height >= MARGIN) {
+        top = anchorRect.top - GAP - size.height;
+      } else {
+        top = Math.max(MARGIN, vh - size.height - MARGIN);
+      }
+    }
+    cardHost.style.left = `${left}px`;
+    cardHost.style.top = `${top}px`;
+  }
+
+  function openCard(id) {
+    closeCard();
+    const scrap = knownScraps.get(id);
+    const range = scrapRanges.get(id);
+    if (!scrap || !range) return;
+
+    activeCardScrapId = id;
+
+    const host = document.createElement('readgloss-scrap-card');
+    cardHost = host;
+    host.style.cssText = 'all: initial; position: fixed; z-index: 2147483647;';
+    if (theme === 'light' || theme === 'dark') {
+      host.setAttribute('data-theme', theme);
+    }
+    const shadow = host.attachShadow({ mode: 'closed' });
+
+    const style = document.createElement('style');
+    style.textContent = CARD_CSS;
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-label', '스크랩');
+
+    // 내용: "스크랩 · M월 D일 · 할 일 제목" (글은 textContent)
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    let datePart = '';
+    if (scrap.ts) {
+      const d = new Date(scrap.ts);
+      if (!isNaN(d.getTime())) {
+        datePart = ` · ${d.getMonth() + 1}월 ${d.getDate()}일`;
+      }
+    }
+    const taskTitle = scrap.taskTitle || scrap.task || '인박스';
+    meta.textContent = `스크랩${datePart} · ${taskTitle}`;
+    card.append(meta);
+
+    // 메모 있으면 한 줄 (글은 textContent)
+    if (scrap.memo && scrap.memo.trim()) {
+      const memoEl = document.createElement('div');
+      memoEl.className = 'memo-line';
+      memoEl.textContent = scrap.memo.trim();
+      card.append(memoEl);
+    }
+
+    // 버튼 줄: [인용 Tab] [메모] [스크랩 취소] (글은 textContent)
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+
+    const quoteBtn = document.createElement('button');
+    quoteBtn.type = 'button';
+    quoteBtn.className = 'btn';
+    quoteBtn.textContent = '인용 Tab';
+    quoteBtn.addEventListener('click', () => {
+      const quote = {
+        exact: scrap.quote?.exact ?? '',
+        prefix: scrap.quote?.prefix ?? '',
+        suffix: scrap.quote?.suffix ?? '',
+      };
+      globalThis.readglossMemoPad?.attachQuote(quote, range.startContainer);
+      closeCard();
+    });
+
+    const memoBtn = document.createElement('button');
+    memoBtn.type = 'button';
+    memoBtn.className = 'btn';
+    memoBtn.textContent = '메모';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn btn-danger';
+    cancelBtn.textContent = '스크랩 취소';
+    cancelBtn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'scraps', op: 'remove', id: scrap.id }, (res) => {
+        if (res && !res.error) {
+          unpaint(scrap.id);
+          closeCard();
+        }
+      });
+    });
+
+    actions.append(quoteBtn, memoBtn, cancelBtn);
+    card.append(actions);
+
+    // 메모 입력 영역: 작은 textarea + ⌘Enter 저장
+    const memoBox = document.createElement('div');
+    memoBox.className = 'memobox';
+    memoBox.hidden = true;
+
+    const memoInput = document.createElement('textarea');
+    memoInput.className = 'memo-input';
+    memoInput.rows = 2;
+    memoInput.placeholder = '메모 (⌘Enter 저장)';
+    memoInput.value = scrap.memo || '';
+
+    function saveMemoAction() {
+      const newMemo = memoInput.value.trim();
+      chrome.runtime.sendMessage({ type: 'scraps', op: 'memo', id: scrap.id, memo: newMemo }, (res) => {
+        if (res && !res.error) {
+          update({ ...scrap, memo: newMemo });
+          closeCard();
+        }
+      });
+    }
+
+    memoInput.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        saveMemoAction();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closeCard();
+      }
+    });
+
+    const rects = range.getClientRects();
+    const anchorRect = rects.length > 0 ? rects[0] : range.getBoundingClientRect();
+
+    memoBtn.addEventListener('click', () => {
+      if (memoBox.hidden) {
+        memoBox.hidden = false;
+        placeCard(card, anchorRect);
+        memoInput.focus();
+      } else {
+        memoBox.hidden = true;
+        placeCard(card, anchorRect);
+      }
+    });
+
+    card.append(memoBox);
+
+    shadow.append(style, card);
+    (document.body || document.documentElement).append(host);
+    placeCard(card, anchorRect);
   }
 
   // --- 넘김 막대(Navigation Bar) ---
@@ -401,7 +689,102 @@
     openBar,
     openFirstBar,
     closeBar,
+    openCard,
+    closeCard,
   };
+
+  // --- 스크랩 형광펜 클릭 및 키 이벤트 접착(23-2) ---
+  if (typeof document !== 'undefined') {
+    // document click (capture): 선택이 비어 있고, 우리 화면 밖, 스크랩 Range 안, 링크면 ⌥클릭
+    document.addEventListener(
+      'click',
+      (e) => {
+        const sel = window.getSelection?.();
+        const selectionEmpty = !sel || sel.isCollapsed || !sel.toString().trim();
+        if (!selectionEmpty) return;
+
+        const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+        const inOurUi = path.some((el) => {
+          if (!el || el.nodeType !== 1) return false;
+          const tag = (el.tagName || el.localName || '').toLowerCase();
+          return tag.startsWith('readgloss-') || Boolean(el.matches?.('[data-readgloss]'));
+        });
+        if (inOurUi) return;
+
+        const rectsById = new Map();
+        for (const [id, range] of scrapRanges.entries()) {
+          if (range && range.startContainer?.isConnected) {
+            rectsById.set(id, range.getClientRects());
+          }
+        }
+
+        const hitId = globalThis.readglossScrap?.scrapHitAt?.(rectsById, e.clientX, e.clientY);
+        if (!hitId) return;
+
+        const targetEl = e.target?.nodeType === 1 ? e.target : e.target?.parentElement;
+        const link = targetEl?.closest?.('a[href]');
+        const inLink = Boolean(link);
+        if (inLink && !e.altKey) return;
+        if (inLink && e.altKey) {
+          e.preventDefault();
+        }
+
+        openCard(hitId);
+      },
+      true,
+    );
+
+    // 밖 클릭으로 닫힘
+    document.addEventListener(
+      'mousedown',
+      (e) => {
+        if (cardHost && !e.composedPath().includes(cardHost)) {
+          closeCard();
+        }
+      },
+      true,
+    );
+
+    // Esc: e.readglossCardClosed가 이미 참이면 무시, 아니면 닫고 표시를 세운다
+    // Tab: 카드가 열려 있을 때 Tab(Shift·조합키 없이, 입력칸 아님) -> attachQuote 후 카드 닫기, preventDefault
+    document.addEventListener(
+      'keydown',
+      (e) => {
+        if (!cardHost) return;
+
+        if (e.key === 'Escape') {
+          if (e.readglossCardClosed) return;
+          e.preventDefault();
+          e.readglossCardClosed = true;
+          closeCard();
+          return;
+        }
+
+        if (e.key === 'Tab') {
+          if (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+          const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+          const isInput = path.some(
+            (n) => /^(input|textarea|select)$/i.test(n?.localName || n?.tagName || '') || n?.isContentEditable === true,
+          );
+          if (isInput) return;
+
+          e.preventDefault();
+          const scrap = knownScraps.get(activeCardScrapId);
+          const range = scrapRanges.get(activeCardScrapId);
+          if (scrap && range) {
+            const quote = {
+              exact: scrap.quote?.exact ?? '',
+              prefix: scrap.quote?.prefix ?? '',
+              suffix: scrap.quote?.suffix ?? '',
+            };
+            globalThis.readglossMemoPad?.attachQuote(quote, range.startContainer);
+          }
+          closeCard();
+        }
+      },
+      true,
+    );
+  }
 
   // --- 페이지 로드 시 GET /scraps?url= 및 10초 재시도 관찰자 ---
   let retryObserver = null;
