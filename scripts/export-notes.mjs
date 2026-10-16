@@ -49,7 +49,41 @@ export function renderMemo(m) {
   const text = String(m?.text ?? '').trim();
 
   if (exact) {
-    if (m?.quote?.code) {
+    if (m?.quote?.table) {
+      const table = m.quote.table;
+      let head = Array.isArray(table.head) ? [...table.head] : null;
+      let rows = Array.isArray(table.rows) ? [...table.rows] : [];
+
+      if (!head || head.length === 0) {
+        if (rows.length > 0) {
+          head = rows[0];
+          rows = rows.slice(1);
+        } else {
+          head = [];
+        }
+      }
+
+      const formatCell = (c) => String(c ?? '').replace(/\r?\n/g, ' ').replace(/\|/g, '\\|').trim();
+
+      if (head.length > 0) {
+        lines.push(`| ${head.map(formatCell).join(' | ')} |`);
+        lines.push(`| ${head.map(() => '---').join(' | ')} |`);
+        for (const row of rows) {
+          const cells = head.map((_, i) => formatCell(row[i] ?? ''));
+          lines.push(`| ${cells.join(' | ')} |`);
+        }
+      }
+
+      const rawUrl = m?.url ?? '';
+      const link = rawUrl ? textFragmentUrl(rawUrl, exact) : '';
+      if (link) {
+        lines.push(`[↗](${link})`);
+      }
+
+      if (text) {
+        lines.push(''); // 메모 인용 뒤 메모 글 사이에 빈 줄
+      }
+    } else if (m?.quote?.code) {
       const codeInfo = m.quote.code;
       if (codeInfo.block) {
         const lang = (typeof codeInfo.lang === 'string' && codeInfo.lang !== '자동') ? codeInfo.lang : '';

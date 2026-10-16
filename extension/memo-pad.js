@@ -940,6 +940,49 @@
       display: block;
       -webkit-line-clamp: unset;
     }
+    .sec-quote.table-quote .sec-quote-text,
+    .sec-memo-quote-line.table-quote .sec-memo-quote-text {
+      display: block;
+      -webkit-line-clamp: unset;
+      overflow: visible;
+    }
+    .sec-quote-table-wrap {
+      overflow-x: auto;
+      max-width: 100%;
+      margin: 2px 0;
+    }
+    .sec-quote-table {
+      font-size: 0.85em;
+      line-height: 1.35;
+      border-collapse: collapse;
+      width: 100%;
+    }
+    .sec-quote-table th,
+    .sec-quote-table td {
+      border: 1px solid var(--bd);
+      padding: 2px 6px;
+      text-align: left;
+      vertical-align: top;
+      word-break: break-word;
+    }
+    .sec-quote-table th {
+      background: var(--bg);
+      font-weight: 600;
+    }
+    .table-quote-code,
+    .sec-quote-table code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.9em;
+      background: rgba(0, 0, 0, 0.05);
+      padding: 1px 3px;
+      border-radius: 3px;
+    }
+    @media (prefers-color-scheme: dark) {
+      .table-quote-code,
+      .sec-quote-table code {
+        background: rgba(255, 255, 255, 0.1);
+      }
+    }
     .sec-quote-lang-select {
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 11px;
@@ -1658,7 +1701,7 @@
     const pageTitle = (document.title || '').slice(0, 300);
     const currentUrl = location.href;
     const quote = currentQuote ? {
-      exact: currentQuote.exact.slice(0, 1000),
+      exact: currentQuote.exact.slice(0, currentQuote.table ? 4000 : 1000),
       prefix: (currentQuote.prefix || '').slice(0, 64),
       suffix: (currentQuote.suffix || '').slice(0, 64),
       ...(currentQuote.translation ? { translation: currentQuote.translation.slice(0, 2000) } : {}),
@@ -1668,6 +1711,7 @@
           block: Boolean(currentQuote.code.block),
         },
       } : {}),
+      ...(currentQuote.table ? { table: currentQuote.table } : {}),
       ...(currentQuote.source === 'tutor' ? {
         source: 'tutor',
         tutor: {
@@ -1822,6 +1866,70 @@
     }
   }
 
+  // 표 인용 표시를 위한 작은 <table> 요소 생성 (T50)
+  // DOM은 textContent로만 만들며 innerHTML은 쓰지 않는다.
+  function renderTableElement(tableData) {
+    if (!tableData || typeof tableData !== 'object') return null;
+    const wrap = document.createElement('div');
+    wrap.className = 'sec-quote-table-wrap';
+
+    const table = document.createElement('table');
+    table.className = 'sec-quote-table';
+
+    const renderCellNodes = (container, text) => {
+      const s = typeof text === 'string' ? text : (text == null ? '' : String(text));
+      if (!s) return;
+      const regex = /(?:``([\s\S]*?)``|`([^`\r\n]*?)`)/g;
+      let lastIndex = 0;
+      let match;
+      while ((match = regex.exec(s)) !== null) {
+        if (match.index > lastIndex) {
+          container.append(document.createTextNode(s.slice(lastIndex, match.index)));
+        }
+        const codeText = match[1] !== undefined ? match[1] : match[2];
+        const codeEl = document.createElement('code');
+        codeEl.className = 'table-quote-code';
+        codeEl.textContent = codeText;
+        container.append(codeEl);
+        lastIndex = regex.lastIndex;
+      }
+      if (lastIndex < s.length) {
+        container.append(document.createTextNode(s.slice(lastIndex)));
+      }
+    };
+
+    if (tableData.head && Array.isArray(tableData.head)) {
+      const thead = document.createElement('thead');
+      const tr = document.createElement('tr');
+      for (const h of tableData.head) {
+        const th = document.createElement('th');
+        renderCellNodes(th, h);
+        tr.append(th);
+      }
+      thead.append(tr);
+      table.append(thead);
+    }
+
+    if (Array.isArray(tableData.rows)) {
+      const tbody = document.createElement('tbody');
+      for (const row of tableData.rows) {
+        const tr = document.createElement('tr');
+        if (Array.isArray(row)) {
+          for (const c of row) {
+            const td = document.createElement('td');
+            renderCellNodes(td, c);
+            tr.append(td);
+          }
+        }
+        tbody.append(tr);
+      }
+      table.append(tbody);
+    }
+
+    wrap.append(table);
+    return wrap;
+  }
+
   function createMemoLine(m, sectionKey) {
     const wrap = document.createElement('div');
     wrap.className = 'sec-memo-wrap';
@@ -1875,7 +1983,18 @@
         });
       };
 
-      if (m.quote.source === 'tutor') {
+      if (m.quote.table) {
+        qLine.classList.add('table-quote');
+        const tableEl = renderTableElement(m.quote.table);
+        if (tableEl) {
+          qText.append(tableEl);
+        }
+        qText.title = '인용 자리로 이동';
+        qText.onclick = (e) => {
+          if (e.target === dropBtn) return;
+          jumpToMemo(m);
+        };
+      } else if (m.quote.source === 'tutor') {
         const timeStr = m.quote.tutor?.time || '';
         let isExpanded = false;
         const renderText = () => {
@@ -2848,7 +2967,16 @@
           const isTutor = qData.source === 'tutor';
           const timeStr = qData.tutor?.time || '';
 
-          if (isTutor) {
+          if (qData.table) {
+            quoteEl.classList.add('table-quote');
+            const tableEl = renderTableElement(qData.table);
+            if (tableEl) {
+              quoteText.append(tableEl);
+            }
+            quoteEl.onclick = (e) => {
+              if (e.target === quoteDel) return;
+            };
+          } else if (isTutor) {
             let isExpanded = false;
             const renderQuoteText = () => {
               quoteText.textContent = isExpanded ? `❝ 튜터 ${timeStr}\n${qData.exact}` : `❝ 튜터 ${timeStr} · ${qData.exact.slice(0, 60)}${qData.exact.length > 60 ? '…' : ''}`;
@@ -3530,6 +3658,36 @@
     }
   }
 
+  // 표 칸 안의 글 추출: code·kbd·samp 요소는 백틱(글에 백틱 있으면 이중 백틱)으로 감싸고 나머지는 textContent (T50)
+  function extractTableCellText(cell) {
+    if (!cell) return '';
+    let result = '';
+    function walk(node) {
+      if (!node) return;
+      if (node.nodeType === 3) {
+        result += node.nodeValue || '';
+        return;
+      }
+      if (node.nodeType === 1) {
+        const tag = (node.localName || node.tagName || '').toLowerCase();
+        if (tag === 'code' || tag === 'kbd' || tag === 'samp') {
+          const t = node.textContent || '';
+          if (t.includes('`')) {
+            result += `\`\`${t}\`\``;
+          } else {
+            result += `\`${t}\``;
+          }
+          return;
+        }
+        for (let child = node.firstChild; child; child = child.nextSibling) {
+          walk(child);
+        }
+      }
+    }
+    walk(cell);
+    return result;
+  }
+
   // ⌥M with 고른 글 또는 토글 처리 (scrap: Tab 경로에서 스크랩 동시 실행)
   function handleMemoOpen({ scrap = false } = {}) {
     const sel = window.getSelection();
@@ -3568,6 +3726,37 @@
         }
         showPadToastNotice('이 글은 인용할 수 없어요', 1500);
         return;
+      }
+
+      // 표 인용 검사 (T50): 범위 시작·끝의 closest('table')이 같은 표면 rowsInfo를 구성하여 표 인용 생성
+      if (range) {
+        const startEl = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+        const endEl = range.endContainer.nodeType === 1 ? range.endContainer : range.endContainer.parentElement;
+        const startTable = startEl?.closest('table');
+        const endTable = endEl?.closest('table');
+        if (startTable && endTable && startTable === endTable) {
+          const rowsInfo = [];
+          for (const tr of startTable.rows) {
+            const selected = range.intersectsNode(tr);
+            const inThead = tr.parentElement?.localName === 'thead';
+            const cells = [];
+            for (const cell of tr.cells) {
+              const th = cell.localName === 'th';
+              const text = extractTableCellText(cell);
+              cells.push({ text, th });
+            }
+            rowsInfo.push({ cells, inThead, selected });
+          }
+          const memoCore = globalThis.readglossMemo;
+          const tableResult = memoCore?.tableQuoteFrom ? memoCore.tableQuoteFrom(rowsInfo) : null;
+          if (tableResult?.table) {
+            extracted.table = tableResult.table;
+            delete extracted.translation;
+            if (tableResult.truncated) {
+              showPadToastNotice('표가 커서 30줄까지만 담았어요', 2000);
+            }
+          }
+        }
       }
 
       // 3. 드래그 + Tab 경로: 인용을 붙이기 전에(기다리지 말고 동시에) scrapRange 호출

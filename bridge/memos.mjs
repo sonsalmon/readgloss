@@ -16,6 +16,7 @@ export const LIMIT = {
   title: 300,
   url: 2000,
   quoteExact: 1000,
+  quoteExactTable: 4000,
   quoteTranslation: 2000,
   tutorTitle: 120,
 };
@@ -96,11 +97,15 @@ export function parseMemoOp(v) {
       selection = v.selection;
     }
 
-    // 8. quote ({ exact(1~1000), prefix(<=64), suffix(<=64), source, tutor } | null)
+    // 8. quote ({ exact(1~1000 또는 table 시 1~4000), prefix(<=64), suffix(<=64), translation, code, table, source, tutor } | null)
     let quote = null;
     if (v.quote !== undefined && v.quote !== null) {
       if (typeof v.quote !== 'object' || Array.isArray(v.quote)) return null;
-      if (typeof v.quote.exact !== 'string' || v.quote.exact.length < 1 || v.quote.exact.length > LIMIT.quoteExact) {
+
+      const hasTable = v.quote.table !== undefined && v.quote.table !== null;
+      const maxQuoteExact = hasTable ? LIMIT.quoteExactTable : LIMIT.quoteExact;
+
+      if (typeof v.quote.exact !== 'string' || v.quote.exact.length < 1 || v.quote.exact.length > maxQuoteExact) {
         return null;
       }
 
@@ -140,6 +145,37 @@ export function parseMemoOp(v) {
         quote.code = {
           lang: v.quote.code.lang,
           block: v.quote.code.block,
+        };
+      }
+
+      if (hasTable) {
+        const tbl = v.quote.table;
+        if (!tbl || typeof tbl !== 'object' || Array.isArray(tbl)) return null;
+
+        let head = null;
+        if (tbl.head !== null && tbl.head !== undefined) {
+          if (!Array.isArray(tbl.head) || tbl.head.length < 1 || tbl.head.length > 8) return null;
+          for (const h of tbl.head) {
+            if (typeof h !== 'string' || h.length > 300) return null;
+          }
+          head = [...tbl.head];
+        }
+
+        if (!Array.isArray(tbl.rows) || tbl.rows.length < 1 || tbl.rows.length > 30) return null;
+        const rows = [];
+        for (const r of tbl.rows) {
+          if (!Array.isArray(r) || r.length < 1 || r.length > 8) return null;
+          const rowCells = [];
+          for (const cell of r) {
+            if (typeof cell !== 'string' || cell.length > 300) return null;
+            rowCells.push(cell);
+          }
+          rows.push(rowCells);
+        }
+
+        quote.table = {
+          head,
+          rows,
         };
       }
 
@@ -243,6 +279,18 @@ function formatMemo(node) {
                 code: {
                   lang: d.quote.code.lang ?? '',
                   block: Boolean(d.quote.code.block),
+                },
+              }
+            : {}),
+          ...(d.quote.table && typeof d.quote.table === 'object'
+            ? {
+                table: {
+                  head: Array.isArray(d.quote.table.head)
+                    ? [...d.quote.table.head]
+                    : null,
+                  rows: Array.isArray(d.quote.table.rows)
+                    ? d.quote.table.rows.map((r) => (Array.isArray(r) ? [...r] : []))
+                    : [],
                 },
               }
             : {}),

@@ -793,6 +793,88 @@
     return '';
   }
 
+  // 표 인용 생성 순수 함수 (T50)
+  // rowsInfo: [{ cells: [{ text, th }], inThead, selected }]
+  function tableQuoteFrom(rowsInfo) {
+    if (!Array.isArray(rowsInfo) || rowsInfo.length === 0) return null;
+
+    const MAX_COLS = 8;
+    const MAX_ROWS = 30;
+    const MAX_CELL_LEN = 300;
+
+    let truncated = false;
+
+    // 머리줄 = inThead인 첫 줄, 없으면 첫 줄의 칸이 모두 th일 때 그 줄, 없으면 null
+    let headerRow = rowsInfo.find((r) => Boolean(r?.inThead)) || null;
+    if (!headerRow && rowsInfo[0]?.cells?.length > 0 && rowsInfo[0].cells.every((c) => Boolean(c?.th))) {
+      headerRow = rowsInfo[0];
+    }
+
+    // rows = selected인 줄 중 머리줄이 아닌 것
+    const candidateRows = rowsInfo.filter((r) => Boolean(r?.selected) && r !== headerRow);
+    if (candidateRows.length === 0) return null;
+
+    let selectedRows = candidateRows;
+    if (selectedRows.length > MAX_ROWS) {
+      selectedRows = selectedRows.slice(0, MAX_ROWS);
+      truncated = true;
+    }
+
+    function cleanCell(t) {
+      const raw = typeof t === 'string' ? t : (t == null ? '' : String(t));
+      const cleaned = raw.replace(/\s+/g, ' ').trim();
+      if (cleaned.length > MAX_CELL_LEN) {
+        truncated = true;
+        return cleaned.slice(0, MAX_CELL_LEN);
+      }
+      return cleaned;
+    }
+
+    let head = null;
+    if (headerRow) {
+      const cells = Array.isArray(headerRow.cells) ? headerRow.cells : [];
+      if (cells.length > MAX_COLS) {
+        truncated = true;
+      }
+      head = cells.slice(0, MAX_COLS).map((c) => cleanCell(c?.text));
+    }
+
+    const rows = [];
+    for (const r of selectedRows) {
+      const cells = Array.isArray(r.cells) ? r.cells : [];
+      if (cells.length > MAX_COLS) {
+        truncated = true;
+      }
+      const rowCells = cells.slice(0, MAX_COLS).map((c) => cleanCell(c?.text));
+      rows.push(rowCells);
+    }
+
+    // 짧은 줄은 '' 로 채워 칸 수를 맞춘다
+    const colCounts = [];
+    if (head) colCounts.push(head.length);
+    for (const r of rows) colCounts.push(r.length);
+    const targetCols = Math.max(1, ...colCounts);
+
+    if (head) {
+      while (head.length < targetCols) {
+        head.push('');
+      }
+    }
+    for (const r of rows) {
+      while (r.length < targetCols) {
+        r.push('');
+      }
+    }
+
+    return {
+      table: {
+        head,
+        rows,
+      },
+      truncated,
+    };
+  }
+
   globalThis.readglossMemo = {
     normalizeUrl,
     currentHeading,
@@ -833,6 +915,7 @@
     codeQuoteKind,
     guessCodeLang,
     CODE_LANG_LIST,
+    tableQuoteFrom,
   };
 })();
 
