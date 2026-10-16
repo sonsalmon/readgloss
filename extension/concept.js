@@ -589,7 +589,7 @@
     closeCard();
 
     const conceptId = seed.id || null;
-    const initialName = (seed.name || '').trim().slice(0, 80);
+    const initialName = (seed.name || '').trim().replace(/\s+/g, ' ').slice(0, 80);
     const scrapId = seed.scrapId || null;
 
     const targetNode = seed.range?.startContainer ?? seed.range ?? (window.getSelection()?.anchorNode ?? document.body);
@@ -843,17 +843,30 @@
     titleEl.className = 'title';
     titleEl.textContent = conceptId ? '개념 고치기' : '내 개념으로';
 
+    // 입력 칸 변수 (Tab 순서 이동에 상호 참조)
+    const nameIn = document.createElement('input');
+    const aliasIn = document.createElement('input');
+    const defIn = document.createElement('textarea');
+
     // 이름
     const nameField = document.createElement('div');
     nameField.className = 'field';
     const nameLabel = document.createElement('label');
     nameLabel.className = 'label';
     nameLabel.textContent = '개념 이름 (1~80자)';
-    const nameIn = document.createElement('input');
     nameIn.className = 'input';
     nameIn.type = 'text';
     nameIn.maxLength = 80;
     nameIn.value = initialName;
+    nameIn.addEventListener('keydown', (e) => {
+      if (e.isComposing) return;
+      if (e.key === 'Tab' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        aliasIn.focus();
+        const len = aliasIn.value.length;
+        aliasIn.setSelectionRange(len, len);
+      }
+    });
     nameField.append(nameLabel, nameIn);
 
     // 다른 이름
@@ -862,11 +875,24 @@
     const aliasLabel = document.createElement('label');
     aliasLabel.className = 'label';
     aliasLabel.textContent = '다른 이름 (같은 개념의 다른 이름, 쉼표로 · 최대 5개)';
-    const aliasIn = document.createElement('input');
     aliasIn.className = 'input';
     aliasIn.type = 'text';
     aliasIn.placeholder = '접근 통제, AC';
     aliasIn.value = Array.isArray(seed.aliases) ? seed.aliases.join(', ') : (seed.aliases || '');
+    aliasIn.addEventListener('keydown', (e) => {
+      if (e.isComposing) return;
+      if (e.key === 'Tab' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        defIn.focus();
+        const len = defIn.value.length;
+        defIn.setSelectionRange(len, len);
+      } else if (e.key === 'Tab' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        nameIn.focus();
+        const len = nameIn.value.length;
+        nameIn.setSelectionRange(len, len);
+      }
+    });
     aliasField.append(aliasLabel, aliasIn);
 
     // 태그 줄
@@ -959,7 +985,6 @@
     const defLabel = document.createElement('label');
     defLabel.className = 'label';
     defLabel.textContent = '내 정의 (비우면 나중에 볼 것 · 500자까지)';
-    const defIn = document.createElement('textarea');
     defIn.className = 'textarea';
     defIn.rows = 3;
     defIn.maxLength = 500;
@@ -967,7 +992,7 @@
     const initialDef = seed.definition || '';
     defIn.value = globalThis.readglossMdList?.ensureStartsList ? globalThis.readglossMdList.ensureStartsList(initialDef) : initialDef;
 
-    // 마크다운 목록 단축키: Enter, Shift+Enter, Tab, Shift+Tab
+    // 마크다운 목록 단축키: Enter, Shift+Enter, Tab, Shift+Tab (T48: 맨 바깥 줄 Shift+Tab은 다른 이름 칸으로)
     defIn.addEventListener('keydown', (e) => {
       if (e.isComposing) return;
       const md = globalThis.readglossMdList;
@@ -981,6 +1006,23 @@
       } else if (e.key === 'Tab' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
         res = md.onTab(defIn.value, defIn.selectionStart, defIn.selectionEnd, false);
       } else if (e.key === 'Tab' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const text = defIn.value;
+        let start = Math.max(0, Math.min(defIn.selectionStart || 0, text.length));
+        let end = Math.max(0, Math.min(defIn.selectionEnd || 0, text.length));
+        if (start > end) [start, end] = [end, start];
+        const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+        let lineEnd = text.indexOf('\n', end);
+        if (lineEnd === -1) lineEnd = text.length;
+        const lines = text.slice(lineStart, lineEnd).split('\n');
+        const hasIndent = lines.some((l) => /^ +/.test(l));
+
+        if (!hasIndent) {
+          e.preventDefault();
+          aliasIn.focus();
+          const len = aliasIn.value.length;
+          aliasIn.setSelectionRange(len, len);
+          return;
+        }
         res = md.onTab(defIn.value, defIn.selectionStart, defIn.selectionEnd, true);
       }
 
@@ -1309,9 +1351,10 @@
     formHost.style.left = `${pos.left}px`;
     formHost.style.top = `${pos.top}px`;
 
-    // 초기 포커스
-    if (!initialName) nameIn.focus();
-    else defIn.focus();
+    // 초기 포커스: 처음 커서는 이름 칸(글 끝) (T48)
+    nameIn.focus();
+    const len = nameIn.value.length;
+    nameIn.setSelectionRange(len, len);
   }
 
   // --- saveLater: 칸 없이 바로 나중에 볼 것으로 저장 ---

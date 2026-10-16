@@ -2536,7 +2536,7 @@
     // 포커스 복귀 여부 판정 (16-6, FX-F 3번):
     // 메모장 안에 이미 커서가 있었을 때만 무조건 되돌리고,
     // 아니면 기본 포커스 판정(shouldReturnFocus·getActiveKind)을 거쳐 허용될 때만 포커스
-    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    const sel = window.getSelection();
     const selectionCollapsed = sel ? sel.isCollapsed : true;
     const cardOpen = isCardOpen();
     const activeKind = getActiveKind(docActive);
@@ -3396,7 +3396,7 @@
 
   // ⌥M with 고른 글 또는 토글 처리 (scrap: Tab 경로에서 스크랩 동시 실행)
   function handleMemoOpen({ scrap = false } = {}) {
-    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    const sel = window.getSelection();
     const hasSelection = sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.toString().trim().length > 0;
 
     let isOurHost = false;
@@ -3461,24 +3461,67 @@
     }
   }
 
-  // 단축키 커맨드(memo-open, memo-list) 메시지 리스너
-  // 글을 고른 채 Tab → ⌥M 과 같이 인용으로 메모장 열기(10-16). 페이지 Tab 이동은 고른 글이 있을 때만 가로챈다.
+  // 단축키 커맨드(memo-open, memo-list) 및 고른 글 단축키(Tab = 인용, D = 개념) (T48)
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Tab') return;
     const sel = window.getSelection();
     const hasSelection = Boolean(sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.toString().trim().length > 0);
     const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
     const inOurUi = path.some((n) => typeof n?.localName === 'string' && n.localName.startsWith('readgloss-'));
     const memoCore = globalThis.readglossMemo;
-    const ok = memoCore?.shouldTabQuote?.({
-      key: e.key, shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey, meta: e.metaKey, composing: e.isComposing,
-      hasSelection, pageField: memoCore.isPageField(document.activeElement), inOurUi,
-    });
-    if (!ok) return;
-    e.preventDefault();
-    e.stopPropagation();
-    handleMemoOpen({ scrap: true });
+    const pageField = memoCore?.isPageField ? memoCore.isPageField(document.activeElement) : false;
+
+    const action = memoCore?.shortcutAction?.(e, { hasSelection, pageField, inOurUi });
+
+    if (!action) return;
+
+    if (action === 'tab-quote') {
+      e.preventDefault();
+      e.stopPropagation();
+      handleMemoOpen({ scrap: true });
+    } else if (action === 'concept') {
+      e.preventDefault();
+      e.stopPropagation();
+      globalThis.readglossSelectionUi?.close?.();
+      globalThis.readglossDictCardUi?.close?.();
+
+      const rawText = sel.toString();
+      const name = rawText.trim().replace(/\s+/g, ' ').slice(0, 80);
+      const range = sel.getRangeAt(0);
+      const anchor = globalThis.readglossToast?.rectOf ? globalThis.readglossToast.rectOf(range) : undefined;
+      const existing = globalThis.readglossScrapPage?.findExisting?.(name);
+      const scrapId = existing?.id ?? undefined;
+
+      let sentence = '';
+      if (range) {
+        try {
+          const blockOf = globalThis.readglossBlockOf;
+          const block = blockOf ? blockOf(range.startContainer) : null;
+          if (block && globalThis.readgloss?.plainTextAt && globalThis.readgloss?.extractSentence) {
+            const { text: plain, offset } = globalThis.readgloss.plainTextAt(block, range.startContainer, range.startOffset);
+            sentence = globalThis.readgloss.extractSentence(plain, offset, name.length);
+          }
+        } catch {}
+      }
+
+      const seed = {
+        name,
+        range,
+        anchor,
+        ...(scrapId ? { scrapId } : {}),
+        ...(sentence ? { sentence } : {}),
+      };
+
+      globalThis.readglossConceptPage?.openForm?.(seed);
+    }
+    // 'code'는 다음 작업이 쓴다 — 지금은 'code'를 돌려도 처리하지 않음
   }, true);
+
+  // 개념 저장 뒤 메모장에 바로 보이기 (T48)
+  window.addEventListener('readgloss:concepts-updated', () => {
+    if (isOpen && currentMode === 'pad') {
+      loadPageShapesAndMemos();
+    }
+  });
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type !== 'memo-command') return;
@@ -3586,7 +3629,7 @@
     clearTimeout(returnFocusTimer);
     returnFocusTimer = setTimeout(() => {
       if (!isOpen || currentMode !== 'pad' || isComposing) return;
-      const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+      const sel = window.getSelection();
       const selectionCollapsed = sel ? sel.isCollapsed : true;
       const cardOpen = isCardOpen();
       const activeKind = getActiveKind(document.activeElement);

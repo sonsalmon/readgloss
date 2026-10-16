@@ -127,7 +127,7 @@ test('소스 검사: Tab 경로에서는 scrapRange 를 호출하고 인용은 �
   // Tab keydown 에서 scrapRange 호출로 이어지는 경로 (handleMemoOpen({ scrap: true }))
   assert.match(
     memoPadSrc,
-    /['"]Tab['"][\s\S]*?handleMemoOpen\s*\(\s*\{[\s\S]*?scrap\s*:\s*true[\s\S]*?\}\s*\)/,
+    /['"]tab-quote['"][\s\S]*?handleMemoOpen\s*\(\s*\{[\s\S]*?scrap\s*:\s*true[\s\S]*?\}\s*\)/,
     'Tab keydown 시 handleMemoOpen({ scrap: true }) 를 호출해야 한다',
   );
 

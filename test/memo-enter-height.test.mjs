@@ -24,5 +24,5 @@ test('글을 고른 채 Tab: shouldTabQuote 판정과 handleMemoOpen 연결', as
   assert.equal(shouldTabQuote({ ...base, pageField: true }), false, '입력칸 안 Tab 은 그대로');
   assert.equal(shouldTabQuote({ ...base, inOurUi: true }), false, '우리 화면 안 Tab 은 그대로');
   assert.equal(shouldTabQuote({ ...base, composing: true }), false);
-  assert.match(src, /if \(!ok\) return;\s*\n\s*e\.preventDefault\(\);\s*\n\s*e\.stopPropagation\(\);\s*\n\s*handleMemoOpen\(\{ scrap: true \}\);/);
+  assert.match(src, /if \(action === 'tab-quote'\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*e\.stopPropagation\(\);\s*\n\s*handleMemoOpen\(\{ scrap: true \}\);/);
 });

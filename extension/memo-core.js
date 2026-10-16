@@ -226,9 +226,46 @@
     return null;
   }
 
-  // 글을 고른 채 Tab = 고른 글을 인용으로 메모장 열기(⌥M 과 같음, 10-16 정범 요청). 고른 글이 없거나 입력칸·우리 화면이면 Tab 은 원래대로.
-  function shouldTabQuote({ key, shift, alt, ctrl, meta, composing, hasSelection, pageField, inOurUi }) {
-    return key === 'Tab' && !shift && !alt && !ctrl && !meta && !composing && hasSelection === true && !pageField && !inOurUi;
+  // 글을 고른 채 단축키 판정 순수 함수 (T48): 'tab-quote' | 'concept' | 'code' | null
+  // Tab = 인용 메모장, d·D·ㅇ·KeyD = 내 개념 칸, c·C·ㅊ·KeyC = 코드 인용(다음 작업용).
+  // 고른 글 없음, 페이지 입력칸, 우리 화면 안, 조합키(shift/alt/ctrl/meta), 한글 조합 중이면 null.
+  function shortcutAction(e, ctx) {
+    if (!e || typeof e !== 'object') return null;
+    const c = (ctx && typeof ctx === 'object') ? ctx : {};
+
+    const shift = Boolean(e.shiftKey ?? e.shift ?? c.shiftKey ?? c.shift);
+    const alt = Boolean(e.altKey ?? e.alt ?? c.altKey ?? c.alt);
+    const ctrl = Boolean(e.ctrlKey ?? e.ctrl ?? c.ctrlKey ?? c.ctrl);
+    const meta = Boolean(e.metaKey ?? e.meta ?? c.metaKey ?? c.meta);
+    const composing = Boolean(e.isComposing ?? e.composing ?? c.isComposing ?? c.composing);
+
+    if (shift || alt || ctrl || meta || composing) return null;
+
+    const hasSelection = Boolean(c.hasSelection ?? e.hasSelection);
+    const pageField = Boolean(c.pageField ?? e.pageField);
+    const inOurUi = Boolean(c.inOurUi ?? e.inOurUi);
+
+    if (!hasSelection || pageField || inOurUi) return null;
+
+    const key = e.key;
+    const code = e.code;
+
+    if (key === 'Tab') {
+      return 'tab-quote';
+    }
+    if (key === 'd' || key === 'D' || key === 'ㅇ' || code === 'KeyD') {
+      return 'concept';
+    }
+    if (key === 'c' || key === 'C' || key === 'ㅊ' || code === 'KeyC') {
+      return 'code';
+    }
+    return null;
+  }
+
+  // 글을 고른 채 Tab = 고른 글을 인용으로 메모장 열기 (shortcutAction과 합침)
+  function shouldTabQuote(params) {
+    if (!params || typeof params !== 'object') return false;
+    return shortcutAction(params, params) === 'tab-quote';
   }
 
   // 페이지의 입력칸(input·textarea·select·편집 영역)인지. 메모장이 커서를 빼앗지 않을지 가릴 때 쓴다.
@@ -690,6 +727,7 @@
     fromAnchored,
     isPageField,
     shouldTabQuote,
+    shortcutAction,
     canSave,
     dockWidth,
     pageMarginFor,
