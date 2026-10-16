@@ -126,7 +126,7 @@
       const a = shadowRoot?.activeElement;
       return !!a && (a.localName === 'input' || a.localName === 'textarea' || a.isContentEditable === true);
     },
-    scrapRange: (range) => scrapRange(range),
+    scrapRange: (range, opts) => scrapRange(range, opts),
     currentTranslation: () => (current ? (current.wide ?? current.ctx ?? current.mt ?? '') : ''),
   };
   let current = null; // { text, range, anchor, mt, termKo, ctx, ctxNote, wide, wideNote, mine, phraseId }  ctx·wide 는 문맥·넓은 문맥 번역(성공했을 때만 생김)
@@ -831,7 +831,7 @@
   }
 
   // 선택 Range 로 스크랩을 저장한다 (T46: 확인 메시지 없이, 같은 글이면 그대로 성공)
-  async function scrapRange(range) {
+  async function scrapRange(range, { translation: givenTranslation = '' } = {}) {
     if (!range) return { ok: false, error: 'no-range' };
     const scrapPage = globalThis.readglossScrapPage;
     const qInfo = scrapPage?.quoteForRange ? scrapPage.quoteForRange(range) : null;
@@ -840,11 +840,14 @@
     const pos = qInfo?.pos ?? 0;
     const headings = headingsAbove(range.startContainer);
 
+    // 이미 스크랩된 글이면 저장하지 않는다(task·headings·pos·translation 을 덮어쓰지 않음, 명세 24-1)
+    const existing = scrapPage?.findExisting ? scrapPage.findExisting(quote.exact) : null;
+    if (existing) return { ok: true, scrap: existing };
+
     const { task } = await fetchGuessedTask();
 
-    const existing = scrapPage?.findExisting ? scrapPage.findExisting(quote.exact) : null;
     const currentTrans = (current && current.quote?.exact === quote.exact) ? (current.wide ?? current.ctx ?? current.mt ?? '') : '';
-    const translation = currentTrans || (existing?.translation ?? '');
+    const translation = currentTrans || givenTranslation || '';
 
     const res = await submitScrap({
       headings,

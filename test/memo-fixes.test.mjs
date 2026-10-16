@@ -95,7 +95,7 @@ test('작은 것 2: ⌥⇧M 직후 목록에 포커스를 줘서 Esc가 바로 �
 });
 
 test('작은 것 3: 접을 때 입력 200ms 타이머를 지운다', () => {
-  assert.match(memoPad, /function closePad\(\) \{\s*clearTimeout\(typingTimer\);/);
+  assert.match(memoPad, /function closePad\(\) \{\s*(?:pendingCodeLangKey = null;\s*)?clearTimeout\(typingTimer\);/);
 });
 
 test('작은 것 4: 저장 성공 뒤 그 칸 인용을 지운다(둘째 메모부터 고른 글을 다시 붙이지 않는다)', () => {

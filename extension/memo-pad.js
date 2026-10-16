@@ -466,6 +466,7 @@
   let currentHeadings = []; // [{ key, text, level, el }]
   let currentMemos = []; // 이 페이지의 저장된 메모 목록
   let currentPageItems = []; // 이 페이지의 모든 모양 항목 목록 (메모, 스크랩, 개념, 나중에, 단어, 구문장)
+  let pendingCodeLangKey = null; // 다시 그린 뒤 언어 고르기에 커서를 줄 칸 키(S1)
   let activeConceptEditId = null; // 인라인 편집기가 열려 있는 개념 id
   let activeScrapEditId = null; // 인라인 편집기가 열려 있는 스크랩 id (한 번에 하나만 열림)
   let conceptSaveTimers = {}; // 개념 id별 0.8초 자동 저장 타이머
@@ -2658,6 +2659,14 @@
           ta.setSelectionRange(len, len);
         }
       }
+      // 코드 블록 인용 직후: 언어 고르기에 커서를 두고 한 번 쓰면 비운다(S1)
+      if (pendingCodeLangKey) {
+        const langEl = shadow.querySelector(`.sec[data-key="${CSS.escape(pendingCodeLangKey)}"] .sec-quote-lang-select`);
+        if (langEl) {
+          pendingCodeLangKey = null;
+          langEl.focus();
+        }
+      }
     }
   }
 
@@ -3269,7 +3278,7 @@
 
     // ⌘Enter 저장 · Esc 접기 · ⌥⇧M 목록: 메모장 안 어디에 포커스가 있어도 동작한다. 칸 밖이면 지금 칸 글을 쓴다.
     box.addEventListener('keydown', (e) => {
-      if (e.target?.classList?.contains('sec-quote-lang-select')) {
+      if (e.target?.classList?.contains('sec-quote-lang-select') && !e.metaKey && !e.ctrlKey && !e.altKey) {
         if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
           e.preventDefault();
           e.stopPropagation();
@@ -3522,6 +3531,7 @@
 
   // 메모장 접기(닫기)
   function closePad() {
+    pendingCodeLangKey = null;
     clearTimeout(typingTimer);
     clearTimeout(returnFocusTimer);
     stopStudyTimeTimer();
@@ -3652,6 +3662,8 @@
         focusCodeLangSelect(targetKey);
       }
     } else {
+      // 닫힌 메모장: 열린 뒤 다시 그리기가 커서를 쓰는 칸으로 옮기므로 키를 기억해 그 뒤에 언어 고르기로 보낸다
+      if (focusCodeLang) pendingCodeLangKey = targetKey;
       openPad(targetKey);
       if (focusCodeLang) {
         focusCodeLangSelect(targetKey);
@@ -3702,14 +3714,14 @@
     }
 
     if (hasSelection && !isOurHost) {
-      // 1. 두 카드 close()
+      // 1. 두 카드 close() — 닫으면 번역이 비므로 close 전에 현재 번역을 읽어 둔다
+      const selTrans = globalThis.readglossSelectionUi?.currentTranslation?.() || '';
       globalThis.readglossSelectionUi?.close?.();
       globalThis.readglossDictCardUi?.close?.();
 
       // 2. 선택 범위로 quoteForRange 구하기 (반환은 { quote: {exact, prefix, suffix}, pos } | null)
       const q = globalThis.readglossScrapPage?.quoteForRange?.(range)?.quote;
       const existing = globalThis.readglossScrapPage?.findExisting?.(q?.exact);
-      const selTrans = globalThis.readglossSelectionUi?.currentTranslation?.() || '';
       const translation = existing?.translation || selTrans || '';
       const extracted = q && typeof q.exact === 'string' && q.exact.length > 0
         ? {
@@ -3754,7 +3766,7 @@
             extracted.table = tableResult.table;
             delete extracted.translation;
             if (tableResult.truncated) {
-              showPadToastNotice('표가 커서 30줄까지만 담았어요', 2000);
+              showPadToastNotice('표가 커서 일부만 담았어요(30줄·8칸·칸 300자까지)', 2000);
             }
           }
         }
@@ -3763,7 +3775,7 @@
       // 3. 드래그 + Tab 경로: 인용을 붙이기 전에(기다리지 말고 동시에) scrapRange 호출
       if (scrap && range) {
         const cloned = range.cloneRange();
-        Promise.resolve(globalThis.readglossSelectionUi?.scrapRange?.(cloned))
+        Promise.resolve(globalThis.readglossSelectionUi?.scrapRange?.(cloned, { translation }))
           .then((res) => {
             if (!res || !res.ok) {
               showPadToastNotice('스크랩은 못 했어요(인용은 붙음)', 2000);
@@ -3818,12 +3830,19 @@
 
   // 단축키 커맨드(memo-open, memo-list) 및 고른 글 단축키(Tab = 인용, D = 개념, C = 코드 인용) (T48, T49)
   document.addEventListener('keydown', (e) => {
+    // 값싼 걸러내기(N8): 단축키 키가 아니면 getSelection·composedPath 계산 없이 바로 나간다
+    const k = e.key;
+    if (k !== 'Tab' && k !== 'd' && k !== 'D' && k !== 'ㅇ' && k !== 'c' && k !== 'C' && k !== 'ㅊ'
+      && e.code !== 'KeyD' && e.code !== 'KeyC') return;
     const sel = window.getSelection();
     const hasSelection = Boolean(sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.toString().trim().length > 0);
     const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
     const inOurUi = path.some((n) => typeof n?.localName === 'string' && n.localName.startsWith('readgloss-'));
     const memoCore = globalThis.readglossMemo;
-    const pageField = memoCore?.isPageField ? memoCore.isPageField(document.activeElement) : false;
+    // shadow DOM 안 편집 영역도 입력칸으로 본다(N6)
+    const pageField = (memoCore?.isPageField ? memoCore.isPageField(document.activeElement) : false)
+      || path.some((n) => n?.isContentEditable === true
+        || ['input', 'textarea', 'select'].includes(String(n?.localName || '').toLowerCase()));
 
     const action = memoCore?.shortcutAction?.(e, { hasSelection, pageField, inOurUi });
 
@@ -3908,7 +3927,10 @@
   }, true);
 
   // 개념 저장 뒤 메모장에 바로 보이기 (T48)
-  window.addEventListener('readgloss:concepts-updated', () => {
+  window.addEventListener('readgloss:concepts-updated', (e) => {
+    // 메모장 안 자동 저장이 쏘는 이벤트(detail 없음)는 무시한다: 다시 그리면 커서가 끝으로 튄다.
+    // 개념 편집기가 열려 있는 동안에도 다시 그리지 않는다.
+    if (!e.detail?.id || activeConceptEditId) return;
     if (isOpen && currentMode === 'pad') {
       loadPageShapesAndMemos();
     }

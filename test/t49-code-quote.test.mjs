@@ -269,7 +269,7 @@ test('export-notes 메모 인용 코드 모양 (인라인, 블록, 백틱 든 �
     text: '명령 치환 메모',
   };
   const rendered2 = renderMemo(memoBacktick);
-  assert.equal(rendered2, '``echo `date```\n\n명령 치환 메모');
+  assert.equal(rendered2, '`` echo `date` ``\n\n명령 치환 메모'); // 백틱으로 끝나면 안쪽 공백(N2)
 
   // 3. 코드 블록
   const memoBlock = {

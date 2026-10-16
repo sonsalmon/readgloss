@@ -85,14 +85,19 @@ export function renderMemo(m) {
       }
     } else if (m?.quote?.code) {
       const codeInfo = m.quote.code;
+      // 코드는 trim 하지 않는다(들여쓰기 보존). 위 exact 는 trim 된 값이라 원본 quote.exact 에서 앞뒤 빈 줄만 지운다.
+      const rawCode = String(m.quote.exact ?? '').replace(/^(?:[ \t]*\r?\n)+/, '').replace(/(?:\r?\n[ \t]*)+$/, '');
+      const longestTicks = (str) => Math.max(0, ...(str.match(/`+/g) || []).map((x) => x.length));
       if (codeInfo.block) {
         const lang = (typeof codeInfo.lang === 'string' && codeInfo.lang !== '자동') ? codeInfo.lang : '';
-        lines.push(`\`\`\`${lang}`);
-        lines.push(exact);
-        lines.push('```');
+        const fence = '`'.repeat(Math.max(3, longestTicks(rawCode) + 1));
+        lines.push(`${fence}${lang}`);
+        lines.push(rawCode);
+        lines.push(fence);
       } else {
-        const hasBacktick = exact.includes('`');
-        lines.push(hasBacktick ? `\`\`${exact}\`\`` : `\`${exact}\``);
+        const ticks = '`'.repeat(longestTicks(rawCode) + 1);
+        const pad = rawCode.startsWith('`') || rawCode.endsWith('`') ? ' ' : '';
+        lines.push(`${ticks}${pad}${rawCode}${pad}${ticks}`);
       }
       if (text) {
         lines.push(''); // 메모 인용 뒤 메모 글 사이에 빈 줄

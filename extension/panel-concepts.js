@@ -1167,7 +1167,7 @@
         });
 
         if (res && !res.error) {
-          window.dispatchEvent(new CustomEvent('readgloss:concepts-updated'));
+          window.dispatchEvent(new CustomEvent('readgloss:concepts-updated', { detail: { id: concept.id, removed: true } }));
           currentView = 'list';
           selectedConceptId = null;
           statusMsg = '';

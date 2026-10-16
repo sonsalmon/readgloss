@@ -803,6 +803,7 @@
     const MAX_CELL_LEN = 300;
 
     let truncated = false;
+    const cut = { rows: false, cols: false, chars: false }; // 무엇을 잘랐는지(N4)
 
     // 머리줄 = inThead인 첫 줄, 없으면 첫 줄의 칸이 모두 th일 때 그 줄, 없으면 null
     let headerRow = rowsInfo.find((r) => Boolean(r?.inThead)) || null;
@@ -818,6 +819,7 @@
     if (selectedRows.length > MAX_ROWS) {
       selectedRows = selectedRows.slice(0, MAX_ROWS);
       truncated = true;
+      cut.rows = true;
     }
 
     function cleanCell(t) {
@@ -825,6 +827,7 @@
       const cleaned = raw.replace(/\s+/g, ' ').trim();
       if (cleaned.length > MAX_CELL_LEN) {
         truncated = true;
+        cut.chars = true;
         return cleaned.slice(0, MAX_CELL_LEN);
       }
       return cleaned;
@@ -835,6 +838,7 @@
       const cells = Array.isArray(headerRow.cells) ? headerRow.cells : [];
       if (cells.length > MAX_COLS) {
         truncated = true;
+        cut.cols = true;
       }
       head = cells.slice(0, MAX_COLS).map((c) => cleanCell(c?.text));
     }
@@ -844,6 +848,7 @@
       const cells = Array.isArray(r.cells) ? r.cells : [];
       if (cells.length > MAX_COLS) {
         truncated = true;
+        cut.cols = true;
       }
       const rowCells = cells.slice(0, MAX_COLS).map((c) => cleanCell(c?.text));
       rows.push(rowCells);
@@ -872,6 +877,7 @@
         rows,
       },
       truncated,
+      cut,
     };
   }
 

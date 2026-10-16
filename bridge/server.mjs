@@ -34,6 +34,7 @@ const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
 const MAX_BODY = 16 * 1024;
 const MAX_WORDS_BODY = 24 * 1024;
+const MAX_MEMOS_BODY = 96 * 1024; // 메모(표 인용 포함)는 명세 상한이 커서 따로 둔다
 const MAX_ANNOTATE_STATS_BODY = 64 * 1024;
 const MAX_STUDY_TIME_BODY = 256 * 1024; // /study-time 항목이 많이 쌓였을 때를 위한 본문 상한
 const MAX_WIDE_BODY = 64 * 1024; // /translate-context·/lookup 은 "더 넓은 문맥"을 실을 수 있어 본문 상한이 크다
@@ -728,7 +729,7 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
       }
       return send(res, 200, { memos: memos.list() }, cors);
     }
-    const { value, status } = await readJson(req, MAX_WORDS_BODY);
+    const { value, status } = await readJson(req, MAX_MEMOS_BODY);
     if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
     const op = parseMemoOp(value);
     if (!op) return send(res, 400, { error: 'bad-request' }, cors);
