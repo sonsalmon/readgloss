@@ -43,13 +43,27 @@ export function textFragmentUrl(url, exact) {
 }
 
 // 메모 항목 렌더링
-function renderMemo(m) {
+export function renderMemo(m) {
   const lines = [];
   const exact = String(m?.quote?.exact ?? '').trim();
   const text = String(m?.text ?? '').trim();
 
   if (exact) {
-    if (m?.quote?.source === 'tutor') {
+    if (m?.quote?.code) {
+      const codeInfo = m.quote.code;
+      if (codeInfo.block) {
+        const lang = (typeof codeInfo.lang === 'string' && codeInfo.lang !== '자동') ? codeInfo.lang : '';
+        lines.push(`\`\`\`${lang}`);
+        lines.push(exact);
+        lines.push('```');
+      } else {
+        const hasBacktick = exact.includes('`');
+        lines.push(hasBacktick ? `\`\`${exact}\`\`` : `\`${exact}\``);
+      }
+      if (text) {
+        lines.push(''); // 메모 인용 뒤 메모 글 사이에 빈 줄
+      }
+    } else if (m?.quote?.source === 'tutor') {
       const t = m.quote.tutor || {};
       const timePart = t.time ? ` ${t.time}` : '';
       lines.push(`> [!tutor] 튜터${timePart}`);
@@ -62,6 +76,12 @@ function renderMemo(m) {
         .trim();
       const titlePart = rawTitle ? ` ${rawTitle}` : '';
       lines.push(`> [[tutor-logs/${t.date ?? ''}#${t.time ?? ''}${titlePart}]]`);
+      if (typeof m?.quote?.translation === 'string' && m.quote.translation.trim()) {
+        lines.push(`> 번역: ${m.quote.translation.trim()}`);
+      }
+      if (text) {
+        lines.push(''); // 메모 인용 뒤 메모 글 사이에 빈 줄
+      }
     } else {
       const rawUrl = m?.url ?? '';
       const link = rawUrl ? textFragmentUrl(rawUrl, exact) : '';
@@ -70,12 +90,12 @@ function renderMemo(m) {
         quoteLines[quoteLines.length - 1] += ` [↗](${link})`;
       }
       lines.push(...quoteLines);
-    }
-    if (typeof m?.quote?.translation === 'string' && m.quote.translation.trim()) {
-      lines.push(`> 번역: ${m.quote.translation.trim()}`);
-    }
-    if (text) {
-      lines.push(''); // 메모 인용 뒤 메모 글 사이에 빈 줄
+      if (typeof m?.quote?.translation === 'string' && m.quote.translation.trim()) {
+        lines.push(`> 번역: ${m.quote.translation.trim()}`);
+      }
+      if (text) {
+        lines.push(''); // 메모 인용 뒤 메모 글 사이에 빈 줄
+      }
     }
   }
 

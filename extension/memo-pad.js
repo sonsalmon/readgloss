@@ -929,6 +929,45 @@
     .sec-memo-quote-del:hover {
       opacity: 1;
     }
+    .sec-quote.code-quote,
+    .sec-memo-quote-line.code-quote {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .sec-quote.code-block .sec-quote-text,
+    .sec-memo-quote-line.code-block .sec-memo-quote-text {
+      white-space: pre;
+      overflow-x: auto;
+      display: block;
+      -webkit-line-clamp: unset;
+    }
+    .sec-quote-lang-select {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      padding: 1px 4px;
+      border: 1px solid var(--bd);
+      border-radius: 4px;
+      background: var(--card);
+      color: var(--fg);
+      margin-bottom: 2px;
+      align-self: flex-start;
+      cursor: pointer;
+    }
+    .sec-quote-lang-badge {
+      font-size: 10px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--mut);
+      padding: 0 4px;
+      border-radius: 3px;
+      background: rgba(0, 0, 0, 0.08);
+      margin-right: 4px;
+      vertical-align: middle;
+      display: inline-block;
+    }
+    @media (prefers-color-scheme: dark) {
+      .sec-quote-lang-badge {
+        background: rgba(255, 255, 255, 0.12);
+      }
+    }
     .sec-shape-line.scrap-line {
       cursor: pointer;
     }
@@ -1623,6 +1662,12 @@
       prefix: (currentQuote.prefix || '').slice(0, 64),
       suffix: (currentQuote.suffix || '').slice(0, 64),
       ...(currentQuote.translation ? { translation: currentQuote.translation.slice(0, 2000) } : {}),
+      ...(currentQuote.code ? {
+        code: {
+          lang: (currentQuote.code.lang === '자동' ? '' : (currentQuote.code.lang || '')).slice(0, 20),
+          block: Boolean(currentQuote.code.block),
+        },
+      } : {}),
       ...(currentQuote.source === 'tutor' ? {
         source: 'tutor',
         tutor: {
@@ -1784,6 +1829,12 @@
     if (m.quote && typeof m.quote.exact === 'string' && m.quote.exact.length > 0) {
       const qLine = document.createElement('div');
       qLine.className = 'sec-memo-quote-line';
+      if (m.quote.code) {
+        qLine.classList.add('code-quote');
+        if (m.quote.code.block) {
+          qLine.classList.add('code-block');
+        }
+      }
 
       const qText = document.createElement('div');
       qText.className = 'sec-memo-quote-text';
@@ -1843,6 +1894,19 @@
             qText.style.whiteSpace = '';
           }
           renderText();
+        };
+      } else if (m.quote.code) {
+        qText.textContent = m.quote.exact;
+        if (m.quote.code.lang) {
+          const langBadge = document.createElement('span');
+          langBadge.className = 'sec-quote-lang-badge';
+          langBadge.textContent = m.quote.code.lang;
+          qText.prepend(langBadge);
+        }
+        qText.title = '인용 자리로 이동';
+        qText.onclick = (e) => {
+          if (e.target === dropBtn) return;
+          jumpToMemo(m);
         };
       } else {
         qText.textContent = `“${m.quote.exact}”`;
@@ -2741,9 +2805,42 @@
         if (qData && typeof qData.exact === 'string' && qData.exact.length > 0) {
           const quoteEl = document.createElement('div');
           quoteEl.className = 'sec-quote';
+          if (qData.code) {
+            quoteEl.classList.add('code-quote');
+            if (qData.code.block) {
+              quoteEl.classList.add('code-block');
+            }
+          }
 
           const quoteContent = document.createElement('div');
           quoteContent.className = 'sec-quote-content';
+
+          let langSelect = null;
+          if (qData.code?.block) {
+            langSelect = document.createElement('select');
+            langSelect.className = 'sec-quote-lang-select';
+            langSelect.setAttribute('aria-label', '코드 언어 선택');
+            const langList = memoCore?.CODE_LANG_LIST || [
+              '자동', 'plaintext', 'bash', 'python', 'javascript', 'typescript',
+              'json', 'html', 'css', 'sql', 'c', 'cpp', 'java', 'go', 'rust',
+              'powershell', 'yaml', 'http',
+            ];
+            for (const lang of langList) {
+              const opt = document.createElement('option');
+              opt.value = lang;
+              opt.textContent = lang;
+              langSelect.append(opt);
+            }
+            langSelect.value = qData.code.lang || '자동';
+            langSelect.addEventListener('change', () => {
+              const val = langSelect.value === '자동' ? '' : langSelect.value;
+              qData.code.lang = val;
+              saveDrafts();
+              const taEl = sec.querySelector('.sec-textarea');
+              if (taEl) taEl.focus();
+            });
+            quoteContent.append(langSelect);
+          }
 
           const quoteText = document.createElement('div');
           quoteText.className = 'sec-quote-text';
@@ -2767,6 +2864,17 @@
                 quoteText.style.whiteSpace = '';
               }
               renderQuoteText();
+            };
+          } else if (qData.code?.block) {
+            quoteText.textContent = qData.exact;
+            quoteEl.onclick = (e) => {
+              if (e.target === quoteDel || e.target === langSelect) return;
+            };
+          } else if (qData.code) {
+            quoteText.textContent = qData.exact;
+            quoteEl.onclick = (e) => {
+              if (e.target === quoteDel) return;
+              quoteEl.classList.toggle('expanded');
             };
           } else {
             quoteText.textContent = `“${qData.exact}”`;
@@ -3032,6 +3140,16 @@
 
     // ⌘Enter 저장 · Esc 접기 · ⌥⇧M 목록: 메모장 안 어디에 포커스가 있어도 동작한다. 칸 밖이면 지금 칸 글을 쓴다.
     box.addEventListener('keydown', (e) => {
+      if (e.target?.classList?.contains('sec-quote-lang-select')) {
+        if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
+          e.preventDefault();
+          e.stopPropagation();
+          const sec = e.target.closest('.sec');
+          const ta = sec?.querySelector('.sec-textarea');
+          if (ta) ta.focus();
+          return;
+        }
+      }
       if (e.key === 'Backspace' && dropQuoteOnBackspace(e)) return;
       if ((e.key === 'Escape' || e.key === 'Esc') && e.readglossCardClosed) return;
       const action = memoCore?.padKeyV2 ? memoCore.padKeyV2(e) : null;
@@ -3374,8 +3492,20 @@
     });
   }
 
+  // 코드 인용 블록 언어 고르기(select)로 포커스
+  function focusCodeLangSelect(sectionKey) {
+    if (!shadow) return;
+    setTimeout(() => {
+      const secEl = shadow.querySelector(`.sec[data-key="${CSS.escape(sectionKey)}"]`);
+      const selEl = secEl?.querySelector('.sec-quote-lang-select');
+      if (selEl) {
+        selEl.focus();
+      }
+    }, 0);
+  }
+
   // 인용을 소제목 칸에 붙이고 메모장을 열거나 갱신 (T45c 계약)
-  function attachQuote(quote, anchorNode) {
+  function attachQuote(quote, anchorNode, { focusCodeLang = false } = {}) {
     if (!quote) return;
     currentHeadings = collectHeadings();
     lastHeadingsCount = currentHeadings.length;
@@ -3389,8 +3519,14 @@
       rebuildSectionsUI();
       lastTypedAt = 0;
       applyActiveSection(true);
+      if (focusCodeLang) {
+        focusCodeLangSelect(targetKey);
+      }
     } else {
       openPad(targetKey);
+      if (focusCodeLang) {
+        focusCodeLangSelect(targetKey);
+      }
     }
   }
 
@@ -3461,7 +3597,36 @@
     }
   }
 
-  // 단축키 커맨드(memo-open, memo-list) 및 고른 글 단축키(Tab = 인용, D = 개념) (T48)
+  // 앞뒤 빈 줄만 정리 (내부 줄바꿈 및 들여쓰기는 보존)
+  function trimBlankLines(str) {
+    if (typeof str !== 'string') return '';
+    const lines = str.split(/\r?\n/);
+    while (lines.length > 0 && lines[0].trim() === '') {
+      lines.shift();
+    }
+    while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+      lines.pop();
+    }
+    return lines.join('\n');
+  }
+
+  // 선택 범위의 가장 가까운 pre·code 요소(자기·조상)들의 class를 모음
+  function collectCodeClasses(node) {
+    const classes = [];
+    let curr = node && (node.nodeType === 1 ? node : node.parentElement);
+    while (curr && curr !== document.body && curr !== document.documentElement) {
+      const tag = (curr.localName || curr.tagName || '').toLowerCase();
+      if (tag === 'pre' || tag === 'code') {
+        if (curr.className && typeof curr.className === 'string') {
+          classes.push(curr.className);
+        }
+      }
+      curr = curr.parentElement;
+    }
+    return classes;
+  }
+
+  // 단축키 커맨드(memo-open, memo-list) 및 고른 글 단축키(Tab = 인용, D = 개념, C = 코드 인용) (T48, T49)
   document.addEventListener('keydown', (e) => {
     const sel = window.getSelection();
     const hasSelection = Boolean(sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.toString().trim().length > 0);
@@ -3512,8 +3677,44 @@
       };
 
       globalThis.readglossConceptPage?.openForm?.(seed);
+    } else if (action === 'code') {
+      e.preventDefault();
+      e.stopPropagation();
+      globalThis.readglossSelectionUi?.close?.();
+      globalThis.readglossDictCardUi?.close?.();
+
+      const rawText = sel.toString();
+      const codeText = trimBlankLines(rawText);
+      if (!codeText) return;
+
+      if (codeText.length > 1000) {
+        showToastNotice('인용하기엔 너무 길어요');
+        return;
+      }
+
+      const range = sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+      const startNode = range?.startContainer;
+      const kind = memoCore?.codeQuoteKind ? memoCore.codeQuoteKind(codeText) : 'inline';
+      const isBlock = kind === 'block';
+      const classes = collectCodeClasses(startNode);
+      const guessedLang = memoCore?.guessCodeLang ? memoCore.guessCodeLang(classes) : '';
+
+      const q = range ? globalThis.readglossScrapPage?.quoteForRange?.(range)?.quote : null;
+      const prefix = q?.prefix || '';
+      const suffix = q?.suffix || '';
+
+      const codeQuote = {
+        exact: codeText,
+        prefix,
+        suffix,
+        code: {
+          lang: guessedLang || '',
+          block: isBlock,
+        },
+      };
+
+      attachQuote(codeQuote, startNode, { focusCodeLang: isBlock });
     }
-    // 'code'는 다음 작업이 쓴다 — 지금은 'code'를 돌려도 처리하지 않음
   }, true);
 
   // 개념 저장 뒤 메모장에 바로 보이기 (T48)

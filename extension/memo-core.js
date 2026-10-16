@@ -709,6 +709,90 @@
     return isValEmpty || isZeroNoSel;
   }
 
+  // 인라인/블록 코드 인용 판정 (T49)
+  // 줄바꿈 없고 120자 이하이면 'inline', 아니면 'block'
+  function codeQuoteKind(text) {
+    if (typeof text !== 'string') return 'inline';
+    if (!/[\r\n]/.test(text) && text.length <= 120) {
+      return 'inline';
+    }
+    return 'block';
+  }
+
+  const CODE_LANG_LIST = [
+    '자동', 'plaintext', 'bash', 'python', 'javascript', 'typescript',
+    'json', 'html', 'css', 'sql', 'c', 'cpp', 'java', 'go', 'rust',
+    'powershell', 'yaml', 'http',
+  ];
+
+  const SUPPORTED_CODE_LANG_SET = new Set(
+    CODE_LANG_LIST.filter((lang) => lang !== '자동')
+  );
+
+  const CODE_LANG_ALIASES = {
+    js: 'javascript',
+    ts: 'typescript',
+    py: 'python',
+    sh: 'bash',
+    shell: 'bash',
+    zsh: 'bash',
+    yml: 'yaml',
+    ps1: 'powershell',
+    'c++': 'cpp',
+  };
+
+  // 언어 짐작 순수 함수 (T49)
+  // classNames[] -> 'language-xxx'·'lang-xxx'·'hljs xxx'에서 지원 목록 안의 이름, 없으면 ''
+  function guessCodeLang(classNames) {
+    if (!Array.isArray(classNames) || classNames.length === 0) return '';
+    const tokens = [];
+    for (const item of classNames) {
+      if (typeof item === 'string' && item.trim()) {
+        const parts = item.trim().split(/\s+/);
+        for (const p of parts) {
+          if (p) tokens.push(p);
+        }
+      }
+    }
+    if (tokens.length === 0) return '';
+
+    // 1. language-xxx 또는 lang-xxx 패턴 우선 검색
+    for (const t of tokens) {
+      const m = t.match(/^(?:language|lang)-([a-z0-9+#-]+)$/i);
+      if (m) {
+        const raw = m[1].toLowerCase();
+        const resolved = CODE_LANG_ALIASES[raw] || raw;
+        if (SUPPORTED_CODE_LANG_SET.has(resolved)) {
+          return resolved;
+        }
+      }
+    }
+
+    // 2. hljs가 포함된 경우: hljs가 아닌 다른 클래스 중 지원 언어 검색
+    const hasHljs = tokens.some((t) => t.toLowerCase() === 'hljs');
+    if (hasHljs) {
+      for (const t of tokens) {
+        const raw = t.toLowerCase();
+        if (raw === 'hljs') continue;
+        const resolved = CODE_LANG_ALIASES[raw] || raw;
+        if (SUPPORTED_CODE_LANG_SET.has(resolved)) {
+          return resolved;
+        }
+      }
+    }
+
+    // 3. 토큰 자체가 지원 언어이거나 별칭인 경우
+    for (const t of tokens) {
+      const raw = t.toLowerCase();
+      const resolved = CODE_LANG_ALIASES[raw] || raw;
+      if (SUPPORTED_CODE_LANG_SET.has(resolved)) {
+        return resolved;
+      }
+    }
+
+    return '';
+  }
+
   globalThis.readglossMemo = {
     normalizeUrl,
     currentHeading,
@@ -746,6 +830,9 @@
     formatClock,
     minutesLabel,
     shouldDropQuoteOnBackspace,
+    codeQuoteKind,
+    guessCodeLang,
+    CODE_LANG_LIST,
   };
 })();
 

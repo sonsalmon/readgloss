@@ -129,6 +129,20 @@ export function parseMemoOp(v) {
         quote.translation = v.quote.translation;
       }
 
+      if (v.quote.code !== undefined && v.quote.code !== null) {
+        if (typeof v.quote.code !== 'object' || Array.isArray(v.quote.code)) return null;
+        if (typeof v.quote.code.lang !== 'string' || v.quote.code.lang.length > 20 || !/^[a-z0-9+#-]*$/.test(v.quote.code.lang)) {
+          return null;
+        }
+        if (typeof v.quote.code.block !== 'boolean') {
+          return null;
+        }
+        quote.code = {
+          lang: v.quote.code.lang,
+          block: v.quote.code.block,
+        };
+      }
+
       if (v.quote.source !== undefined && v.quote.source !== null) {
         if (v.quote.source !== 'tutor') return null;
         const t = v.quote.tutor;
@@ -223,6 +237,14 @@ function formatMemo(node) {
           suffix: d.quote.suffix ?? '',
           ...(typeof d.quote.translation === 'string'
             ? { translation: d.quote.translation }
+            : {}),
+          ...(d.quote.code && typeof d.quote.code === 'object'
+            ? {
+                code: {
+                  lang: d.quote.code.lang ?? '',
+                  block: Boolean(d.quote.code.block),
+                },
+              }
             : {}),
           ...(d.quote.source === 'tutor'
             ? {
