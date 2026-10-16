@@ -4,6 +4,8 @@ import { copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from
 import { dirname } from 'node:path';
 import { WORD_RE } from './lookup.mjs';
 import { normalizeText } from './translate.mjs';
+import { applyReview, initialReview, isDue, isValidReview } from './review.mjs';
+import { dateOf } from '../scripts/export-day.mjs';
 
 export const MAX_HISTORY = 200;
 export const MEMO_MAX = 1000;
@@ -68,9 +70,20 @@ function parseMemoOp(v) {
   return typeof v.id === 'string' && PHRASE_ID.test(v.id) ? { op: 'memo', id: v.id, memo: v.memo } : null;
 }
 
+// review: {op:'review', lemma, result:'know'|'again'} 또는 {op:'review', id, result:'know'|'again'} 중 정확히 하나
+function parseReviewOp(v) {
+  const hasLemma = v.lemma !== undefined && v.lemma !== null;
+  const hasId = v.id !== undefined && v.id !== null;
+  if (hasLemma === hasId) return null; // 둘 다이거나 둘 다 아니다
+  if (v.result !== 'know' && v.result !== 'again') return null;
+  if (hasLemma) return typeof v.lemma === 'string' && WORD_RE.test(v.lemma) ? { op: 'review', lemma: v.lemma.toLowerCase(), result: v.result } : null;
+  return typeof v.id === 'string' && PHRASE_ID.test(v.id) ? { op: 'review', id: v.id, result: v.result } : null;
+}
+
 // 요청 본문 -> 정규화된 { op, lemma[, word, gloss, sentence, url, headings] }. 틀리면 null. 문장·주소는 상한에서 자른다.
 export function parseWordsOp(v) {
   if (v && typeof v === 'object' && v.op === 'memo') return parseMemoOp(v);
+  if (v && typeof v === 'object' && v.op === 'review') return parseReviewOp(v);
   if (v && typeof v === 'object' && (v.op === 'save-phrase' || v.op === 'unsave-phrase')) return parsePhraseOp(v);
   if (!v || typeof v !== 'object' || !OPS.includes(v.op) || typeof v.lemma !== 'string' || !WORD_RE.test(v.lemma)) return null;
   const lemma = v.lemma.toLowerCase();
@@ -128,7 +141,16 @@ export function createWords({ file, db, now = Date.now }) {
       const d = w.data;
       if (isObj(d)) {
         if (isObj(d.known)) known.set(w.key, { ts: ts(d.known) });
-        if (isObj(d.saved)) saved.set(w.key, { ...info(d.saved), ...(Array.isArray(d.saved.headings) && { headings: d.saved.headings.slice(0, 3) }), ...withMemo(memoOf(d.saved)), ts: ts(d.saved) });
+        if (isObj(d.saved)) {
+          const rev = isValidReview(d.saved.review);
+          saved.set(w.key, {
+            ...info(d.saved),
+            ...(Array.isArray(d.saved.headings) && { headings: d.saved.headings.slice(0, 3) }),
+            ...withMemo(memoOf(d.saved)),
+            ...(rev && { review: rev }),
+            ts: ts(d.saved),
+          });
+        }
         if (isObj(d.history) && isLemma(d.history.lemma)) {
           history.push({ lemma: d.history.lemma, ...info(d.history), ts: ts(d.history) });
         }
@@ -141,6 +163,7 @@ export function createWords({ file, db, now = Date.now }) {
     for (const p of phraseNodes) {
       const v = p.data;
       if (PHRASE_ID.test(p.id) && isObj(v) && typeof v.text === 'string' && v.text) {
+        const rev = isValidReview(v.review);
         phrases.set(p.id, {
           text: str(v.text, PHRASE.text),
           translation: str(v.translation, PHRASE.translation) ?? '',
@@ -151,6 +174,7 @@ export function createWords({ file, db, now = Date.now }) {
           ...(v.title && { title: str(v.title, PHRASE.title) }),
           ...(Array.isArray(v.headings) && { headings: v.headings.slice(0, 3) }),
           ...withMemo(memoOf(v)),
+          ...(rev && { review: rev }),
           ts: ts(v),
         });
       }
@@ -161,7 +185,16 @@ export function createWords({ file, db, now = Date.now }) {
       if (isLemma(k) && isObj(v)) known.set(k, { ts: ts(v) });
     }
     for (const [k, v] of Object.entries(isObj(raw.saved) ? raw.saved : {})) {
-      if (isLemma(k) && isObj(v)) saved.set(k, { ...info(v), ...(Array.isArray(v.headings) && { headings: v.headings.slice(0, 3) }), ...withMemo(memoOf(v)), ts: ts(v) });
+      if (isLemma(k) && isObj(v)) {
+        const rev = isValidReview(v.review);
+        saved.set(k, {
+          ...info(v),
+          ...(Array.isArray(v.headings) && { headings: v.headings.slice(0, 3) }),
+          ...withMemo(memoOf(v)),
+          ...(rev && { review: rev }),
+          ts: ts(v),
+        });
+      }
     }
     history = (Array.isArray(raw.history) ? raw.history : [])
       .filter((h) => isObj(h) && isLemma(h.lemma))
@@ -170,6 +203,7 @@ export function createWords({ file, db, now = Date.now }) {
       .slice(0, MAX_HISTORY);
     for (const [k, v] of Object.entries(isObj(raw.phrases) ? raw.phrases : {})) {
       if (PHRASE_ID.test(k) && isObj(v) && typeof v.text === 'string' && v.text) {
+        const rev = isValidReview(v.review);
         phrases.set(k, {
           text: str(v.text, PHRASE.text),
           translation: str(v.translation, PHRASE.translation) ?? '',
@@ -180,6 +214,7 @@ export function createWords({ file, db, now = Date.now }) {
           ...(v.title && { title: str(v.title, PHRASE.title) }),
           ...(Array.isArray(v.headings) && { headings: v.headings.slice(0, 3) }),
           ...withMemo(memoOf(v)),
+          ...(rev && { review: rev }),
           ts: ts(v),
         });
       }
@@ -251,9 +286,83 @@ export function createWords({ file, db, now = Date.now }) {
       }
       return out;
     },
-    // parseWordsOp 를 통과한 요청만 받는다. 바뀐 전체 상태를 돌려준다. memo 대상이 없으면 null(404).
+    reviewQueue(today = dateOf(now())) {
+      const queue = [];
+      let doneCount = 0;
+      const totalCount = saved.size + phrases.size;
+
+      for (const [lemma, item] of saved) {
+        const rev = item.review;
+        if (rev?.done) doneCount++;
+        if (isDue(rev, today)) {
+          queue.push({
+            due: rev.due,
+            ts: item.ts,
+            card: {
+              type: 'word',
+              key: lemma,
+              word: item.word,
+              gloss: item.gloss,
+              sentence: item.sentence,
+              ...(item.memo && { memo: item.memo }),
+            },
+          });
+        }
+      }
+
+      for (const [id, item] of phrases) {
+        const rev = item.review;
+        if (rev?.done) doneCount++;
+        if (isDue(rev, today)) {
+          queue.push({
+            due: rev.due,
+            ts: item.ts,
+            card: {
+              type: 'phrase',
+              key: id,
+              text: item.text,
+              translation: item.translation,
+              ...(item.kind && { kind: item.kind }),
+            },
+          });
+        }
+      }
+
+      const dueCount = queue.length;
+      queue.sort((a, b) => {
+        if (a.due !== b.due) return a.due < b.due ? -1 : 1;
+        return a.ts - b.ts;
+      });
+
+      return {
+        due: queue.slice(0, 50).map((x) => x.card),
+        counts: {
+          due: dueCount,
+          done: doneCount,
+          total: totalCount,
+        },
+      };
+    },
+    // parseWordsOp 를 통과한 요청만 받는다. 바뀐 전체 상태를 돌려준다. memo/review 대상이 없으면 null(404).
     // ponytail: 메모리를 먼저 바꾸고 쓴다. 디스크 쓰기가 실패하면 이 실행 동안만 메모리와 파일이 어긋난다(파일 자체는 rename 으로 안 깨진다).
-    apply({ op, lemma, word, gloss, sentence, url, id, text, translation, context, title, kind, memo, headings }) {
+    apply({ op, lemma, word, gloss, sentence, url, id, text, translation, context, title, kind, memo, headings, result }) {
+      if (op === 'review') {
+        const target = lemma !== undefined ? saved : phrases;
+        const key = lemma !== undefined ? lemma : id;
+        const cur = target.get(key);
+        if (!cur) return null; // 대상이 없으면 404
+        const today = dateOf(now());
+        const curReview = cur.review ?? initialReview(today);
+        const nextReview = applyReview(curReview, result, today, now());
+        target.set(key, { ...cur, review: nextReview });
+        if (db) {
+          if (lemma !== undefined) persistWord(lemma);
+          else persistPhrase(id);
+        } else {
+          persist();
+        }
+        return lemma !== undefined ? all() : { id, phrases: Object.fromEntries(phrases) };
+      }
       if (op === 'memo') {
         // memo 대상이 없으면 404. memo '' 이면 칸을 지운다. ts 는 건드리지 않는다.
         const target = lemma !== undefined ? saved : phrases;
@@ -277,7 +386,9 @@ export function createWords({ file, db, now = Date.now }) {
         if (op === 'save-phrase') {
           const prev = phrases.get(key);
           const effectiveHeadings = headings !== undefined ? headings : prev?.headings;
-          phrases.set(key, { text, translation, kind, ...(sentence && { sentence }), ...(context && { context }), ...(url && { url }), ...(title && { title }), ...(effectiveHeadings && { headings: effectiveHeadings }), ...withMemo(prev?.memo), ts: now() }); // 다시 저장해도 메모는 남긴다
+          const ts = now(); // 시계는 한 번만 읽는다(저장 시각과 복습 시작일이 어긋나지 않게)
+          const review = prev?.review ?? initialReview(dateOf(ts));
+          phrases.set(key, { text, translation, kind, ...(sentence && { sentence }), ...(context && { context }), ...(url && { url }), ...(title && { title }), ...(effectiveHeadings && { headings: effectiveHeadings }), ...withMemo(prev?.memo), review, ts }); // 다시 저장해도 메모와 복습 상태는 남긴다
         } else {
           phrases.delete(key);
         }
@@ -296,7 +407,9 @@ export function createWords({ file, db, now = Date.now }) {
       } else if (op === 'save') {
         const prev = saved.get(lemma);
         const effectiveHeadings = headings !== undefined ? headings : prev?.headings;
-        saved.set(lemma, { word, gloss, sentence, url, ...(effectiveHeadings && { headings: effectiveHeadings }), ...withMemo(prev?.memo), ts: now() }); // 다시 저장해도 메모는 남긴다
+        const ts = now(); // 시계는 한 번만 읽는다(저장 시각과 복습 시작일이 어긋나지 않게)
+        const review = prev?.review ?? initialReview(dateOf(ts));
+        saved.set(lemma, { word, gloss, sentence, url, ...(effectiveHeadings && { headings: effectiveHeadings }), ...withMemo(prev?.memo), review, ts }); // 다시 저장해도 메모와 복습 상태는 남긴다
         if (db) persistWord(lemma);
         else persist();
       } else if (op === 'unsave') {

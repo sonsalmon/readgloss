@@ -62,7 +62,9 @@ test('createWords: constructor 같은 이름도 평범한 원형으로 다룬다
 test('createWords: save/unsave 는 단어·뜻·문장·주소·시각을 남기고 다시 save 하면 덮어쓴다', () => {
   const { w } = fresh();
   run(w, { op: 'save', lemma: 'mitigation', word: 'mitigations', gloss: '완화', sentence: 'Apply mitigations.', url: 'https://a.test/p' });
-  assert.deepEqual(w.all().saved.mitigation, { word: 'mitigations', gloss: '완화', sentence: 'Apply mitigations.', url: 'https://a.test/p', ts: 1000 });
+  const { review, ...rest } = w.all().saved.mitigation;
+  assert.deepEqual(rest, { word: 'mitigations', gloss: '완화', sentence: 'Apply mitigations.', url: 'https://a.test/p', ts: 1000 });
+  assert.equal(review.box, 1, 'T44b: 처음 저장하면 복습 상자 1');
   run(w, { op: 'save', lemma: 'mitigation', word: 'mitigation', gloss: '경감', sentence: 'Another.', url: '' });
   assert.equal(w.all().saved.mitigation.gloss, '경감');
   assert.equal(Object.keys(w.all().saved).length, 1);

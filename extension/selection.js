@@ -105,6 +105,12 @@
     .ask-box[hidden] { display: none; }
     .ask-text { font-weight: 600; color: var(--rg-fg); margin-bottom: 6px; word-break: keep-all; }
     .ask-btns { display: flex; gap: 6px; }
+    .links { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 0 12px 10px; font-size: 11.5px; color: var(--rg-muted); }
+    .links[hidden] { display: none; }
+    .links a { all: unset; cursor: pointer; color: var(--rg-muted); text-decoration: underline; text-underline-offset: 2px; }
+    .links a:hover { color: var(--rg-accent); }
+    .links a:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: 2px; }
+    .links .sep { color: var(--rg-muted); user-select: none; opacity: .7; }
     ${MD_CSS}
     ${EXPR_CSS}
   `;
@@ -519,14 +525,39 @@
       ui.taskPicker = el('div', 'task-picker');
       ui.taskPicker.hidden = true;
 
-      card.append(scroll, foot, ui.askBox, ui.taskRow, ui.taskPicker);
+      ui.links = el('div', 'links');
+      ui.links.hidden = true;
+
+      card.append(scroll, foot, ui.links, ui.askBox, ui.taskRow, ui.taskPicker);
       paintCtxBtn();
       paintSaveBtn();
       paintScrapBtn();
       paintTaskRow();
+      paintDictLinks(text);
     }
     shadow.append(style, card);
     document.documentElement.append(host);
+  }
+
+  // 명세 22-1 사전 링크: 고른 글로 같은 링크 줄 (80자 넘으면 숨김)
+  function paintDictLinks(text) {
+    if (!ui?.links) return;
+    const links = core.dictLinks(text);
+    ui.links.replaceChildren();
+    if (!links.length) {
+      ui.links.hidden = true;
+      return;
+    }
+    ui.links.hidden = false;
+    links.forEach((item, idx) => {
+      if (idx > 0) ui.links.append(el('span', 'sep', '·'));
+      const a = el('a', undefined, item.label);
+      a.href = item.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.setAttribute('aria-label', `${item.label}에서 열기(새 탭)`);
+      ui.links.append(a);
+    });
   }
 
   const stage = () => ({ done: current.ctx !== undefined, wide: current.wide !== undefined });

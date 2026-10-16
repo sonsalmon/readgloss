@@ -63,11 +63,12 @@ function loadOrCreateToken(file) {
 export function createScoreOf(signals, wstat = null) {
   const fn = (lemma, level, surface) => {
     const saved = signals?.saved ? signals.saved.has(lemma) || (surface ? signals.saved.has(surface) : false) : false;
+    const done = signals?.done ? signals.done.has(lemma) || (surface ? signals.done.has(surface) : false) : false;
     const n1 = signals?.looked && signals.looked.has(lemma) ? (signals.looked.get(lemma) ?? 0) : 0;
     const n2 = (surface && surface !== lemma && signals?.looked && signals.looked.has(surface)) ? (signals.looked.get(surface) ?? 0) : 0;
     const totalLookups = Math.max(n1, n2);
     const stat = wstat ? wstat.get(lemma) : null;
-    return probability({ level, saved, lookups: totalLookups, stat });
+    return probability({ level, saved, lookups: totalLookups, stat, done });
   };
   fn.hasSavedOrLookup = (word) => {
     return Boolean((signals?.saved && signals.saved.has(word)) || (signals?.looked && signals.looked.has(word)));
@@ -258,13 +259,20 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
   // ponytail: 불규칙 활용(ran→run)은 사전이 원형을 줄 때만 이어진다.
   function buildSignals() {
     const savedSet = new Set();
+    const doneSet = new Set();
     const allWords = words.all();
     if (allWords && typeof allWords.saved === 'object' && allWords.saved !== null) {
-      for (const k of Object.keys(allWords.saved)) {
+      for (const [k, v] of Object.entries(allWords.saved)) {
         if (typeof k === 'string') {
           savedSet.add(k);
           for (const f of formsOf(k)) {
             savedSet.add(f);
+          }
+          if (v?.review?.done === true) {
+            doneSet.add(k);
+            for (const f of formsOf(k)) {
+              doneSet.add(f);
+            }
           }
         }
       }
@@ -289,7 +297,7 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
       }
     }
 
-    return { saved: savedSet, looked: lookedMap };
+    return { saved: savedSet, looked: lookedMap, done: doneSet };
   }
 
   function scoreOf(lemma, level, surface) {
@@ -583,6 +591,12 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
     send(res, 200, out, cors);
   }
 
+  // 복습 큐: GET /words/review -> { due: [...], counts: { due, done, total } }
+  function handleWordsReview(req, res, cors) {
+    const today = dateOf(typeof now === 'function' ? now() : now);
+    send(res, 200, words.reviewQueue(today), cors);
+  }
+
   // 내 사전: GET -> { entries }, POST { op:'set'|'delete', key, ... } -> 바뀐 { entries }
   async function handleMydict(req, res, cors) {
     if (req.method === 'GET') return send(res, 200, mydict.all(), cors);
@@ -819,6 +833,10 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
     if (path === '/annotate-stats') {
       if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleAnnotateStats(req, res, cors);
+    }
+    if (path === '/words/review') {
+      if (req.method !== 'GET') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleWordsReview(req, res, cors);
     }
     if (path === '/words') {
       if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);

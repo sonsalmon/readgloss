@@ -48,6 +48,13 @@ test('parseWordsOp unsave-phrase: 12자리 소문자 16진 id 만', () => {
   for (const id of [undefined, '', 'ABC123DEF456', 'abc123def45', 'abc123def4567', 'zzzzzzzzzzzz', 5]) assert.equal(parseWordsOp({ op: 'unsave-phrase', id }), null, String(id));
 });
 
+// T44b: 저장된 구에는 review 칸이 붙는다. 처음엔 box 1 인지 확인하고 나머지만 비교한다.
+const sansReview = (v) => {
+  const { review, ...rest } = v;
+  assert.equal(review.box, 1, '처음 저장하면 복습 상자 1');
+  return rest;
+};
+
 test('createWords save-phrase / unsave-phrase: {id, phrases} 를 돌려주고 파일에 저장, 같은 글은 덮어쓴다', () => {
   const file = tmp();
   let t = 100;
@@ -57,13 +64,13 @@ test('createWords save-phrase / unsave-phrase: {id, phrases} 를 돌려주고 �
   const id = phraseId('The attacker sends a payload.');
   assert.equal(r.id, id);
   assert.deepEqual(Object.keys(r), ['id', 'phrases']);
-  assert.deepEqual(r.phrases[id], { text: 'The attacker sends a payload.', translation: '공격자가 페이로드를 보낸다.', kind: 'sentence', context: { translation: '문맥 번역', wide: true }, url: 'https://a.test/p', title: '글', ts: 100 });
+  assert.deepEqual(sansReview(r.phrases[id]), { text: 'The attacker sends a payload.', translation: '공격자가 페이로드를 보낸다.', kind: 'sentence', context: { translation: '문맥 번역', wide: true }, url: 'https://a.test/p', title: '글', ts: 100 });
   assert.deepEqual(w.all().phrases, r.phrases);
   assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).phrases, r.phrases);
   assert.deepEqual(createWords({ file }).all().phrases, r.phrases); // 새로 열어도
   const again = run(w, { op: 'save-phrase', text: 'The attacker sends a payload.', translation: '다시' });
   assert.equal(Object.keys(again.phrases).length, 1);
-  assert.deepEqual(again.phrases[id], { text: 'The attacker sends a payload.', translation: '다시', kind: 'sentence', ts: 101 }); // url·context·sentence 가 없으면 키도 없다
+  assert.deepEqual(sansReview(again.phrases[id]), { text: 'The attacker sends a payload.', translation: '다시', kind: 'sentence', ts: 101 }); // url·context·sentence 가 없으면 키도 없다
   run(w, { op: 'save-phrase', text: 'Another one', translation: '' });
   assert.equal(Object.keys(w.all().phrases).length, 2);
   const gone = run(w, { op: 'unsave-phrase', id });
@@ -78,7 +85,7 @@ test('createWords save-phrase: 표현은 kind·sentence 가 저장되고 GET·�
   const w = createWords({ file, now: () => 7 });
   const r = run(w, { op: 'save-phrase', text: 'delve into', translation: '깊이 파고들다', kind: 'expression', sentence: 'This module delves into math.', url: 'https://a.test/p', title: 'T' });
   const id = phraseId('delve into');
-  assert.deepEqual(r.phrases[id], { text: 'delve into', translation: '깊이 파고들다', kind: 'expression', sentence: 'This module delves into math.', url: 'https://a.test/p', title: 'T', ts: 7 });
+  assert.deepEqual(sansReview(r.phrases[id]), { text: 'delve into', translation: '깊이 파고들다', kind: 'expression', sentence: 'This module delves into math.', url: 'https://a.test/p', title: 'T', ts: 7 });
   assert.deepEqual(createWords({ file }).all().phrases, r.phrases);
   const raw = JSON.parse(readFileSync(file, 'utf8'));
   raw.phrases.aaaaaaaaaaaa = { text: 'old entry', translation: '옛', ts: 1 };
@@ -127,7 +134,7 @@ test('/words save-phrase·unsave-phrase: POST 는 {id, phrases}, GET 은 phrases
     }
     const ex = await s.post('/words', { op: 'save-phrase', text: 'delve into', translation: '깊이 파고들다', kind: 'expression', sentence: 'This module delves into math.' });
     assert.equal(ex.status, 200);
-    assert.deepEqual((await get()).phrases[phraseId('delve into')], { text: 'delve into', translation: '깊이 파고들다', kind: 'expression', sentence: 'This module delves into math.', ts: (await get()).phrases[phraseId('delve into')].ts });
+    assert.deepEqual(sansReview((await get()).phrases[phraseId('delve into')]), { text: 'delve into', translation: '깊이 파고들다', kind: 'expression', sentence: 'This module delves into math.', ts: (await get()).phrases[phraseId('delve into')].ts });
     assert.equal((await s.post('/words', { op: 'save-phrase', text: 'x', kind: 'word' })).status, 400);
     assert.equal((await s.post('/words', { op: 'save-phrase', text: 'x', sentence: 's'.repeat(1001) })).status, 400);
     await s.post('/words', { op: 'unsave-phrase', id: phraseId('delve into') });

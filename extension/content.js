@@ -56,6 +56,12 @@
     .btn:hover { background: var(--rg-accent-soft); border-color: var(--rg-accent); color: var(--rg-accent); }
     .btn:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: 2px; }
     .btn[aria-disabled="true"] { opacity: .55; cursor: default; }
+    .links { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 0 16px 12px; font-size: 11.5px; color: var(--rg-muted); }
+    .links[hidden] { display: none; }
+    .links a { all: unset; cursor: pointer; color: var(--rg-muted); text-decoration: underline; text-underline-offset: 2px; }
+    .links a:hover { color: var(--rg-accent); }
+    .links a:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: 2px; }
+    .links .sep { color: var(--rg-muted); user-select: none; opacity: .7; }
   `;
 
   // 테마(설정 'theme'): auto 면 속성 없이 prefers-color-scheme, light·dark 면 호스트에 data-theme 로 강제
@@ -349,11 +355,6 @@
     const aiBtn = el('button', 'btn');
     aiBtn.type = 'button';
     aiBtn.addEventListener('click', () => current && askAi());
-    const naver = el('a', 'btn', '네이버에서 열기');
-    naver.href = `https://en.dict.naver.com/#/search?query=${encodeURIComponent(current.word)}`;
-    naver.target = '_blank';
-    naver.rel = 'noopener noreferrer';
-    naver.setAttribute('aria-label', '네이버 사전에서 열기(새 탭)');
     const mkWordBtn = (key) => {
       const b = el('button', 'btn');
       b.type = 'button';
@@ -387,7 +388,8 @@
     });
     const knownBtn = mkWordBtn('known');
     foot.append(saveBtn, conceptBtn, laterBtn, knownBtn, aiBtn);
-    ui = { card, tops, mine, acr, term, scroll, ai, aiWide, aiBtn, saveBtn, knownBtn };
+    const links = el('div', 'links');
+    ui = { card, tops, mine, acr, term, scroll, ai, aiWide, aiBtn, saveBtn, knownBtn, links };
     const md = globalThis.readglossMydict;
     const key = globalThis.readglossSelection.mydictKey(current.word); // 키 규칙에 안 맞으면 [내 사전에 추가] 를 숨긴다
     if (md && key) {
@@ -406,14 +408,36 @@
       });
       foot.append(ui.md.btn);
     }
-    foot.append(naver);
     if (ui.md) foot.append(ui.md.form);
 
-    card.append(tops, term, scroll, ai, aiWide, foot);
+    card.append(tops, term, scroll, ai, aiWide, foot, links);
     shadow.append(style, card);
     document.documentElement.append(host);
     paintAiBtn();
     paintWordButtons();
+    renderDictLinks();
+  }
+
+  // 명세 22-1 사전 링크: YouGlish · 네이버 · Oxford · Cambridge (원형이 있으면 원형, 없으면 표면형)
+  function renderDictLinks() {
+    if (!ui?.links) return;
+    const term = current?.lemma || current?.word || '';
+    const list = globalThis.readglossSelection?.dictLinks?.(term) ?? [];
+    ui.links.replaceChildren();
+    if (!list.length) {
+      ui.links.hidden = true;
+      return;
+    }
+    ui.links.hidden = false;
+    list.forEach((item, idx) => {
+      if (idx > 0) ui.links.append(el('span', 'sep', '·'));
+      const a = el('a', undefined, item.label);
+      a.href = item.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.setAttribute('aria-label', `${item.label}에서 열기(새 탭)`);
+      ui.links.append(a);
+    });
   }
 
   function place() {
@@ -526,6 +550,7 @@
   async function loadWordState(r, my) {
     current.lemma = r.lemma;
     current.gloss = r.gloss ?? '';
+    renderDictLinks();
     if (r.found) send({ type: 'words', op: 'history', lemma: r.lemma, word: current.word, gloss: current.gloss, sentence: current.sentence, url: sourceUrl() }).catch(() => {});
     const s = await send({ type: 'words', op: 'get' });
     if (my !== seq || !s?.known) return; // 상태를 못 받으면 버튼은 꺼진 채로 둔다

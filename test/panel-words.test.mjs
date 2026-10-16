@@ -95,9 +95,9 @@ const mine = {
   'zero day': { ko: '제로데이', ts: 20 },
 };
 
-test('SUBS: 기존 세 목록 뒤에 구·문장과 내 사전이 더해지고, LISTS 는 그대로 세 개', () => {
-  assert.deepEqual(W.SUBS.map((l) => l.id), ['saved', 'known', 'history', 'phrases', 'mydict']);
-  assert.deepEqual(W.SUBS.slice(3).map((l) => l.title), ['구·문장', '내 용어집']);
+test('SUBS: 복습 및 기존 세 목록 뒤에 구·문장과 내 사전이 더해지고, LISTS 는 그대로 세 개', () => {
+  assert.deepEqual(W.SUBS.map((l) => l.id), ['review', 'saved', 'known', 'history', 'phrases', 'mydict']);
+  assert.deepEqual(W.SUBS.slice(4).map((l) => l.title), ['구·문장', '내 용어집']);
   assert.equal(W.LISTS.length, 3);
   assert.deepEqual(W.countsAll({ ...state, phrases }, mine), { saved: 2, known: 2, history: 3, phrases: 3, mydict: 3 });
   assert.deepEqual(W.countsAll(state, null), { saved: 2, known: 2, history: 3, phrases: 0, mydict: 0 }); // 옛 다리: phrases 없음

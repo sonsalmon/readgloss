@@ -278,8 +278,23 @@
     .filter(Boolean)
     .slice(-MAX_HEADINGS);
 
+  // 명세 22-1 사전 링크: YouGlish·네이버·Oxford·Cambridge (모두 encodeURIComponent)
+  // 공백 정리 뒤 빈 글이거나 80자 넘으면 []
+  function dictLinks(text) {
+    const t = norm(text);
+    if (!t || t.length > 80) return [];
+    const q = encodeURIComponent(t);
+    return [
+      { id: 'youglish', label: 'YouGlish', url: `https://youglish.com/pronounce/${q}/english` },
+      { id: 'naver', label: '네이버', url: `https://en.dict.naver.com/#/search?query=${q}` },
+      { id: 'oxford', label: 'Oxford', url: `https://www.oxfordlearnersdictionaries.com/search/english/?q=${q}` },
+      { id: 'cambridge', label: 'Cambridge', url: `https://dictionary.cambridge.org/search/english/direct/?q=${q}` },
+    ];
+  }
+
   globalThis.readglossSelection = {
     clampHeadings,
+    dictLinks,
     MAX_TEXT, MAX_SIDE, MAX_TITLE, MAX_HEADINGS, WIDE_SIDE, WIDE_HEADINGS,
     classify, around, buildContext, pickHeadings, stageButton, mydictKey, firstMeaning, bestMeaning, mydictMessage, phraseMessage, findPhrase, MAX_EXPRESSIONS, expressionRows, noteText, expressionButton, expressionToggle, lookupExtras, isAcronym, expandAcronym, acronymLine,
     normalizeUrl, scrapAskKey, localDateStr, scrapMessage, isTypingPath, isOwnUiPath, waitUpTo,

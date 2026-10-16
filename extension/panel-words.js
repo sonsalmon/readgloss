@@ -72,8 +72,9 @@
   // 동작 -> 다리에 보낼 메시지. save 는 줄이 가진 단어·뜻·문장·주소를 그대로 싣는다.
   const messageFor = (op, row) => (op === 'save' ? { type: 'words', op, lemma: row.lemma, word: row.word, gloss: row.gloss, sentence: row.sentence, url: row.url } : { type: 'words', op, lemma: row.lemma });
 
-  // ---- 구·문장 / 내 사전(T14c) ----
+  // ---- 구·문장 / 내 사전(T14c) / 복습(T44c) ----
   const SUBS = [
+    { id: 'review', title: '복습', empty: '오늘 복습할 단어가 없어요.' },
     ...LISTS,
     { id: 'phrases', title: '구·문장', empty: '아직 담은 구·문장이 없어요. 드래그 번역 카드에서 단어장에 담으면 여기에 모여요.' },
     { id: 'mydict', title: '내 용어집', empty: '내 용어집이 비어 있어요. 약어나 전문 용어의 뜻을 직접 적어 두면 어디서든 그 뜻이 먼저 나와요.' },
@@ -187,10 +188,37 @@
   // 저장 실패 문구. 404(단어장에 없음)는 구분해서 알린다.
   const memoErrorText = (r) => (r?.error === 'not-found' ? '단어장에서 찾지 못했어요' : '메모를 저장하지 못했어요');
 
+  // ---- 복습(T44c) 순수 함수 ----
+  // 저장한 문장에서 단어(표면형 word, 대소문자 무시, 낱말 경계)를 ____로 가린다.
+  function maskWord(sentence, word) {
+    if (!sentence || !word) return sentence || '';
+    const s = String(sentence);
+    const w = String(word).trim();
+    if (!w) return s;
+    const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`\\b${escaped}\\b`, 'gi');
+    return s.replace(re, '____');
+  }
+
+  // 카드 상태 전이: front → back(flip), back → 다음(next / know / again).
+  function nextCardState(state, action) {
+    const act = typeof action === 'string' ? action : action?.type;
+    const curIndex = state?.index ?? 0;
+    const curSide = state?.side ?? 'front';
+    if (act === 'flip') {
+      return { ...state, side: curSide === 'front' ? 'back' : 'front' };
+    }
+    if (act === 'next' || act === 'know' || act === 'again') {
+      return { ...state, index: curIndex + 1, side: 'front' };
+    }
+    return state;
+  }
+
   globalThis.readglossWords = {
     LISTS, SUBS, formatDate, counts, countsAll, actionsFor, rowsFor, buttonModel, eventDetail, wordEventDetail, messageFor,
     clip, PHRASE_FILTERS, phraseCounts, phrasePrimary, phraseRows, pickWord, lookupDetail, mydictRows, checkMydict, mydictMessage, mydictEventDetail, unsavePhraseMessage, memoMessage,
     memoKey, memoOk, memoErrorText,
+    maskWord, nextCardState,
   };
 
   // ---- 그리기 ----
@@ -250,6 +278,19 @@
     .btns { display: flex; gap: 6px; justify-content: flex-end; }
     .err { color: var(--w-err); font-size: 12.5px; overflow-wrap: anywhere; }
     .addbar { margin: 8px 0 0; }
+    .rev-pane { display: grid; gap: 12px; padding: 10px 0; }
+    .rev-remain { color: var(--w-muted); font-size: 13px; font-weight: 600; }
+    .rev-card { border: 1px solid var(--w-border); border-radius: 10px; padding: 16px; background: none; display: grid; gap: 10px; }
+    .rev-head { font-size: 20px; font-weight: 700; color: var(--w-fg); line-height: 1.3; }
+    .rev-phrase-text { font-size: 16px; }
+    .rev-sent { color: var(--w-fg); font-size: 14px; line-height: 1.6; word-break: keep-all; overflow-wrap: anywhere; }
+    .rev-gloss { font-size: 16px; font-weight: 600; color: var(--w-accent); }
+    .rev-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+    .rev-btn { padding: 6px 14px; font-size: 13.5px; border-radius: 8px; }
+    .kbd { display: inline-block; margin-left: 6px; padding: 1px 5px; font-size: 11px; font-family: inherit; border-radius: 4px; border: 1px solid var(--w-border); opacity: .8; background: var(--w-soft); color: var(--w-accent); }
+    .rev-done { padding: 24px 0; text-align: center; display: grid; gap: 6px; }
+    .rev-done-title { font-size: 16px; font-weight: 700; color: var(--w-fg); }
+    .rev-done-sub { font-size: 13px; color: var(--w-muted); }
     [hidden] { display: none !important; }
   `;
 
@@ -280,12 +321,17 @@
     const W = globalThis.readglossWords;
     let state = null; // GET /words 응답(단어장·아는 단어·최근 찾은 단어·phrases)
     let mine = null; // GET /mydict 의 entries
+    let reviewData = null; // GET /words/review 응답(due: [], counts: { due, done, total })
     let list = 'saved';
     let phraseKind = 'all'; // 구·문장 종류 칩(전체·표현·문장)
     let query = '';
     let busy = false;
     let message = '불러오는 중…';
     let mineMessage = '불러오는 중…';
+    let reviewMessage = '불러오는 중…';
+    let cardState = { index: 0, side: 'front' };
+    let reviewErr = '';
+    let reviewedCount = 0;
     let adding = false;
     let editing = null; // 고치는 중인 key
     let draft = { ko: '', note: '' };
@@ -339,8 +385,9 @@
     addForm.append(kField.label, koField.label, expField.label, addErr, addBtns);
     addBar.append(addToggle, addForm);
 
+    const revPane = el('div', 'rev-pane');
     const ul = el('ul');
-    root.append(style, subs, kinds, search, status, addBar, ul);
+    root.append(style, subs, kinds, search, status, addBar, revPane, ul);
     container.replaceChildren(root);
 
     const subBtns = W.SUBS.map((l) => {
@@ -349,10 +396,42 @@
       b.addEventListener('click', () => {
         list = l.id;
         editing = confirming = memoEdit = null;
+        reviewErr = '';
         draw();
       });
       subs.append(b);
       return b;
+    });
+
+    // 복습 단축키(Space: 뒤집기, 1: 아직, 2: 알아요) — 패널 shadow 안에서 입력칸 밖일 때만 동작
+    root.addEventListener('keydown', (e) => {
+      if (list !== 'review') return;
+      const target = e.composedPath ? e.composedPath()[0] : e.target;
+      const isInput = target?.matches?.('input, textarea, [contenteditable="true"]') || target?.isContentEditable;
+      if (isInput || e.ctrlKey || e.metaKey || e.altKey) return; // 입력칸·브라우저 단축키(Cmd+1 등)는 건드리지 않는다
+
+      const due = reviewData?.due || [];
+      if (cardState.index >= due.length) return;
+
+      if (cardState.side === 'front') {
+        if (e.key === ' ' || e.code === 'Space') {
+          e.preventDefault();
+          e.stopPropagation();
+          cardState = W.nextCardState(cardState, 'flip');
+          reviewErr = '';
+          draw();
+        }
+      } else if (cardState.side === 'back') {
+        if (e.key === '1') {
+          e.preventDefault();
+          e.stopPropagation();
+          answerReview('again');
+        } else if (e.key === '2') {
+          e.preventDefault();
+          e.stopPropagation();
+          answerReview('know');
+        }
+      }
     });
     const chipBtns = W.PHRASE_FILTERS.map((f) => {
       const b = el('button', 'chip');
@@ -374,7 +453,10 @@
     // 패널이 새로 그려져 이 노드가 떨어지면 스스로 거둔다(panel-study.js 와 같은 방식).
     const onWords = () => {
       if (!root.isConnected) return window.removeEventListener('readgloss:words', onWords);
-      if (!selfWords) loadWords(); // 입력칸의 draft 는 draw 가 그대로 살린다
+      if (!selfWords) {
+        loadWords(); // 입력칸의 draft 는 draw 가 그대로 살린다
+        loadReview();
+      }
     };
     window.addEventListener('readgloss:words', onWords);
     const onMine = () => {
@@ -638,15 +720,171 @@
       return li;
     }
 
+    // 복습 카드에 답하기(know: 알아요, again: 아직) -> 다리 op 'review' 전송
+    async function answerReview(result) {
+      if (busy) return;
+      const due = reviewData?.due || [];
+      const card = due[cardState.index];
+      if (!card) return;
+      busy = true;
+      const isPhrase = card.type === 'phrase';
+      const msg = {
+        type: 'words',
+        op: 'review',
+        ...(isPhrase ? { id: card.key } : { lemma: card.key }),
+        result,
+      };
+      const r = await ctx.send(msg);
+      busy = false;
+      if (r?.error || !r) {
+        reviewErr = '저장하지 못했어요';
+        draw();
+        return;
+      }
+      reviewErr = '';
+      reviewedCount++;
+      if (r?.counts) {
+        reviewData.counts = r.counts;
+      } else if (reviewData?.counts) {
+        if (reviewData.counts.due > 0) reviewData.counts.due--;
+        if (result === 'know') reviewData.counts.done = (reviewData.counts.done ?? 0) + 1;
+      }
+      cardState = W.nextCardState(cardState, 'next');
+      draw();
+    }
+
+    // 복습 화면 그리기
+    function drawReview() {
+      revPane.replaceChildren();
+
+      if (reviewMessage) {
+        revPane.append(el('div', 'status', reviewMessage));
+        return;
+      }
+
+      const due = reviewData?.due || [];
+      const curIndex = cardState.index;
+      const counts = reviewData?.counts || { due: 0, done: 0, total: 0 };
+
+      if (curIndex >= due.length) {
+        const doneBox = el('div', 'rev-done');
+        const countText = reviewedCount > 0 ? `오늘 복습 끝 · ${reviewedCount}개` : '오늘 복습할 단어가 없어요';
+        const doneTotal = counts.done ?? 0;
+        doneBox.append(
+          el('div', 'rev-done-title', countText),
+          el('div', 'rev-done-sub', `복습 끝낸 단어 ${doneTotal}개`),
+        );
+        revPane.append(doneBox);
+        return;
+      }
+
+      const card = due[curIndex];
+      const remaining = due.length - curIndex;
+      revPane.append(el('div', 'rev-remain', `남은 ${remaining}`));
+
+      const cardBox = el('div', 'rev-card');
+      const isWord = card.type === 'word';
+      const isBack = cardState.side === 'back';
+
+      if (isWord) {
+        const lemmaText = card.lemma || card.key;
+        cardBox.append(el('div', 'rev-head', lemmaText));
+
+        if (!isBack) {
+          if (card.sentence) {
+            const masked = W.maskWord(card.sentence, card.word || card.key);
+            cardBox.append(el('div', 'rev-sent', masked));
+          }
+        } else {
+          if (card.gloss) {
+            cardBox.append(el('div', 'rev-gloss', card.gloss));
+          }
+          if (card.memo) {
+            cardBox.append(el('div', 'memo', card.memo));
+          }
+          if (card.sentence) {
+            cardBox.append(el('div', 'rev-sent', card.sentence));
+          }
+        }
+      } else {
+        cardBox.append(el('div', 'rev-head rev-phrase-text', card.text));
+        if (isBack) {
+          if (card.translation) {
+            cardBox.append(el('div', 'rev-gloss', card.translation));
+          }
+          if (card.memo) {
+            cardBox.append(el('div', 'memo', card.memo));
+          }
+        }
+      }
+      revPane.append(cardBox);
+
+      const btnBar = el('div', 'rev-btns');
+      if (!isBack) {
+        const flipBtn = el('button', 'act primary rev-btn');
+        flipBtn.type = 'button';
+        flipBtn.append('뒤집기', el('span', 'kbd', 'Space'));
+        flipBtn.setAttribute('aria-label', '뒤집기 (Space)');
+        flipBtn.addEventListener('click', () => {
+          cardState = W.nextCardState(cardState, 'flip');
+          reviewErr = '';
+          draw();
+        });
+        btnBar.append(flipBtn);
+        requestAnimationFrame(() => flipBtn.focus());
+      } else {
+        const againBtn = el('button', 'act rev-btn');
+        againBtn.type = 'button';
+        againBtn.append('아직', el('span', 'kbd', '1'));
+        againBtn.setAttribute('aria-label', '아직 (1)');
+        againBtn.addEventListener('click', () => answerReview('again'));
+
+        const knowBtn = el('button', 'act primary rev-btn');
+        knowBtn.type = 'button';
+        knowBtn.append('알아요', el('span', 'kbd', '2'));
+        knowBtn.setAttribute('aria-label', '알아요 (2)');
+        knowBtn.addEventListener('click', () => answerReview('know'));
+
+        btnBar.append(againBtn, knowBtn);
+        requestAnimationFrame(() => knowBtn.focus());
+      }
+      revPane.append(btnBar);
+
+      if (reviewErr) {
+        const errEl = el('div', 'err', reviewErr);
+        errEl.setAttribute('role', 'alert');
+        revPane.append(errEl);
+      }
+    }
+
     function draw() {
+      const isReview = list === 'review';
+      const isMine = list === 'mydict';
+      const dueCount = reviewData?.counts?.due ?? reviewData?.due?.length ?? 0;
       const c = state || mine ? W.countsAll(state ?? { saved: {}, known: {}, history: [] }, mine) : null;
       W.SUBS.forEach((l, i) => {
-        const have = l.id === 'mydict' ? mine : state;
-        subBtns[i].replaceChildren(l.title, ...(c && have ? [el('span', 'n', String(c[l.id]))] : []));
+        if (l.id === 'review') {
+          subBtns[i].replaceChildren(l.title, ...(dueCount > 0 ? [el('span', 'n', String(dueCount))] : []));
+        } else {
+          const have = l.id === 'mydict' ? mine : state;
+          subBtns[i].replaceChildren(l.title, ...(c && have ? [el('span', 'n', String(c[l.id]))] : []));
+        }
         subBtns[i].setAttribute('aria-pressed', String(l.id === list));
       });
+
+      revPane.hidden = !isReview;
+      ul.hidden = isReview;
+      search.hidden = isReview;
+      kinds.hidden = isReview || list !== 'phrases' || !state;
+      addBar.hidden = isReview || !isMine || !mine;
+
+      if (isReview) {
+        status.textContent = '';
+        drawReview();
+        return;
+      }
+
       const sub = W.SUBS.find((l) => l.id === list);
-      const isMine = list === 'mydict';
       const loaded = isMine ? mine : state;
       let rows = [];
       let build = wordRow;
@@ -657,13 +895,11 @@
       }
       const msg = isMine ? mineMessage : message;
       status.textContent = msg || (loaded && !rows.length ? (query.trim() ? '찾는 항목이 없어요' : sub.empty) : '');
-      kinds.hidden = list !== 'phrases' || !state;
       const pc = W.phraseCounts(state?.phrases);
       W.PHRASE_FILTERS.forEach((f, i) => {
         chipBtns[i].replaceChildren(f.title, el('span', 'n', String(pc[f.id])));
         chipBtns[i].setAttribute('aria-pressed', String(f.id === phraseKind));
       });
-      addBar.hidden = !isMine || !mine;
       addForm.hidden = !adding;
       addErr.textContent = formErr.where === 'add' ? formErr.text : '';
       addToggle.setAttribute('aria-expanded', String(adding));
@@ -692,9 +928,22 @@
       draw();
     }
 
+    async function loadReview() {
+      const r = await ctx.send({ type: 'words', op: 'review-queue' });
+      if (r?.due && r.counts) {
+        reviewData = r;
+        cardState = { index: 0, side: 'front' };
+        reviewMessage = '';
+      } else {
+        reviewMessage = errText(r, '복습 목록을 불러오지 못했어요');
+      }
+      draw();
+    }
+
     draw();
     loadMine();
     loadWords();
+    loadReview();
   }
 
   (globalThis.readglossPanelTabs ||= []).push({ id: 'words', title: '내 단어', order: 20, render });
