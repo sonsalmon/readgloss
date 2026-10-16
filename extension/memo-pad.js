@@ -1636,7 +1636,7 @@
   }
 
   function autoResize(ta) {
-    if (!ta) return;
+    if (!ta || ta.tagName !== 'TEXTAREA') return; // 쓰는 칸이 아니면(예: 메모장 host) 높이를 건드리지 않는다
     const memoCore = globalThis.readglossMemo;
     const container = shadow?.querySelector('.sections-container');
     const listHeight = container ? container.clientHeight : 300;
@@ -2698,7 +2698,9 @@
           performSave(key, ta);
         }
       } else if (action === 'newline') {
-        if (e.target?.classList?.contains('sec-textarea')) setTimeout(() => autoResize(e.target), 0);
+        // 대상을 지금 잡아 둔다: 이벤트가 끝난 뒤 e.target 은 메모장 host 로 바뀌어(shadow 재지정) host 높이를 망가뜨린다
+        const ta = e.target;
+        if (ta?.classList?.contains('sec-textarea')) setTimeout(() => autoResize(ta), 0);
       } else if (action === 'fold') {
         if (e.readglossCardClosed) return;
         e.preventDefault();
