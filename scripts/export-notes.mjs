@@ -71,6 +71,9 @@ function renderMemo(m) {
       }
       lines.push(...quoteLines);
     }
+    if (typeof m?.quote?.translation === 'string' && m.quote.translation.trim()) {
+      lines.push(`> 번역: ${m.quote.translation.trim()}`);
+    }
     if (text) {
       lines.push(''); // 메모 인용 뒤 메모 글 사이에 빈 줄
     }

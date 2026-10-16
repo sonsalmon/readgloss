@@ -834,6 +834,13 @@
         color: #FAC775;
       }
     }
+    .sec-quote-content {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
     .sec-quote-text {
       flex: 1;
       min-width: 0;
@@ -847,6 +854,12 @@
       display: block;
       -webkit-line-clamp: unset;
       overflow: visible;
+    }
+    .sec-quote-trans {
+      font-size: 11px;
+      opacity: 0.75;
+      line-height: 1.3;
+      word-break: break-all;
     }
     .sec-quote-del {
       all: unset;
@@ -1609,6 +1622,7 @@
       exact: currentQuote.exact.slice(0, 1000),
       prefix: (currentQuote.prefix || '').slice(0, 64),
       suffix: (currentQuote.suffix || '').slice(0, 64),
+      ...(currentQuote.translation ? { translation: currentQuote.translation.slice(0, 2000) } : {}),
       ...(currentQuote.source === 'tutor' ? {
         source: 'tutor',
         tutor: {
@@ -2728,6 +2742,9 @@
           const quoteEl = document.createElement('div');
           quoteEl.className = 'sec-quote';
 
+          const quoteContent = document.createElement('div');
+          quoteContent.className = 'sec-quote-content';
+
           const quoteText = document.createElement('div');
           quoteText.className = 'sec-quote-text';
 
@@ -2759,6 +2776,15 @@
             };
           }
 
+          quoteContent.append(quoteText);
+
+          if (qData.translation && typeof qData.translation === 'string' && qData.translation.trim()) {
+            const quoteTrans = document.createElement('div');
+            quoteTrans.className = 'sec-quote-trans';
+            quoteTrans.textContent = qData.translation.trim();
+            quoteContent.append(quoteTrans);
+          }
+
           const quoteDel = document.createElement('button');
           quoteDel.className = 'sec-quote-del';
           quoteDel.type = 'button';
@@ -2771,7 +2797,7 @@
             quoteEl.remove();
           };
 
-          quoteEl.append(quoteText, quoteDel);
+          quoteEl.append(quoteContent, quoteDel);
           sec.append(quoteEl);
         }
 
@@ -3387,8 +3413,16 @@
 
       // 2. 선택 범위로 quoteForRange 구하기 (반환은 { quote: {exact, prefix, suffix}, pos } | null)
       const q = globalThis.readglossScrapPage?.quoteForRange?.(range)?.quote;
+      const existing = globalThis.readglossScrapPage?.findExisting?.(q?.exact);
+      const selTrans = globalThis.readglossSelectionUi?.currentTranslation?.() || '';
+      const translation = existing?.translation || selTrans || '';
       const extracted = q && typeof q.exact === 'string' && q.exact.length > 0
-        ? { exact: q.exact, prefix: q.prefix || '', suffix: q.suffix || '' }
+        ? {
+            exact: q.exact,
+            prefix: q.prefix || '',
+            suffix: q.suffix || '',
+            ...(translation ? { translation } : {}),
+          }
         : null;
 
       if (!extracted) {

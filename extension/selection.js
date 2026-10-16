@@ -127,6 +127,7 @@
       return !!a && (a.localName === 'input' || a.localName === 'textarea' || a.isContentEditable === true);
     },
     scrapRange: (range) => scrapRange(range),
+    currentTranslation: () => (current ? (current.wide ?? current.ctx ?? current.mt ?? '') : ''),
   };
   let current = null; // { text, range, anchor, mt, termKo, ctx, ctxNote, wide, wideNote, mine, phraseId }  ctx·wide 는 문맥·넓은 문맥 번역(성공했을 때만 생김)
   let seq = 0; // 닫거나 새로 열 때마다 올려서 늦게 온 응답을 버린다
@@ -630,10 +631,11 @@
     ui.saveBtn.setAttribute('aria-disabled', 'true');
     notify('');
     const headings = headingsAbove(current.range?.startContainer ?? current.range);
+    const translation = current.wide ?? current.ctx ?? current.mt ?? '';
     const message = saved
       ? { type: 'words', op: 'unsave-phrase', id: current.phraseId }
       : {
-          ...core.phraseMessage({ text: current.text, mt: current.mt, ctx: current.wide ?? current.ctx, ctxNote: current.wide !== undefined ? current.wideNote : current.ctxNote, wide: current.wide !== undefined, url: location.href, title: document.title }),
+          ...core.phraseMessage({ text: current.text, mt: current.mt || translation, ctx: current.wide ?? current.ctx, ctxNote: current.wide !== undefined ? current.wideNote : current.ctxNote, wide: current.wide !== undefined, url: location.href, title: document.title }),
           headings,
         };
     const r = await send(message);
@@ -840,11 +842,15 @@
 
     const { task } = await fetchGuessedTask();
 
+    const existing = scrapPage?.findExisting ? scrapPage.findExisting(quote.exact) : null;
+    const currentTrans = (current && current.quote?.exact === quote.exact) ? (current.wide ?? current.ctx ?? current.mt ?? '') : '';
+    const translation = currentTrans || (existing?.translation ?? '');
+
     const res = await submitScrap({
       headings,
       quote,
       pos,
-      translation: '',
+      translation,
       task,
     });
     if (res.ok) {
@@ -876,10 +882,14 @@
     if (res.ok) {
       const id = res.scrap?.id ?? null; // 서버가 돌려준 방금 저장한 한 건(id 로 정확히)
       current.scrapId = id;
+      const quoteToAttach = {
+        ...quote,
+        ...(translation ? { translation } : {}),
+      };
       globalThis.readglossToast?.show({
         text: '스크랩했어요',
         anchor,
-        onQuote: () => globalThis.readglossMemoPad?.attachQuote?.(quote, savedRange.startContainer),
+        onQuote: () => globalThis.readglossMemoPad?.attachQuote?.(quoteToAttach, savedRange.startContainer),
       });
       getSelection().removeAllRanges();
       close();

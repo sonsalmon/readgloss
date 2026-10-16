@@ -227,8 +227,25 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .trans-line {
+      font-size: 12.5px;
+      color: var(--rg-fg);
+      background: var(--rg-accent-soft);
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      word-break: keep-all;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+    .trans-line.err {
+      color: var(--rg-muted);
+      background: transparent;
+      font-size: 12px;
+    }
     .actions {
       display: flex;
+      flex-wrap: wrap;
       gap: 6px;
       align-items: center;
     }
@@ -356,6 +373,43 @@
     meta.textContent = `스크랩${datePart} · ${getTaskTitle(scrap.task)}`;
     card.append(meta);
 
+    // 번역 있으면 한 줄 (글은 textContent)
+    let transEl = null;
+    function renderTranslation(text) {
+      if (text && text.trim()) {
+        if (!transEl) {
+          transEl = document.createElement('div');
+          transEl.className = 'trans-line';
+          if (memoEl) memoEl.before(transEl);
+          else actions.before(transEl);
+        }
+        transEl.textContent = text.trim();
+        transEl.classList.remove('err');
+      } else if (transEl) {
+        transEl.remove();
+        transEl = null;
+      }
+    }
+
+    function showTransError(msg) {
+      if (!transEl) {
+        transEl = document.createElement('div');
+        transEl.className = 'trans-line err';
+        if (memoEl) memoEl.before(transEl);
+        else actions.before(transEl);
+      }
+      transEl.textContent = msg;
+      transEl.classList.add('err');
+      placeCard(card, anchorRect);
+    }
+
+    if (scrap.translation && scrap.translation.trim()) {
+      transEl = document.createElement('div');
+      transEl.className = 'trans-line';
+      transEl.textContent = scrap.translation.trim();
+      card.append(transEl);
+    }
+
     // 메모 있으면 한 줄 (글은 textContent)
     let memoEl = null;
     if (scrap.memo && scrap.memo.trim()) {
@@ -365,7 +419,7 @@
       card.append(memoEl);
     }
 
-    // 버튼 줄: [인용 Tab] [메모] [스크랩 취소] (글은 textContent)
+    // 버튼 줄: [인용 Tab] [번역] [문맥 번역] [메모] [스크랩 취소] (글은 textContent)
     const actions = document.createElement('div');
     actions.className = 'actions';
 
@@ -378,9 +432,80 @@
         exact: scrap.quote?.exact ?? '',
         prefix: scrap.quote?.prefix ?? '',
         suffix: scrap.quote?.suffix ?? '',
+        ...(scrap.translation ? { translation: scrap.translation } : {}),
       };
       globalThis.readglossMemoPad?.attachQuote(quote, range.startContainer);
       closeCard();
+    });
+
+    function saveTranslation(translation) {
+      scrap.translation = translation;
+      update({ ...scrap, translation });
+      chrome.runtime.sendMessage({
+        type: 'scraps',
+        op: 'translation',
+        id: scrap.id,
+        translation,
+      });
+    }
+
+    const mtBtn = document.createElement('button');
+    mtBtn.type = 'button';
+    mtBtn.className = 'btn';
+    mtBtn.textContent = '번역';
+    mtBtn.addEventListener('click', () => {
+      const text = scrap.quote?.exact ?? '';
+      if (!text) return;
+      mtBtn.setAttribute('aria-disabled', 'true');
+      ctxBtn.setAttribute('aria-disabled', 'true');
+      renderTranslation('번역 중…');
+      placeCard(card, anchorRect);
+
+      chrome.runtime.sendMessage({ type: 'mt', text }, (res) => {
+        mtBtn.removeAttribute('aria-disabled');
+        ctxBtn.removeAttribute('aria-disabled');
+        if (cardHost !== host || activeCardScrapId !== id) return;
+        if (res && res.translation) {
+          renderTranslation(res.translation);
+          saveTranslation(res.translation);
+          placeCard(card, anchorRect);
+        } else {
+          showTransError(res?.error === 'bridge-off' ? '다리가 꺼져 있어요' : '번역 실패');
+        }
+      });
+    });
+
+    const ctxBtn = document.createElement('button');
+    ctxBtn.type = 'button';
+    ctxBtn.className = 'btn';
+    ctxBtn.textContent = '문맥 번역';
+    ctxBtn.addEventListener('click', () => {
+      const text = scrap.quote?.exact ?? '';
+      if (!text) return;
+      ctxBtn.setAttribute('aria-disabled', 'true');
+      mtBtn.setAttribute('aria-disabled', 'true');
+      renderTranslation('문맥 번역 중…');
+      placeCard(card, anchorRect);
+
+      let context = '';
+      if (globalThis.readglossContextFor && range) {
+        try {
+          context = globalThis.readglossContextFor(range) || '';
+        } catch {}
+      }
+
+      chrome.runtime.sendMessage({ type: 'translate-context', text, context }, (res) => {
+        ctxBtn.removeAttribute('aria-disabled');
+        mtBtn.removeAttribute('aria-disabled');
+        if (cardHost !== host || activeCardScrapId !== id) return;
+        if (res && res.translation) {
+          renderTranslation(res.translation);
+          saveTranslation(res.translation);
+          placeCard(card, anchorRect);
+        } else {
+          showTransError(res?.error === 'bridge-off' ? '다리가 꺼져 있어요' : '문맥 번역 실패');
+        }
+      });
     });
 
     const memoBtn = document.createElement('button');
@@ -401,7 +526,7 @@
       });
     });
 
-    actions.append(quoteBtn, memoBtn, cancelBtn);
+    actions.append(quoteBtn, mtBtn, ctxBtn, memoBtn, cancelBtn);
     card.append(actions);
 
     // 메모 입력 영역: 작은 textarea + ⌘Enter 저장
@@ -473,12 +598,19 @@
       const fresh = Array.isArray(res.scraps) ? res.scraps.find((s) => s.id === id) : null;
       if (fresh) {
         scrap.memo = fresh.memo || '';
+        if (fresh.translation !== undefined) scrap.translation = fresh.translation || '';
         if (fresh.task !== undefined) scrap.task = fresh.task;
-        knownScraps.set(id, { ...knownScraps.get(id), memo: scrap.memo, task: scrap.task });
+        knownScraps.set(id, { ...knownScraps.get(id), memo: scrap.memo, translation: scrap.translation, task: scrap.task });
       }
 
       if (cardHost === host && activeCardScrapId === id) {
         meta.textContent = `스크랩${datePart} · ${getTaskTitle(scrap.task)}`;
+        if (scrap.translation && scrap.translation.trim()) {
+          renderTranslation(scrap.translation.trim());
+        } else if (transEl) {
+          transEl.remove();
+          transEl = null;
+        }
         if (scrap.memo && scrap.memo.trim()) {
           if (!memoEl) {
             memoEl = document.createElement('div');
@@ -851,6 +983,7 @@
               exact: scrap.quote?.exact ?? '',
               prefix: scrap.quote?.prefix ?? '',
               suffix: scrap.quote?.suffix ?? '',
+              ...(scrap.translation ? { translation: scrap.translation } : {}),
             };
             globalThis.readglossMemoPad?.attachQuote(quote, range.startContainer);
           }

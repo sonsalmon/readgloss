@@ -16,6 +16,7 @@ export const LIMIT = {
   title: 300,
   url: 2000,
   quoteExact: 1000,
+  quoteTranslation: 2000,
   tutorTitle: 120,
 };
 
@@ -121,6 +122,13 @@ export function parseMemoOp(v) {
         suffix,
       };
 
+      if (v.quote.translation !== undefined && v.quote.translation !== null) {
+        if (typeof v.quote.translation !== 'string' || v.quote.translation.length > LIMIT.quoteTranslation) {
+          return null;
+        }
+        quote.translation = v.quote.translation;
+      }
+
       if (v.quote.source !== undefined && v.quote.source !== null) {
         if (v.quote.source !== 'tutor') return null;
         const t = v.quote.tutor;
@@ -213,6 +221,9 @@ function formatMemo(node) {
           exact: d.quote.exact ?? '',
           prefix: d.quote.prefix ?? '',
           suffix: d.quote.suffix ?? '',
+          ...(typeof d.quote.translation === 'string'
+            ? { translation: d.quote.translation }
+            : {}),
           ...(d.quote.source === 'tutor'
             ? {
                 source: 'tutor',

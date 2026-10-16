@@ -125,6 +125,12 @@ export function parseScrapOp(v) {
     return { op: 'memo', id: v.id, memo: v.memo };
   }
 
+  if (v.op === 'translation') {
+    if (typeof v.id !== 'string' || !SCRAP_ID_RE.test(v.id)) return null;
+    if (typeof v.translation !== 'string' || v.translation.length < 1 || v.translation.length > LIMIT.translation) return null;
+    return { op: 'translation', id: v.id, translation: v.translation };
+  }
+
   if (v.op === 'move') {
     if (typeof v.id !== 'string' || !SCRAP_ID_RE.test(v.id)) return null;
     let task = null;
@@ -337,6 +343,25 @@ export function createScraps({ file, db, now = Date.now }) {
         const existing = scraps.get(op.id);
         if (!existing) return null;
         existing.memo = op.memo;
+        scraps.set(op.id, existing);
+        if (db) {
+          db.put({
+            id: existing.id,
+            kind: 'scrap',
+            key: existing.url,
+            data: existing,
+            ts: existing.ts,
+          });
+        } else {
+          persist();
+        }
+        return all();
+      }
+
+      if (op.op === 'translation') {
+        const existing = scraps.get(op.id);
+        if (!existing) return null;
+        existing.translation = op.translation;
         scraps.set(op.id, existing);
         if (db) {
           db.put({
