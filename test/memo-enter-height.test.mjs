@@ -10,7 +10,7 @@ test('메모장 Enter: autoResize 는 이벤트가 끝난 뒤 e.target 을 다�
 });
 
 test('autoResize 는 TEXTAREA 가 아니면 아무것도 바꾸지 않는다', () => {
-  assert.match(src, /function autoResize\(ta\) \{\n\s*if \(!ta \|\| ta\.tagName !== 'TEXTAREA'\) return;/);
+  assert.match(src, /function autoResize\(ta\) \{\n\s*if \(!ta \|\| ta\.localName !== 'textarea'\) return;/);
 });
 
 test('글을 고른 채 Tab: shouldTabQuote 판정과 handleMemoOpen 연결', async () => {

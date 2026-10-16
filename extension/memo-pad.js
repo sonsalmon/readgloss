@@ -1636,7 +1636,7 @@
   }
 
   function autoResize(ta) {
-    if (!ta || ta.tagName !== 'TEXTAREA') return; // 쓰는 칸이 아니면(예: 메모장 host) 높이를 건드리지 않는다
+    if (!ta || ta.localName !== 'textarea') return; // 쓰는 칸이 아니면(예: 메모장 host) 높이를 건드리지 않는다
     const memoCore = globalThis.readglossMemo;
     const container = shadow?.querySelector('.sections-container');
     const listHeight = container ? container.clientHeight : 300;
