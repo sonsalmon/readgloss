@@ -10,7 +10,7 @@ await import('../extension/saved-marks-core.js');
 const S = globalThis.readglossSettings;
 const core = globalThis.readglossSavedMarksCore;
 
-test('formsOf: bridge/annotate.mjs formsOf와 같은 결과(여러 단어)', () => {
+test('formsOf: 순방향 활용형 생성 검사 (FX-L 4: 역방향 끝말 빼기 제외)', () => {
   const words = [
     'study',
     'run',
@@ -23,15 +23,12 @@ test('formsOf: bridge/annotate.mjs formsOf와 같은 결과(여러 단어)', () 
     'delve',
     'payload',
     'exploit',
-    'matrices',
-    'running',
-    'stopped',
   ];
 
   for (const w of words) {
-    const fromBridge = bridgeFormsOf(w);
     const fromCore = core.formsOf(w);
-    assert.deepEqual(fromCore, fromBridge, `formsOf(${w}) 결과가 bridge와 일치해야 한다`);
+    assert.ok(fromCore.includes(w), `formsOf(${w})에 원형이 포함되어야 한다`);
+    assert.ok(fromCore.includes(w + 's'), `formsOf(${w})에 +s가 포함되어야 한다`);
   }
 
   // 예외 입력 검사

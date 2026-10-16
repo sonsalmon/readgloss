@@ -1,9 +1,8 @@
 // 단어장 단어 칠하기 코어(T45b): 활용형 생성, 단어장 매핑, 본문 단어 검색(순수 함수).
 // classic script: globalThis.readglossSavedMarksCore 에 등록(node --test 와 브라우저 모두 지원).
 (() => {
-  // 흔한 활용형 및 끝말 제거 형태 목록(배열)을 돌려준다.
-  // bridge/annotate.mjs의 formsOf와 같은 규칙:
-  // formsOf(w) = w, w+s, w+es, w+ed, w+d, w+ing, (끝 e 뺀 w)+ing, (끝 y→i)+es/ed, 자음 하나 겹친 w+ed/ing(run→running), 그리고 반대로 표면형에서 그 끝말을 뺀 형태.
+  // 흔한 활용형 형태 목록(배열)을 돌려준다.
+  // 원형에 뒤가 붙는 형태(s, es, ed, d, ing, e 빼고 ing, y→ies/ied, 자음 겹침+ed/ing)만 생성(FX-L 4).
   function formsOf(w) {
     if (typeof w !== 'string' || !w) return [];
     const s = new Set();
@@ -34,51 +33,6 @@
     if (lower.length >= 2 && !'aeiou'.includes(lastChar) && /^[a-z]$/.test(lastChar)) {
       s.add(lower + lastChar + 'ing');
       s.add(lower + lastChar + 'ed');
-    }
-
-    // 반대로 표면형에서 그 끝말을 뺀 형태
-    // -s
-    if (lower.endsWith('s') && lower.length > 2) {
-      s.add(lower.slice(0, -1));
-    }
-    // -es
-    if (lower.endsWith('es') && lower.length > 3) {
-      s.add(lower.slice(0, -2));
-    }
-    // -ed
-    if (lower.endsWith('ed') && lower.length > 3) {
-      s.add(lower.slice(0, -2));
-      s.add(lower.slice(0, -1)); // -d 만 뺀 것
-    }
-    // -d
-    if (lower.endsWith('d') && lower.length > 2) {
-      s.add(lower.slice(0, -1));
-    }
-    // -ing
-    if (lower.endsWith('ing') && lower.length > 4) {
-      s.add(lower.slice(0, -3));
-      s.add(lower.slice(0, -3) + 'e'); // making -> make
-    }
-    // -ies -> -y
-    if (lower.endsWith('ies') && lower.length > 4) {
-      s.add(lower.slice(0, -3) + 'y');
-    }
-    // -ied -> -y
-    if (lower.endsWith('ied') && lower.length > 4) {
-      s.add(lower.slice(0, -3) + 'y');
-    }
-    // 자음 중복 해제 (running -> run, stopped -> stop)
-    if (lower.endsWith('ing') && lower.length > 5) {
-      const stem = lower.slice(0, -3);
-      if (stem.length >= 2 && stem[stem.length - 1] === stem[stem.length - 2]) {
-        s.add(stem.slice(0, -1));
-      }
-    }
-    if (lower.endsWith('ed') && lower.length > 4) {
-      const stem = lower.slice(0, -2);
-      if (stem.length >= 2 && stem[stem.length - 1] === stem[stem.length - 2]) {
-        s.add(stem.slice(0, -1));
-      }
     }
 
     return [...s].filter((f) => f && /^[a-z][a-z'’-]*$/.test(f));

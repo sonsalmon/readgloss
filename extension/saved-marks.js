@@ -21,7 +21,7 @@
   let savedSheet = null;
   let savedStyleEl = null;
 
-  let formMap = new Map(); // 형태 -> 원형 매핑
+  let formMap = null; // 형태 -> 원형 매핑 (단어장 응답 전에는 null: FX-L 2)
   const entriesByBlock = new Map(); // block -> [{ node, text, start, end, lemma, word, range }]
   let done = new WeakSet();
 
@@ -136,6 +136,7 @@
   }
 
   function onIntersect(records) {
+    if (!formMap) return; // 단어장 응답 전에는 훑지 않는다(목록이 null이면 done 표시하지 않음: FX-L 2)
     let changed = false;
     for (const r of records) {
       if (r.isIntersecting) {
@@ -224,7 +225,10 @@
         : Object.keys(saved ?? {});
       formMap = core.buildFormSet(lemmas);
       if (running) {
-        rescanAll();
+        done = new WeakSet();
+        entriesByBlock.clear();
+        document.querySelectorAll(BLOCK).forEach(retrack);
+        updateHighlights();
       }
     } catch {
       // 다리 미연결 등 오류 시 무시

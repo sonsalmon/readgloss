@@ -285,8 +285,11 @@
 
   let cardHost = null;
   let activeCardScrapId = null;
+  let isMemoBoxOpen = false;
+  let cachedTasks = {};
 
   function closeCard() {
+    isMemoBoxOpen = false;
     if (cardHost) {
       cardHost.remove();
       cardHost = null;
@@ -321,6 +324,7 @@
     if (!scrap || !range) return;
 
     activeCardScrapId = id;
+    isMemoBoxOpen = false;
 
     const host = document.createElement('readgloss-scrap-card');
     cardHost = host;
@@ -338,7 +342,7 @@
     card.setAttribute('role', 'dialog');
     card.setAttribute('aria-label', '스크랩');
 
-    // 내용: "스크랩 · M월 D일 · 할 일 제목" (글은 textContent)
+    // 내용: "스크랩 · M월 D일 · 할 일 제목" (글은 textContent, FX-L 5)
     const meta = document.createElement('div');
     meta.className = 'meta';
     let datePart = '';
@@ -348,13 +352,14 @@
         datePart = ` · ${d.getMonth() + 1}월 ${d.getDate()}일`;
       }
     }
-    const taskTitle = scrap.taskTitle || scrap.task || '인박스';
-    meta.textContent = `스크랩${datePart} · ${taskTitle}`;
+    const getTaskTitle = (tId) => (tId ? (cachedTasks[tId] || tId) : '인박스');
+    meta.textContent = `스크랩${datePart} · ${getTaskTitle(scrap.task)}`;
     card.append(meta);
 
     // 메모 있으면 한 줄 (글은 textContent)
+    let memoEl = null;
     if (scrap.memo && scrap.memo.trim()) {
-      const memoEl = document.createElement('div');
+      memoEl = document.createElement('div');
       memoEl.className = 'memo-line';
       memoEl.textContent = scrap.memo.trim();
       card.append(memoEl);
@@ -410,6 +415,8 @@
     memoInput.placeholder = '메모 (⌘Enter 저장)';
     memoInput.value = scrap.memo || '';
 
+    memoBox.append(memoInput); // FX-L 1: memoInput 붙이기
+
     function saveMemoAction() {
       const newMemo = memoInput.value.trim();
       chrome.runtime.sendMessage({ type: 'scraps', op: 'memo', id: scrap.id, memo: newMemo }, (res) => {
@@ -427,7 +434,10 @@
         saveMemoAction();
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        closeCard();
+        memoBox.hidden = true;
+        isMemoBoxOpen = false;
+        placeCard(card, anchorRect);
+        memoBtn.focus();
       }
     });
 
@@ -436,11 +446,14 @@
 
     memoBtn.addEventListener('click', () => {
       if (memoBox.hidden) {
+        memoInput.value = scrap.memo || '';
         memoBox.hidden = false;
+        isMemoBoxOpen = true;
         placeCard(card, anchorRect);
         memoInput.focus();
       } else {
         memoBox.hidden = true;
+        isMemoBoxOpen = false;
         placeCard(card, anchorRect);
       }
     });
@@ -450,6 +463,39 @@
     shadow.append(style, card);
     (document.body || document.documentElement).append(host);
     placeCard(card, anchorRect);
+
+    // FX-L 5, 7: 카드를 열 때 scraps get 으로 최신 메모와 tasks(할 일 표)를 다시 받는다
+    chrome.runtime.sendMessage({ type: 'scraps', op: 'get' }, (res) => {
+      if (chrome.runtime.lastError || !res || res.error) return;
+      if (res.tasks && typeof res.tasks === 'object') {
+        cachedTasks = res.tasks;
+      }
+      const fresh = Array.isArray(res.scraps) ? res.scraps.find((s) => s.id === id) : null;
+      if (fresh) {
+        scrap.memo = fresh.memo || '';
+        if (fresh.task !== undefined) scrap.task = fresh.task;
+        knownScraps.set(id, { ...knownScraps.get(id), memo: scrap.memo, task: scrap.task });
+      }
+
+      if (cardHost === host && activeCardScrapId === id) {
+        meta.textContent = `스크랩${datePart} · ${getTaskTitle(scrap.task)}`;
+        if (scrap.memo && scrap.memo.trim()) {
+          if (!memoEl) {
+            memoEl = document.createElement('div');
+            memoEl.className = 'memo-line';
+            actions.before(memoEl);
+          }
+          memoEl.textContent = scrap.memo.trim();
+        } else if (memoEl) {
+          memoEl.remove();
+          memoEl = null;
+        }
+        if (memoBox.hidden) {
+          memoInput.value = scrap.memo || '';
+        }
+        placeCard(card, anchorRect);
+      }
+    });
   }
 
   // --- 넘김 막대(Navigation Bar) ---
@@ -693,8 +739,11 @@
     closeCard,
   };
 
-  // --- 스크랩 형광펜 클릭 및 키 이벤트 접착(23-2) ---
+  // --- 스크랩 형광펜 클릭 및 키 이벤트 접착(23-2, FX-L 6) ---
   if (typeof document !== 'undefined') {
+    let clickTimer = 0;
+    let pendingHitId = null;
+
     // document click (capture): 선택이 비어 있고, 우리 화면 밖, 스크랩 Range 안, 링크면 ⌥클릭
     document.addEventListener(
       'click',
@@ -729,7 +778,32 @@
           e.preventDefault();
         }
 
-        openCard(hitId);
+        // FX-L 6: 형광펜 클릭은 250ms 기다렸다가 그 사이 dblclick이 없을 때만 카드를 연다
+        clearTimeout(clickTimer);
+        pendingHitId = hitId;
+        clickTimer = setTimeout(() => {
+          clickTimer = 0;
+          if (pendingHitId) {
+            const targetId = pendingHitId;
+            pendingHitId = null;
+            const curSel = window.getSelection?.();
+            if (curSel && !curSel.isCollapsed && curSel.toString().trim()) return;
+            openCard(targetId);
+          }
+        }, 250);
+      },
+      true,
+    );
+
+    // 더블클릭 시 스크랩 카드 열기 대기 취소
+    document.addEventListener(
+      'dblclick',
+      () => {
+        if (clickTimer) {
+          clearTimeout(clickTimer);
+          clickTimer = 0;
+          pendingHitId = null;
+        }
       },
       true,
     );
@@ -761,6 +835,7 @@
         }
 
         if (e.key === 'Tab') {
+          if (isMemoBoxOpen) return; // FX-L 1: 메모 칸이 열려 있는 동안은 Tab 인용 안 함
           if (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
           const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
           const isInput = path.some(
@@ -843,6 +918,9 @@
 
     chrome.runtime.sendMessage({ type: 'scraps', op: 'get', url: location.href }, (r) => {
       if (chrome.runtime.lastError || !r || r.error) return;
+      if (r.tasks && typeof r.tasks === 'object') {
+        cachedTasks = r.tasks;
+      }
       const list = Array.isArray(r.scraps) ? r.scraps : [];
       if (!list.length) return;
       paint(list);

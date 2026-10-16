@@ -3455,6 +3455,8 @@
       'readgloss-concept-form',
       'readgloss-concept-card',
       'readgloss-scrap-bar',
+      'readgloss-scrap-card',
+      'readgloss-struct-card',
     ];
     for (const sel of cardSelectors) {
       const el = document.querySelector(sel);
@@ -3494,6 +3496,8 @@
       'readgloss-toast',
       'readgloss-concept-card',
       'readgloss-scrap-bar',
+      'readgloss-scrap-card',
+      'readgloss-struct-card',
     ];
     let curr = activeEl;
     while (curr) {
