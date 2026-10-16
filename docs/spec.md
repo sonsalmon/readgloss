@@ -3,6 +3,31 @@
 - 2026-10-06 정범: 모양 **B(직접 만드는 작은 확장 + 다리)** 선택. 비교와 이유는 4·5절.
 - 정해 둔 것: 번역은 Claude 구독(`claude` 공식 프로그램, haiku, 생각 끄기)으로 하고, 캐시·일괄 요청·켠 사이트에서만 자동 주석으로 한도를 아낀다. codex는 나중에 둘째 엔진, agy는 쓰지 않는다.
 
+## 변경 기록 22 (2026-10-16, 정범 선택) — 사전 링크 + 복습 고리 (랭플릭스 아이디어, 코드는 안 옮김)
+
+### 22-1. 사전 링크
+- 더블클릭 사전 카드(content.js `readgloss-card`)와 드래그 카드(selection.js `readgloss-selection`) 아래에 작은 링크 줄: YouGlish(발음 영상) · 네이버 · Oxford · Cambridge. 새 탭(`target=_blank`, `rel=noopener noreferrer`). 낱말은 원형(있으면), 드래그는 고른 글(80자 넘으면 링크 줄 숨김).
+- 주소: YouGlish `https://youglish.com/pronounce/<글>/english`, 네이버 `https://en.dict.naver.com/#/search?query=<글>`, Oxford `https://www.oxfordlearnersdictionaries.com/search/english/?q=<글>`, Cambridge `https://dictionary.cambridge.org/search/english/direct/?q=<글>`(모두 encodeURIComponent).
+
+### 22-2. 복습 고리
+- 대상: 단어장 단어(saved)와 구·문장(phrases).
+- 상자 5칸: 새로 저장하면 상자 1, 오늘 볼 것. [알아요] → 상자 +1, 다음 날짜 = 오늘 + {1:1, 2:2, 3:4, 4:8, 5:16}[새 상자]일. 상자 5에서 [알아요] → 복습 끝(done). [아직] → 상자 1, 내일.
+- 저장: 단어장 항목·구 항목에 `review: { box, due(YYYY-MM-DD), last(ts), done(bool), count }`. 다시 저장해도 review는 유지. 다리 `POST /words {op:'review', lemma|id, result:'know'|'again'}`, `GET /words`의 항목에 review 포함, `GET /words/review` → `{ due:[{type:'word'|'phrase', key, ...카드 내용}], counts:{due, done, total} }`(오늘 서울 날짜 기준, 오래 밀린 것 먼저, 최대 50).
+- 패널 "내 단어"에 [복습] 보기(서브 탭 맨 앞, 이름 옆 오늘 개수). 카드: 앞면 단어(원형) + 저장한 문장에서 그 단어를 `____`로 가림 / 구·문장은 영어 글. [뒤집기](Space) → 뜻·메모 / 번역. [아직](1) [알아요](2). 다 끝나면 "오늘 복습 끝 · N개".
+- 복습 끝(done) 단어는 "내게 맞춘 주석"(변경 기록 20) 확률을 min(p, .20)으로 → 주석이 거의 안 붙음. 단, 다시 찾아보면(lookups) 찾아봄 규칙이 이긴다.
+- 본문 초록 칠하기는 이번에 안 함.
+
+### 22-3. 에이전트가 정한 것 (결정 — 이유 — 틀리면 드는 비용)
+- 상자 5칸 1·2·4·8·16일 — 가장 단순한 간격 반복 — 간격 숫자만 고치면 됨.
+- 링크는 원형으로 — 사전 검색이 원형에 강함 — 표면형이 필요한 구는 고른 글 그대로.
+
+### 22-4. 티켓
+| 티켓 | 내용 |
+|---|---|
+| T44a | 사전 링크(content.js·selection.js) |
+| T44b | 다리 복습 상태·op review·GET /words/review·주석 확률 반영 |
+| T44c | 패널 [복습] 보기 |
+
 ## 변경 기록 21 (2026-10-15, 정범 승인 "넘어가") — 문장 구조: 전치사 + 관계사
 
 그림: `docs/show-me-adaptive-annotation.html` 4절.
