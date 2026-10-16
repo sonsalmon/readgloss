@@ -349,7 +349,7 @@ test('소스 검사: attachQuote 공개 및 handleMemoOpen과 공통 함수 공�
   // 3. handleMemoOpen에서 공통 함수 attachQuote 호출 확인 (코드 중복 방지)
   assert.match(
     memoPadSrc,
-    /function\s+handleMemoOpen\s*\(\)\s*\{[\s\S]*?attachQuote\s*\(/,
+    /function\s+handleMemoOpen\s*\([^)]*\)\s*\{[\s\S]*?attachQuote\s*\(/,
     'handleMemoOpen에서 attachQuote 호출로 코드 공유',
   );
 });

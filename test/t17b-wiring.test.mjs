@@ -89,7 +89,8 @@ test('계약 10: 바뀐 확장 코드는 textContent 만 쓰고, preventDefault 
   assert.equal((sel.match(/\.preventDefault\(/g) ?? []).length, 1, 'preventDefault 는 표현 버튼 click 한 곳뿐');
   // 정밀 예외(T20): content.js 의 확인 메시지 메모 입력칸에서만 Enter 저장·Esc 취소의 기본 동작을 막는다(우리 textarea 안).
   const content = read('content.js');
-  assert.equal((content.match(/\.preventDefault\(/g) ?? []).length, 2, 'preventDefault 는 메모 입력칸(Enter 저장·Esc 취소)뿐');
+  // 정밀 예외(T46): 스크랩 확인 메시지가 떠 있을 때 Tab 은 메모장 인용으로 가로챈다(24-2). 그래서 한 곳 늘어 3.
+  assert.equal((content.match(/\.preventDefault\(/g) ?? []).length, 3, 'preventDefault 는 메모 입력칸(Enter 저장·Esc 취소)과 확인 메시지 Tab 인용뿐');
   assert.match(content, /globalThis\.readglossWords\.memoKey\(e\)/, '메모 입력칸 판정은 순수 함수 memoKey 가 한다');
   for (const f of ['selection.js', 'paragraph.js', 'panel-words.js', 'content.js', 'selection-core.js']) {
     assert.doesNotMatch(read(f), /chrome\.storage/, `${f}: storage 를 새로 쓰지 않는다`);

@@ -160,6 +160,13 @@
     if (path.some((n) => EDITABLE_TAGS.includes(n?.localName) || n?.isContentEditable === true)) return false;
     return !path.some((n) => isOwnCard(n) && cardTyping(n));
   }
+  // Tab 키로 인용 메모를 여는가(순수 함수, 시험이 쓴다). 조합키 없는 단독 Tab, 입력칸 밖.
+  function isToastTab(e, path = []) {
+    if (!e || e.key !== 'Tab') return false;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.isComposing) return false;
+    if (path.some((n) => EDITABLE_TAGS.includes(n?.localName) || n?.isContentEditable === true)) return false;
+    return !path.some((n) => isOwnCard(n) && cardTyping(n));
+  }
   // 확인 메시지를 붙일 자리: 범위·요소의 화면 위치. 크기가 0이면(접힌 범위 등) null -> 아래 가운데
   const rectOf = (x) => {
     const r = x?.getBoundingClientRect?.();
@@ -186,8 +193,8 @@
     setTimeout(() => h.remove(), 220);
   }
 
-  // text: 확인 문구. anchor: 붙일 화면 자리(rectOf 결과). onMemo: [메모] 버튼을 눌렀을 때. 메모 저장 성공은 error 칸 없는 응답, 실패는 { error }.
-  function showToast({ text = '', onMemo, anchor, ms } = {}) {
+  // text: 확인 문구. anchor: 붙일 화면 자리(rectOf 결과). onMemo: [메모] 버튼을 눌렀을 때. onQuote: [메모]·Tab·글자 시 인용 메모. 메모 저장 성공은 error 칸 없는 응답, 실패는 { error }.
+  function showToast({ text = '', onMemo, onQuote, anchor, ms } = {}) {
     clearTimeout(toastTimer);
     stopToastKey();
     toastHost?.remove(); // 다시 show 하면 이전 메시지를 대체한다
@@ -222,7 +229,17 @@
     box.append(ta, err);
     pill.append(row, box);
     let memoBtn = null;
-    if (typeof onMemo === 'function') {
+    if (typeof onQuote === 'function') {
+      memoBtn = el('button', 'memoBtn', '메모');
+      memoBtn.type = 'button';
+      memoBtn.setAttribute('aria-label', '메모 남기기');
+      memoBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        hideToast();
+        onQuote();
+      });
+      row.append(memoBtn);
+    } else if (typeof onMemo === 'function') {
       memoBtn = el('button', 'memoBtn', '메모');
       memoBtn.type = 'button';
       memoBtn.setAttribute('aria-label', '메모 남기기');
@@ -232,11 +249,32 @@
     pill.addEventListener('mouseenter', () => { toastHover = true; clearTimeout(toastTimer); });
     pill.addEventListener('mouseleave', () => { toastHover = false; if (!toastMemo) scheduleToast(); });
 
-    // 메시지가 떠 있는 동안 글자를 치면 메모 칸이 열리고 그 글자가 칸에 들어간다(preventDefault 하지 않는다: 키가 textarea 로 간다)
+    // 메시지가 떠 있는 동안 글자를 치거나(onMemo/onQuote) Tab(onQuote)을 누르면 동작
     function armKey() {
+      if (typeof onQuote === 'function') {
+        stopToastKey();
+        toastKey = (e) => {
+          const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+          if (isToastTab(e, path)) {
+            e.preventDefault();
+            e.stopPropagation();
+            hideToast();
+            onQuote();
+            return;
+          }
+          if (startsMemo(e, path)) {
+            // 친 글자는 쓰는 칸으로 가야 하므로 preventDefault 하지 않는다(attachQuote 가 쓰는 칸에 포커스)
+            hideToast();
+            onQuote();
+            return;
+          }
+        };
+        document.addEventListener('keydown', toastKey, true);
+        return;
+      }
       if (typeof onMemo !== 'function') return;
       stopToastKey();
-      toastKey = (e) => { if (startsMemo(e, e.composedPath())) openMemo(); };
+      toastKey = (e) => { if (startsMemo(e, typeof e.composedPath === 'function' ? e.composedPath() : [])) openMemo(); };
       document.addEventListener('keydown', toastKey, true);
     }
     function failMemo(t) {
@@ -309,7 +347,7 @@
     armKey();
     scheduleToast(ms ?? TOAST_MS); // ms: 짧게 떴다 사라질 확인(예: [나중에] 1.5초, 명세 13-1)
   }
-  globalThis.readglossToast = { show: showToast, toastPosition, startsMemo, rectOf };
+  globalThis.readglossToast = { show: showToast, toastPosition, startsMemo, isToastTab, rectOf };
 
   let host = null;
   let ui = null; // { card, scroll, ai, aiBtn, saveBtn, knownBtn }

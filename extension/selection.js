@@ -126,6 +126,7 @@
       const a = shadowRoot?.activeElement;
       return !!a && (a.localName === 'input' || a.localName === 'textarea' || a.isContentEditable === true);
     },
+    scrapRange: (range) => scrapRange(range),
   };
   let current = null; // { text, range, anchor, mt, termKo, ctx, ctxNote, wide, wideNote, mine, phraseId }  ctx·wide 는 문맥·넓은 문맥 번역(성공했을 때만 생김)
   let seq = 0; // 닫거나 새로 열 때마다 올려서 늦게 온 응답을 버린다
@@ -710,13 +711,24 @@
     place();
   }
 
+  // 할 일 짐작 요청(드래그 카드와 scrapRange 가 공통으로 쓴다)
+  async function fetchGuessedTask() {
+    try {
+      const r = await send({ type: 'scraps', op: 'guess', url: location.href });
+      if (r && !r.error) {
+        return { task: r.task ?? null, guess: r };
+      }
+    } catch {}
+    return { task: null, guess: null };
+  }
+
   async function guessTask() {
     const my = seq;
-    const r = await send({ type: 'scraps', op: 'guess', url: location.href });
+    const { task, guess: r } = await fetchGuessedTask();
     if (my !== seq || !r || !current) return;
     current.guess = r;
     if (!current.taskChosen) {
-      current.task = r.task ?? null;
+      current.task = task;
       const matched = r.candidates?.find((c) => c.id === r.task);
       current.taskTitle = matched ? matched.title : (r.task ?? '인박스');
     }
@@ -797,40 +809,83 @@
     saveScrap();
   }
 
-  async function saveScrap() {
-    if (!ui?.scrapBtn || ui.scrapBtn.getAttribute('aria-disabled') === 'true' || !current || !current.quote) return;
-    const my = seq;
-    const anchor = globalThis.readglossToast?.rectOf(current.range); // 확인 메시지 자리: 고른 글(저장 누른 순간)
-    ui.scrapBtn.setAttribute('aria-disabled', 'true');
-    notify('');
-    const headings = headingsAbove(current.range.startContainer);
-    const translation = current.wide ?? current.ctx ?? current.mt ?? '';
+  // 스크랩 메시지 전송 및 형광펜 칠하기 공통 함수(saveScrap 과 scrapRange 가 같이 쓴다)
+  async function submitScrap({ headings, quote, pos, translation = '', task = null }) {
     const message = core.scrapMessage({
       url: location.href,
       title: document.title,
       headings,
-      quote: current.quote,
+      quote,
+      pos,
+      translation,
+      task,
+    });
+    const r = await send(message);
+    if (r && !r.error) {
+      globalThis.readglossScrapPage?.paint(Array.isArray(r.scraps) ? r.scraps : []);
+      return { ok: true, scrap: r.scrap, r };
+    }
+    return { ok: false, error: r?.error, r };
+  }
+
+  // 선택 Range 로 스크랩을 저장한다 (T46: 확인 메시지 없이, 같은 글이면 그대로 성공)
+  async function scrapRange(range) {
+    if (!range) return { ok: false, error: 'no-range' };
+    const scrapPage = globalThis.readglossScrapPage;
+    const qInfo = scrapPage?.quoteForRange ? scrapPage.quoteForRange(range) : null;
+    const quote = qInfo?.quote ?? null;
+    if (!quote) return { ok: false, error: 'no-quote' };
+    const pos = qInfo?.pos ?? 0;
+    const headings = headingsAbove(range.startContainer);
+
+    const { task } = await fetchGuessedTask();
+
+    const res = await submitScrap({
+      headings,
+      quote,
+      pos,
+      translation: '',
+      task,
+    });
+    if (res.ok) {
+      return { ok: true, scrap: res.scrap };
+    }
+    return { ok: false, error: res.error };
+  }
+
+  async function saveScrap() {
+    if (!ui?.scrapBtn || ui.scrapBtn.getAttribute('aria-disabled') === 'true' || !current || !current.quote) return;
+    const my = seq;
+    // 확인 메시지가 뜬 뒤 선택이 풀려도 쓸 수 있게 saveScrap 시작 때 cloneRange() 로 잡아 둔다
+    const savedRange = current.range.cloneRange();
+    const anchor = globalThis.readglossToast?.rectOf(savedRange); // 확인 메시지 자리: 고른 글(저장 누른 순간)
+    const quote = current.quote;
+    ui.scrapBtn.setAttribute('aria-disabled', 'true');
+    notify('');
+    const headings = headingsAbove(savedRange.startContainer);
+    const translation = current.wide ?? current.ctx ?? current.mt ?? '';
+    const res = await submitScrap({
+      headings,
+      quote,
       pos: current.pos,
       translation,
       task: current.task,
     });
-    const r = await send(message);
     if (my !== seq) return;
     ui.scrapBtn.removeAttribute('aria-disabled');
-    if (r && !r.error) {
-      const id = r.scrap?.id ?? null; // 서버가 돌려준 방금 저장한 한 건(id 로 정확히)
+    if (res.ok) {
+      const id = res.scrap?.id ?? null; // 서버가 돌려준 방금 저장한 한 건(id 로 정확히)
       current.scrapId = id;
-      globalThis.readglossScrapPage?.paint(Array.isArray(r.scraps) ? r.scraps : []);
       globalThis.readglossToast?.show({
         text: '스크랩했어요',
         anchor,
-        onMemo: (memo) => send({ type: 'scraps', op: 'memo', id, memo }),
+        onQuote: () => globalThis.readglossMemoPad?.attachQuote?.(quote, savedRange.startContainer),
       });
       getSelection().removeAllRanges();
       close();
       return;
     }
-    notify(errText(r));
+    notify(errText(res.r));
     paintScrapBtn();
     place();
   }

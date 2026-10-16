@@ -3368,8 +3368,8 @@
     }
   }
 
-  // ⌥M with 고른 글 또는 토글 처리
-  function handleMemoOpen() {
+  // ⌥M with 고른 글 또는 토글 처리 (scrap: Tab 경로에서 스크랩 동시 실행)
+  function handleMemoOpen({ scrap = false } = {}) {
     const sel = typeof window !== 'undefined' ? window.getSelection() : null;
     const hasSelection = sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.toString().trim().length > 0;
 
@@ -3400,7 +3400,21 @@
         return;
       }
 
-      // 3. 공통 함수를 통해 인용 붙이고 열기 (T45c)
+      // 3. 드래그 + Tab 경로: 인용을 붙이기 전에(기다리지 말고 동시에) scrapRange 호출
+      if (scrap && range) {
+        const cloned = range.cloneRange();
+        Promise.resolve(globalThis.readglossSelectionUi?.scrapRange?.(cloned))
+          .then((res) => {
+            if (!res || !res.ok) {
+              showPadToastNotice('스크랩은 못 했어요(인용은 붙음)', 2000);
+            }
+          })
+          .catch(() => {
+            showPadToastNotice('스크랩은 못 했어요(인용은 붙음)', 2000);
+          });
+      }
+
+      // 4. 공통 함수를 통해 인용 붙이고 열기 (T45c)
       attachQuote(extracted, range.startContainer);
       return;
     }
@@ -3429,7 +3443,7 @@
     if (!ok) return;
     e.preventDefault();
     e.stopPropagation();
-    handleMemoOpen();
+    handleMemoOpen({ scrap: true });
   }, true);
 
   chrome.runtime.onMessage.addListener((msg) => {
