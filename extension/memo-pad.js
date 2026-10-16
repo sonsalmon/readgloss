@@ -955,7 +955,8 @@
       font-size: 0.85em;
       line-height: 1.35;
       border-collapse: collapse;
-      width: 100%;
+      width: max-content;
+      min-width: 100%;
     }
     .sec-quote-table th,
     .sec-quote-table td {
@@ -963,7 +964,7 @@
       padding: 2px 6px;
       text-align: left;
       vertical-align: top;
-      word-break: break-word;
+      max-width: 16em;
     }
     .sec-quote-table th {
       background: var(--bg);
