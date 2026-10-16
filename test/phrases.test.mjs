@@ -92,8 +92,9 @@ test('createWords save-phrase: 표현은 kind·sentence 가 저장되고 GET·�
   raw.phrases.bbbbbbbbbbbb = { text: 'weird', translation: 'x', kind: 'nope', sentence: 5, ts: 1 };
   writeFileSync(file, JSON.stringify(raw));
   const v = createWords({ file }).all().phrases;
-  assert.deepEqual(v.aaaaaaaaaaaa, { text: 'old entry', translation: '옛', kind: 'sentence', ts: 1 });
-  assert.deepEqual(v.bbbbbbbbbbbb, { text: 'weird', translation: 'x', kind: 'sentence', ts: 1 });
+  // FX-K: 옛 항목도 시작할 때 복습 날짜가 붙는다
+  assert.deepEqual(sansReview(v.aaaaaaaaaaaa), { text: 'old entry', translation: '옛', kind: 'sentence', ts: 1 });
+  assert.deepEqual(sansReview(v.bbbbbbbbbbbb), { text: 'weird', translation: 'x', kind: 'sentence', ts: 1 });
 });
 
 test('createWords: 구는 낱말 상태(known·saved·history)와 따로, 깨진 항목은 버린다', () => {

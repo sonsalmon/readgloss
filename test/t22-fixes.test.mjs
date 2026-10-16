@@ -59,7 +59,7 @@ test('T22-7 panel-words.js: 패널 메모 입력칸 Enter 판정도 memoKey 를 
   const src = read('panel-words.js');
   assert.match(src, /if \(W\.memoKey\(e\) === 'save'\)/);
   // 메모 입력칸 Enter 한 곳(memoKey 판정 바로 뒤) + T44c 복습 단축키 3곳(계약 10 이 블록 범위를 따로 검사한다)
-  assert.equal((src.match(/\.preventDefault\(/g) ?? []).length, 4, 'preventDefault 는 메모 입력칸 Enter 1 + 복습 단축키 3');
+  assert.equal((src.match(/\.preventDefault\(/g) ?? []).length, 5, 'preventDefault 는 메모 입력칸 Enter 1 + 복습 단축키 4');
   assert.match(src, /if \(W\.memoKey\(e\) === 'save'\) \{\s*e\.preventDefault\(\)/, '메모 입력칸 Enter 의 preventDefault 는 memoKey 판정 안');
 });
 

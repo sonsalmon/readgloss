@@ -66,10 +66,10 @@ test('계약 9 접착: 사전 카드가 저장 문맥·출처를 쓰고, 패널 
 // panel-words.js 의 preventDefault: 메모 입력칸 Enter 1곳 + T44c 복습 단축키(Space·1·2) 3곳.
 // 복습 단축키는 패널 shadow 안, [복습] 보기, 입력칸 밖, 수정키 없음일 때만 동작해야 한다(페이지 키를 막지 않는다).
 function assertPanelPreventDefaults(pw) {
-  assert.equal((pw.match(/\.preventDefault\(/g) ?? []).length, 4, 'panel-words.js 의 preventDefault 는 메모 입력칸 Enter 1 + 복습 단축키 3');
+  assert.equal((pw.match(/\.preventDefault\(/g) ?? []).length, 5, 'panel-words.js 의 preventDefault 는 메모 입력칸 Enter 1 + 복습 단축키 4(Space 앞면·뒷면, 1, 2)');
   const i = pw.indexOf("root.addEventListener('keydown'");
   const block = pw.slice(i, pw.indexOf('const chipBtns', i));
-  assert.equal((block.match(/\.preventDefault\(/g) ?? []).length, 3, '복습 단축키 블록에 preventDefault 3곳(Space·1·2)');
+  assert.equal((block.match(/\.preventDefault\(/g) ?? []).length, 4, '복습 단축키 블록에 preventDefault 4곳(Space 앞면·뒷면(FX-K: 뒷면 Space 는 막기만), 1, 2)');
   assert.match(block, /if \(list !== 'review'\) return/);
   assert.match(block, /if \(isInput \|\| e\.ctrlKey \|\| e\.metaKey \|\| e\.altKey\) return/);
 }

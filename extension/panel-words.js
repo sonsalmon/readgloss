@@ -422,6 +422,11 @@
           draw();
         }
       } else if (cardState.side === 'back') {
+        if (e.key === ' ' || e.code === 'Space') {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
         if (e.key === '1') {
           e.preventDefault();
           e.stopPropagation();
@@ -455,7 +460,7 @@
       if (!root.isConnected) return window.removeEventListener('readgloss:words', onWords);
       if (!selfWords) {
         loadWords(); // 입력칸의 draft 는 draw 가 그대로 살린다
-        loadReview();
+        loadReview(true);
       }
     };
     window.addEventListener('readgloss:words', onWords);
@@ -747,14 +752,21 @@
         reviewData.counts = r.counts;
       } else if (reviewData?.counts) {
         if (reviewData.counts.due > 0) reviewData.counts.due--;
-        if (result === 'know') reviewData.counts.done = (reviewData.counts.done ?? 0) + 1;
       }
       cardState = W.nextCardState(cardState, 'next');
+      if (cardState.index >= due.length && (reviewData?.counts?.due ?? 0) > 0) {
+        loadReview(false);
+        return;
+      }
       draw();
     }
 
     // 복습 화면 그리기
     function drawReview() {
+      // 자동 포커스는 "그 직전에 포커스가 이미 이 복습 보기(패널 shadow) 안에 있었을 때"만 한다.
+      const activeEl = root.getRootNode?.()?.activeElement;
+      const hadFocus = Boolean(activeEl && root.contains(activeEl));
+
       revPane.replaceChildren();
 
       if (reviewMessage) {
@@ -831,7 +843,9 @@
           draw();
         });
         btnBar.append(flipBtn);
-        requestAnimationFrame(() => flipBtn.focus());
+        if (hadFocus) {
+          requestAnimationFrame(() => flipBtn.focus());
+        }
       } else {
         const againBtn = el('button', 'act rev-btn');
         againBtn.type = 'button';
@@ -846,7 +860,11 @@
         knowBtn.addEventListener('click', () => answerReview('know'));
 
         btnBar.append(againBtn, knowBtn);
-        requestAnimationFrame(() => knowBtn.focus());
+        // 뒤집은 뒤 [알아요]에 자동 포커스하지 않는다(포커스는 카드 영역 또는 그대로).
+        cardBox.tabIndex = -1;
+        if (hadFocus) {
+          requestAnimationFrame(() => cardBox.focus());
+        }
       }
       revPane.append(btnBar);
 
@@ -928,11 +946,24 @@
       draw();
     }
 
-    async function loadReview() {
+    async function loadReview(preserveState = false) {
+      const prevCard = reviewData?.due?.[cardState.index];
+      const prevKey = prevCard?.key;
+      const prevSide = cardState.side;
+
       const r = await ctx.send({ type: 'words', op: 'review-queue' });
       if (r?.due && r.counts) {
         reviewData = r;
-        cardState = { index: 0, side: 'front' };
+        if (preserveState && prevKey) {
+          const nextIdx = r.due.findIndex((c) => c.key === prevKey);
+          if (nextIdx >= 0) {
+            cardState = { index: nextIdx, side: prevSide };
+          } else {
+            cardState = { index: 0, side: 'front' };
+          }
+        } else {
+          cardState = { index: 0, side: 'front' };
+        }
         reviewMessage = '';
       } else {
         reviewMessage = errText(r, '복습 목록을 불러오지 못했어요');

@@ -21,7 +21,7 @@ export function baseP(level) {
 }
 
 // 20-1 규칙: 내 기록으로 단어마다 모를 확률 계산
-export function probability({ level, saved = false, lookups = 0, stat = null, done = false }) {
+export function probability({ level, saved = false, lookups = 0, stat = null, done = false, lookedAfterDone = false }) {
   let p = baseP(level);
 
   // 주석이 떴는데 "봤다"가 없음: 뜬 횟수 s가 3 이상이고 본 횟수 0이면 p * .7^(s-2)
@@ -41,8 +41,8 @@ export function probability({ level, saved = false, lookups = 0, stat = null, do
     p = Math.max(p, lookupP);
   }
 
-  // 복습 끝(done) 단어: 찾아봄이 없으면 p = min(p, 0.20), 찾아봄이 있으면 유지
-  if (done && n < 1) {
+  // 복습 끝(done) 단어: 복습 끝난 뒤 다시 찾아봄(lookedAfterDone)이 없으면 p = min(p, 0.20), 다시 찾아봤으면 유지
+  if (done && !lookedAfterDone) {
     p = Math.min(p, 0.20);
   }
 

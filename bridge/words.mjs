@@ -4,7 +4,7 @@ import { copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from
 import { dirname } from 'node:path';
 import { WORD_RE } from './lookup.mjs';
 import { normalizeText } from './translate.mjs';
-import { applyReview, initialReview, isDue, isValidReview } from './review.mjs';
+import { addDays, applyReview, initialReview, isDue, isValidReview } from './review.mjs';
 import { dateOf } from '../scripts/export-day.mjs';
 
 export const MAX_HISTORY = 200;
@@ -271,6 +271,109 @@ export function createWords({ file, db, now = Date.now }) {
     renameSync(tmp, file); // 원자적 교체
   }
 
+  // 옛 항목 나눠 넣기(10-16 정범 결정 "하루 10개씩"):
+  // 시작할 때(불러온 뒤) review가 없는 saved·phrases 항목을 ts 오래된 순으로 줄 세워,
+  // i번째(0부터)에 {box:1, due: 오늘 + floor(i/10)일, last:0, done:false, count:0}을 붙이고 저장(한 번만)
+  const unreviewed = [];
+  for (const [lemma, item] of saved) {
+    if (!item.review) {
+      unreviewed.push({ type: 'word', key: lemma, ts: item.ts, item });
+    }
+  }
+  for (const [id, item] of phrases) {
+    if (!item.review) {
+      unreviewed.push({ type: 'phrase', key: id, ts: item.ts, item });
+    }
+  }
+  if (unreviewed.length > 0) {
+    unreviewed.sort((a, b) => (a.ts !== b.ts ? a.ts - b.ts : a.key.localeCompare(b.key)));
+    const today = dateOf(now());
+    for (let i = 0; i < unreviewed.length; i++) {
+      const entry = unreviewed[i];
+      const days = Math.floor(i / 10);
+      const due = addDays(today, days);
+      const rev = {
+        box: 1,
+        due,
+        last: 0,
+        done: false,
+        count: 0,
+      };
+      entry.item.review = rev;
+      if (entry.type === 'word') {
+        saved.set(entry.key, { ...entry.item, review: rev });
+      } else {
+        phrases.set(entry.key, { ...entry.item, review: rev });
+      }
+    }
+    if (db) {
+      for (const entry of unreviewed) {
+        if (entry.type === 'word') persistWord(entry.key);
+        else persistPhrase(entry.key);
+      }
+    } else {
+      persist();
+    }
+  }
+
+  function reviewQueue(today = dateOf(now())) {
+    const queue = [];
+    let doneCount = 0;
+    const totalCount = saved.size + phrases.size;
+
+    for (const [lemma, item] of saved) {
+      const rev = item.review;
+      if (rev?.done) doneCount++;
+      if (isDue(rev, today)) {
+        queue.push({
+          due: rev.due,
+          ts: item.ts,
+          card: {
+            type: 'word',
+            key: lemma,
+            word: item.word,
+            gloss: item.gloss,
+            sentence: item.sentence,
+            ...(item.memo && { memo: item.memo }),
+          },
+        });
+      }
+    }
+
+    for (const [id, item] of phrases) {
+      const rev = item.review;
+      if (rev?.done) doneCount++;
+      if (isDue(rev, today)) {
+        queue.push({
+          due: rev.due,
+          ts: item.ts,
+          card: {
+            type: 'phrase',
+            key: id,
+            text: item.text,
+            translation: item.translation,
+            ...(item.kind && { kind: item.kind }),
+          },
+        });
+      }
+    }
+
+    const dueCount = queue.length;
+    queue.sort((a, b) => {
+      if (a.due !== b.due) return a.due < b.due ? -1 : 1;
+      return a.ts - b.ts;
+    });
+
+    return {
+      due: queue.slice(0, 50).map((x) => x.card),
+      counts: {
+        due: dueCount,
+        done: doneCount,
+        total: totalCount,
+      },
+    };
+  }
+
   return {
     all,
     isKnown: (lemma) => known.has(lemma),
@@ -286,63 +389,7 @@ export function createWords({ file, db, now = Date.now }) {
       }
       return out;
     },
-    reviewQueue(today = dateOf(now())) {
-      const queue = [];
-      let doneCount = 0;
-      const totalCount = saved.size + phrases.size;
-
-      for (const [lemma, item] of saved) {
-        const rev = item.review;
-        if (rev?.done) doneCount++;
-        if (isDue(rev, today)) {
-          queue.push({
-            due: rev.due,
-            ts: item.ts,
-            card: {
-              type: 'word',
-              key: lemma,
-              word: item.word,
-              gloss: item.gloss,
-              sentence: item.sentence,
-              ...(item.memo && { memo: item.memo }),
-            },
-          });
-        }
-      }
-
-      for (const [id, item] of phrases) {
-        const rev = item.review;
-        if (rev?.done) doneCount++;
-        if (isDue(rev, today)) {
-          queue.push({
-            due: rev.due,
-            ts: item.ts,
-            card: {
-              type: 'phrase',
-              key: id,
-              text: item.text,
-              translation: item.translation,
-              ...(item.kind && { kind: item.kind }),
-            },
-          });
-        }
-      }
-
-      const dueCount = queue.length;
-      queue.sort((a, b) => {
-        if (a.due !== b.due) return a.due < b.due ? -1 : 1;
-        return a.ts - b.ts;
-      });
-
-      return {
-        due: queue.slice(0, 50).map((x) => x.card),
-        counts: {
-          due: dueCount,
-          done: doneCount,
-          total: totalCount,
-        },
-      };
-    },
+    reviewQueue,
     // parseWordsOp 를 통과한 요청만 받는다. 바뀐 전체 상태를 돌려준다. memo/review 대상이 없으면 null(404).
     // ponytail: 메모리를 먼저 바꾸고 쓴다. 디스크 쓰기가 실패하면 이 실행 동안만 메모리와 파일이 어긋난다(파일 자체는 rename 으로 안 깨진다).
     apply({ op, lemma, word, gloss, sentence, url, id, text, translation, context, title, kind, memo, headings, result }) {
@@ -361,7 +408,12 @@ export function createWords({ file, db, now = Date.now }) {
         } else {
           persist();
         }
-        return lemma !== undefined ? all() : { id, phrases: Object.fromEntries(phrases) };
+        const base = lemma !== undefined ? all() : { id, phrases: Object.fromEntries(phrases) };
+        return {
+          ...base,
+          review: nextReview,
+          counts: reviewQueue(today).counts,
+        };
       }
       if (op === 'memo') {
         // memo 대상이 없으면 404. memo '' 이면 칸을 지운다. ts 는 건드리지 않는다.

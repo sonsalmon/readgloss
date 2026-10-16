@@ -564,9 +564,10 @@ test('done 단어 주석 확률: done 단어는 min(p, .20), 찾아봄(looked) �
   assert.equal(probability({ level: 'B2', saved: true, done: true, lookups: 0 }), 0.20);
   // 원래 더 낮은 A1(0.02)은 min(0.02, 0.20)이므로 0.02
   assert.equal(probability({ level: 'A1', saved: false, done: true, lookups: 0 }), 0.02);
-  // 찾아봄(lookups 1회)이 있으면 찾아봄 규칙(0.90)이 이김!
-  assert.equal(probability({ level: 'B2', saved: true, done: true, lookups: 1 }), 0.95); // 찾아봄이 있으면 done 규칙을 안 써서 평소 값(저장 .95)
-  assert.equal(probability({ level: 'B2', saved: true, done: true, lookups: 3 }), 0.95);
+  // 찾아봄(lookups 1회)이 있으면 찾아봄 규칙(0.90)이 이김! (done 단어는 lookedAfterDone: true일 때 평소 값)
+  assert.equal(probability({ level: 'B2', saved: true, done: true, lookedAfterDone: true, lookups: 1 }), 0.95); // 찾아봄이 있으면 done 규칙을 안 써서 평소 값(저장 .95)
+  assert.equal(probability({ level: 'B2', saved: true, done: true, lookedAfterDone: true, lookups: 3 }), 0.95);
+  assert.equal(probability({ level: 'B2', saved: true, done: true, lookedAfterDone: false, lookups: 1 }), 0.20); // lookedAfterDone이 false면 .20
 
   // 2) 서버 통합 시험 (buildSignals -> scoreOf)
   const clock = createClock('2026-10-16T12:00:00');
@@ -601,7 +602,8 @@ test('done 단어 주석 확률: done 단어는 min(p, .20), 찾아봄(looked) �
     // 활용형 mitigated도 0.20
     assert.equal(s.bridge.scoreOf('mitigate', 'B2', 'mitigated'), 0.20);
 
-    // 이제 찾아봄 발생. 실제 맥 사전에 기대지 않도록 /words history 로 남긴다(buildSignals 의 looked 로 들어간다).
+    // 이제 찾아봄 발생(복습 끝난 뒤 시각 진행). 실제 맥 사전에 기대지 않도록 /words history 로 남긴다(buildSignals 의 looked 로 들어간다).
+    clock.set(clock.now() + 1000);
     await s.req('POST', '/words', {
       headers: s.auth,
       body: { op: 'history', lemma: 'mitigate' },

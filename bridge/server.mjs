@@ -68,7 +68,23 @@ export function createScoreOf(signals, wstat = null) {
     const n2 = (surface && surface !== lemma && signals?.looked && signals.looked.has(surface)) ? (signals.looked.get(surface) ?? 0) : 0;
     const totalLookups = Math.max(n1, n2);
     const stat = wstat ? wstat.get(lemma) : null;
-    return probability({ level, saved, lookups: totalLookups, stat, done });
+
+    let lookedAfterDone = false;
+    if (done) {
+      const doneLastTs = Math.max(
+        signals?.doneLast?.get(lemma) ?? 0,
+        surface ? (signals?.doneLast?.get(surface) ?? 0) : 0,
+      );
+      const lastLookedTs = Math.max(
+        signals?.lastLooked?.get(lemma) ?? 0,
+        surface ? (signals?.lastLooked?.get(surface) ?? 0) : 0,
+      );
+      if (lastLookedTs > doneLastTs) {
+        lookedAfterDone = true;
+      }
+    }
+
+    return probability({ level, saved, lookups: totalLookups, stat, done, lookedAfterDone });
   };
   fn.hasSavedOrLookup = (word) => {
     return Boolean((signals?.saved && signals.saved.has(word)) || (signals?.looked && signals.looked.has(word)));
@@ -256,10 +272,12 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
   }
 
   // 신호 표: saved 원형, history 원형(60일, 횟수 1), study.lookups(60) 표면형 횟수를 흔한 활용형으로 펼친다.
+  // 원형별 마지막 찾아본 시각(words history의 ts) 및 done 단어의 review.last 도 함께 수집한다.
   // ponytail: 불규칙 활용(ran→run)은 사전이 원형을 줄 때만 이어진다.
   function buildSignals() {
     const savedSet = new Set();
     const doneSet = new Set();
+    const doneLastMap = new Map();
     const allWords = words.all();
     if (allWords && typeof allWords.saved === 'object' && allWords.saved !== null) {
       for (const [k, v] of Object.entries(allWords.saved)) {
@@ -270,11 +288,29 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
           }
           if (v?.review?.done === true) {
             doneSet.add(k);
+            const rLast = typeof v.review.last === 'number' ? v.review.last : 0;
+            doneLastMap.set(k, Math.max(doneLastMap.get(k) ?? 0, rLast));
             for (const f of formsOf(k)) {
               doneSet.add(f);
+              doneLastMap.set(f, Math.max(doneLastMap.get(f) ?? 0, rLast));
             }
           }
         }
+      }
+    }
+
+    const lastLookedMap = new Map();
+    if (Array.isArray(allWords?.history)) {
+      for (const h of allWords.history) {
+        if (h && typeof h.lemma === 'string' && Number.isFinite(h.ts)) {
+          lastLookedMap.set(h.lemma, Math.max(lastLookedMap.get(h.lemma) ?? 0, h.ts));
+        }
+      }
+    }
+    const historyEntries = [...lastLookedMap.entries()];
+    for (const [w, ts] of historyEntries) {
+      for (const f of formsOf(w)) {
+        lastLookedMap.set(f, Math.max(lastLookedMap.get(f) ?? 0, ts));
       }
     }
 
@@ -297,7 +333,7 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
       }
     }
 
-    return { saved: savedSet, looked: lookedMap, done: doneSet };
+    return { saved: savedSet, looked: lookedMap, done: doneSet, doneLast: doneLastMap, lastLooked: lastLookedMap };
   }
 
   function scoreOf(lemma, level, surface) {
