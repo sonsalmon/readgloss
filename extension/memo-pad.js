@@ -2612,6 +2612,7 @@
           applyActiveSection(true);
         }
       }
+      pendingCodeLangKey = null;
     });
   }
 
@@ -2659,13 +2660,9 @@
           ta.setSelectionRange(len, len);
         }
       }
-      // 코드 블록 인용 직후: 언어 고르기에 커서를 두고 한 번 쓰면 비운다(S1)
+      // 코드 블록 인용 직후: 언어 고르기에 커서. 비우기는 열기 뒤 불러오기·다시 그리기가 끝난 다음(S1)
       if (pendingCodeLangKey) {
-        const langEl = shadow.querySelector(`.sec[data-key="${CSS.escape(pendingCodeLangKey)}"] .sec-quote-lang-select`);
-        if (langEl) {
-          pendingCodeLangKey = null;
-          langEl.focus();
-        }
+        shadow.querySelector(`.sec[data-key="${CSS.escape(pendingCodeLangKey)}"] .sec-quote-lang-select`)?.focus();
       }
     }
   }

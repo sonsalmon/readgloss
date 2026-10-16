@@ -102,7 +102,9 @@ test('S1: 닫힌 메모장에서 코드 블록 인용하면 다시 그린 뒤 �
   const fn = padSrc.slice(padSrc.indexOf('function applyActiveSection'), padSrc.indexOf('// activeSectionKey 계산'));
   assert.match(fn, /pendingCodeLangKey\)/);
   assert.match(fn, /\.sec-quote-lang-select/);
-  assert.match(fn, /pendingCodeLangKey = null;\s*langEl\.focus\(\)/);
+  // 다시 그리기 중간에 비우지 않는다 — 불러오기 끝(rebuildSectionsUI 뒤)에서만 비운다(재검증 S1)
+  assert.doesNotMatch(fn, /pendingCodeLangKey = null/);
+  assert.match(padSrc, /rebuildSectionsUI\(\);\s*if \(targetSectionKey\) \{\s*applyActiveSection\(true\);\s*\}\s*\}\s*pendingCodeLangKey = null;/);
 });
 
 test('S2: 언어 고르기 칸 키 처리는 ⌘·Ctrl·Alt 가 눌리면 건너뛴다', () => {

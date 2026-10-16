@@ -207,7 +207,7 @@
   function pathOf(node) {
     const path = [];
     for (let n = node; n && n.parentNode; n = n.parentNode) {
-      path.unshift(n.parentNode.childNodes.indexOf(n));
+      path.unshift(Array.prototype.indexOf.call(n.parentNode.childNodes, n)); // 진짜 DOM 의 NodeList 엔 indexOf 가 없다
     }
     return path;
   }
