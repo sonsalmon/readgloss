@@ -226,6 +226,11 @@
     return null;
   }
 
+  // 글을 고른 채 Tab = 고른 글을 인용으로 메모장 열기(⌥M 과 같음, 10-16 정범 요청). 고른 글이 없거나 입력칸·우리 화면이면 Tab 은 원래대로.
+  function shouldTabQuote({ key, shift, alt, ctrl, meta, composing, hasSelection, pageField, inOurUi }) {
+    return key === 'Tab' && !shift && !alt && !ctrl && !meta && !composing && hasSelection === true && !pageField && !inOurUi;
+  }
+
   // 페이지의 입력칸(input·textarea·select·편집 영역)인지. 메모장이 커서를 빼앗지 않을지 가릴 때 쓴다.
   function isPageField(el) {
     if (!el || typeof el !== 'object') return false;
@@ -656,6 +661,7 @@
     toAnchored,
     fromAnchored,
     isPageField,
+    shouldTabQuote,
     canSave,
     dockWidth,
     pageMarginFor,

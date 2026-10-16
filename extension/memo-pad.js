@@ -3078,6 +3078,24 @@
   }
 
   // 단축키 커맨드(memo-open, memo-list) 메시지 리스너
+  // 글을 고른 채 Tab → ⌥M 과 같이 인용으로 메모장 열기(10-16). 페이지 Tab 이동은 고른 글이 있을 때만 가로챈다.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const sel = window.getSelection();
+    const hasSelection = Boolean(sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.toString().trim().length > 0);
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    const inOurUi = path.some((n) => typeof n?.localName === 'string' && n.localName.startsWith('readgloss-'));
+    const memoCore = globalThis.readglossMemo;
+    const ok = memoCore?.shouldTabQuote?.({
+      key: e.key, shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey, meta: e.metaKey, composing: e.isComposing,
+      hasSelection, pageField: memoCore.isPageField(document.activeElement), inOurUi,
+    });
+    if (!ok) return;
+    e.preventDefault();
+    e.stopPropagation();
+    handleMemoOpen();
+  }, true);
+
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type !== 'memo-command') return;
     const cmd = msg.cmd;
