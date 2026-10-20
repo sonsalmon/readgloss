@@ -20,7 +20,7 @@ import { createContextTranslate } from './translate-context.mjs';
 import { createMydict, parseMydictOp } from './mydict.mjs';
 import { createStudy, parseDays } from './study.mjs';
 import { createScraps, normalizeUrl, parseScrapOp, scrapId } from './scraps.mjs';
-import { guessTask, lastTaskToday, loadLearning, rememberedTask } from './task-guess.mjs';
+import { guessTask, lastTaskToday, loadHtbModules, loadLearning, rememberedTask } from './task-guess.mjs';
 import { dateOf } from '../scripts/export-day.mjs';
 import { openDb, migrateJson } from './db.mjs';
 import { createConcepts, parseConceptOp } from './concepts.mjs';
@@ -180,13 +180,14 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
   const TASK_GUESS_TTL = 10 * 60 * 1000; // 10분 캐시 (600000ms)
   const MAX_TASK_GUESS_CACHE = 500;
 
-  function guessTaskForUrl(rawUrl) {
+  function guessTaskForUrl(rawUrl, pageTitle = null) {
     if (typeof rawUrl !== 'string' || rawUrl.length > 2000) return null;
     const normUrl = normalizeUrl(rawUrl);
     if (!normUrl) return null;
 
     const nowTs = typeof now === 'function' ? now() : now;
-    const cached = taskGuessCache.get(normUrl);
+    const cacheKey = `${normUrl}\n${pageTitle ?? ''}`;
+    const cached = taskGuessCache.get(cacheKey);
     if (cached && (nowTs - cached.ts < TASK_GUESS_TTL)) {
       return cached.result;
     }
@@ -227,13 +228,15 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
       todayTasks,
       roadmapOk: learning.roadmapOk,
       remembered,
+      htbModules: loadHtbModules(),
+      title: pageTitle,
     });
 
     if (taskGuessCache.size >= MAX_TASK_GUESS_CACHE) {
       const oldestKey = taskGuessCache.keys().next().value;
       if (oldestKey !== undefined) taskGuessCache.delete(oldestKey);
     }
-    taskGuessCache.set(normUrl, { result, ts: nowTs });
+    taskGuessCache.set(cacheKey, { result, ts: nowTs });
 
     return result;
   }
@@ -675,7 +678,7 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
     if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
     if (value?.op === 'guess') {
       if (typeof value.url !== 'string' || value.url.length > 2000) return send(res, 400, { error: 'bad-request' }, cors);
-      const guessed = guessTaskForUrl(value.url);
+      const guessed = guessTaskForUrl(value.url, typeof value.title === 'string' ? value.title.slice(0, 300) : null);
       if (!guessed) return send(res, 400, { error: 'bad-request' }, cors);
       return send(res, 200, guessed, cors);
     }
