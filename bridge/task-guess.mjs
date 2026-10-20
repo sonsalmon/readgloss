@@ -1,5 +1,6 @@
 // 할 일 짐작: roadmap.json 과 NOTES.md 를 읽어 현재 페이지에 맞는 할 일을 짐작한다.
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { dateOf } from '../scripts/export-day.mjs';
 import { TASK_FIND_RE, TASK_RE, normalizeUrl } from './scraps.mjs';
@@ -34,6 +35,11 @@ function parseSkillsJson(raw, today) {
     urls: Array.isArray(n.sources)
       ? n.sources.map((s) => (typeof s === 'string' ? s : s?.url)).filter((u) => typeof u === 'string')
       : [],
+    // HTB 모듈 개념 refs (29-9): [{ module: slug, secs: [a, b] | null }]
+    htb: (Array.isArray(n.concepts) ? n.concepts : [])
+      .flatMap((c) => (Array.isArray(c?.refs) ? c.refs : []))
+      .filter((r) => r?.kind === 'htb' && typeof r.module === 'string')
+      .map((r) => ({ module: r.module, secs: Array.isArray(r.secs) && r.secs.length === 2 ? r.secs : null })),
   }));
 
   let thisWeek = [];
@@ -144,6 +150,54 @@ export function loadLearning(dir, now = Date.now) {
   }
 
   return { nodes, next, roadmapOk, thisWeek, tasks };
+}
+
+// HTB 번호 표(작업실 study_places.json, 읽기 전용). 없거나 못 읽으면 null → 지금 규칙 그대로.
+export const STUDY_PLACES_DEFAULT = join(homedir(), 'dev', 'workroom', 'cli', 'workroom_cli', 'study_places.json');
+
+const slugOfName = (name) => String(name).toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/ /g, '-');
+const stripTitle = (t) => String(t).replace(/\s*\|\s*Hack The Box Academy\s*$/i, '').trim().toLowerCase();
+
+export function loadHtbModules(path = process.env.WORKROOM_STUDY_PLACES || STUDY_PLACES_DEFAULT) {
+  try {
+    const data = JSON.parse(readFileSync(path, 'utf8'));
+    const slugs = new Map(); // 모듈 번호 → slug
+    const titles = new Map(); // slug → 섹션 제목(소문자) 목록
+    const sectionsByName = new Map((data.sections ?? []).map((s) => [String(s.name).toLowerCase(), s.items ?? []]));
+    for (const m of data.modules ?? []) {
+      if (!Number.isInteger(m?.module) || !m.name) continue;
+      const slug = m.slug || slugOfName(m.name);
+      slugs.set(m.module, slug);
+      titles.set(slug, (sectionsByName.get(String(m.name).toLowerCase()) ?? []).map((i) => String(i.title).toLowerCase()));
+    }
+    return { slugs, titles };
+  } catch (e) {
+    warnIfBroken(path, e);
+    return null;
+  }
+}
+
+// HTB 학습 주소(app/module/<n>/...) → 스킬 id. 해당 없으면 null.
+// 그 모듈을 개념 refs에 가진 스킬 중, 섹션 순번을 아는 경우 secs 범위가 덮는 것, 아니면 지도 순서 첫째.
+export function htbTaskFor({ url, title = null, modules, nodes = [] }) {
+  if (!modules) return null;
+  let u;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  const m = u.host.toLowerCase() === 'academy.hackthebox.com' && u.pathname.match(/^\/app\/module\/(\d+)(?:\/|$)/);
+  const slug = m && modules.slugs.get(Number(m[1]));
+  if (!slug) return null;
+  const withModule = nodes.filter((n) => (n.htb ?? []).some((r) => r.module === slug));
+  if (withModule.length === 0) return null;
+  const k = typeof title === 'string' && title ? modules.titles.get(slug).indexOf(stripTitle(title)) + 1 : 0;
+  if (k > 0) {
+    const covering = withModule.find((n) => n.htb.some((r) => r.module === slug && r.secs && r.secs[0] <= k && k <= r.secs[1]));
+    if (covering) return covering.id;
+  }
+  return withModule[0].id;
 }
 
 // 오늘(서울 날짜) 마지막 스크랩의 task. 없거나 인박스면 null.
@@ -263,6 +317,8 @@ export function guessTask({
   todayTasks = [],
   roadmapOk = true,
   remembered = null,
+  htbModules = null,
+  title = null,
 }) {
   // roadmap 을 못 읽었으면 짐작하지 않고 인박스(내가 고른 할 일 기억은 roadmap 없이도 쓴다)
   if (!roadmapOk) {
@@ -324,8 +380,13 @@ export function guessTask({
 
   const thisWeekSet = new Set(Array.isArray(thisWeek) ? thisWeek : []);
 
+  const htbTask = remembered ? null : htbTaskFor({ url: normUrl, title, modules: htbModules, nodes });
+
   if (remembered) {
     task = remembered;
+    ask = false;
+  } else if (htbTask) {
+    task = htbTask;
     ask = false;
   } else if (matches.length > 0) {
     ask = false;
