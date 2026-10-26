@@ -184,10 +184,16 @@ async function tools(page) {
     await until(() => panel(`function(){ const p = this.querySelector('.panel'); return p && getComputedStyle(p).transform === 'none' && getComputedStyle(p).visibility === 'visible' }`).catch(() => false), 3000, '패널 열림');
   };
   // 진짜 마우스 클릭(isTrusted): 페이지 스크립트의 .click() 을 무시하는 단추([장면] 등)용. pick 은 shadow 안에서 단추를 고르는 식
+  // 자리를 재고 누르는 사이 패널이 다시 그려지면(늦게 온 자료로 줄이 밀림) 엉뚱한 곳을 누르니, 두 번 잰 자리가 같고 그 점에 그 단추가 있을 때 누른다
   const trustedClick = async (inside, pick) => {
-    const r = await inside(`function(){ const b = (${pick}).call(this); if (!b) return null; b.scrollIntoView({ block: 'center' }); const q = b.getBoundingClientRect(); return { x: q.left + q.width / 2, y: q.top + q.height / 2 } }`);
-    assert.ok(r, '누를 단추');
-    await page.mouse.click(r.x, r.y);
+    let prev = null;
+    for (let k = 0; k < 30; k++) {
+      const r = await inside(`function(){ const b = (${pick}).call(this); if (!b) return null; b.scrollIntoView({ block: 'nearest' }); const q = b.getBoundingClientRect(); const x = q.left + q.width / 2, y = q.top + q.height / 2; const hit = this.elementFromPoint(x, y); return { x, y, hit: Boolean(hit && (hit === b || b.contains(hit))) } }`);
+      if (r?.hit && prev && Math.abs(prev.x - r.x) < 1 && Math.abs(prev.y - r.y) < 1) return void (await page.mouse.click(r.x, r.y));
+      prev = r;
+      await page.waitForTimeout(150);
+    }
+    assert.fail('누를 단추가 자리 잡지 않았다');
   };
   const selectTab = (name) => until(() => panel(`function(){ const t = [...this.querySelectorAll('.tab')].find((b) => b.textContent === ${JSON.stringify(name)}); if (t) t.click(); return Boolean(t) }`), 3000, `${name} 탭`);
   const noToast = () => until(async () => (await page.locator('readgloss-toast').count()) === 0, 5000, '확인 메시지가 사라짐(떠 있으면 글자 키가 메모를 연다)');
@@ -688,6 +694,17 @@ try {
     await selectTab('내 단어');
     await page.waitForTimeout(200);
     await shot('ui-dark-review');
+    // 탭 CSS 를 묶은 뒤 다른 탭(단어장 목록·공부 기록)도 그대로인지 눈으로 보는 화면
+    const tabShots = async (theme) => {
+      await selectTab('내 단어');
+      await panel(`function(){ const b = [...this.querySelectorAll('.rgw .sub')].find((x) => x.textContent.startsWith('단어장')); b.click() }`);
+      await page.waitForTimeout(200);
+      await shot(`ui-${theme}-words-list`);
+      await selectTab('공부 기록');
+      await page.waitForTimeout(300);
+      await shot(`ui-${theme}-study`);
+    };
+    await tabShots('dark');
     await selectTab('설정');
     await panel(`function(){ const h = [...this.querySelectorAll('h3')].find((x) => x.textContent === '영상 자막'); h.scrollIntoView({ block: 'start' }) }`);
     await page.waitForTimeout(200);
@@ -696,6 +713,12 @@ try {
     await until(async () => (await panelBg()) === 'rgb(255, 255, 255)', 3000, '밝은 테마');
     await page.waitForTimeout(100);
     await shot('ui-light-settings-video');
+    await tabShots('light');
+    // 단어장 목록 줄은 다른 탭 규칙에 갈리지 않는다([영상] 탭의 옛 li 격자가 새면 grid 가 된다)
+    await selectTab('내 단어');
+    await panel(`function(){ [...this.querySelectorAll('.rgw .sub')].find((x) => x.textContent.startsWith('단어장')).click() }`);
+    const li = await until(() => panel(`function(){ const l = this.querySelector('.rgw ul li'); return l && [getComputedStyle(l).display, getComputedStyle(l).borderTopStyle] }`), 3000, '단어장 목록 줄');
+    assert.deepEqual(li, ['list-item', 'solid']);
     await page.keyboard.press('Escape');
   });
 
