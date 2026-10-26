@@ -37,6 +37,18 @@ function parseHeadings(v) {
   return out;
 }
 
+// 장면 구간(변경 기록 27-3): 없으면 undefined, { start, end } 초(0 ≤ start < end ≤ 86400, 길이 ≤ 60)면 소수 둘째 자리로, 틀리면 null
+export const CLIP = { maxLength: 60, maxEnd: 86_400 };
+export function parseClip(v) {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'object' || Array.isArray(v)) return null;
+  const { start, end } = v;
+  if (typeof start !== 'number' || typeof end !== 'number' || !Number.isFinite(start) || !Number.isFinite(end)) return null;
+  if (start < 0 || end <= start || end > CLIP.maxEnd || end - start > CLIP.maxLength) return null;
+  const r = { start: Math.round(start * 100) / 100, end: Math.round(end * 100) / 100 };
+  return r.end > r.start ? r : null;
+}
+
 // save-phrase / unsave-phrase 요청 -> 정규화한 요청 | null
 function parsePhraseOp(v) {
   if (v.op === 'unsave-phrase') return typeof v.id === 'string' && PHRASE_ID.test(v.id) ? { op: 'unsave-phrase', id: v.id } : null;
@@ -47,7 +59,8 @@ function parsePhraseOp(v) {
   const sentence = field(v.sentence, PHRASE.sentence);
   const kind = v.kind ?? 'sentence';
   const headings = parseHeadings(v.headings);
-  if (!text || text.length > PHRASE.text || translation === null || url === null || title === null || sentence === null || headings === null || !KINDS.includes(kind) || (url && !/^https?:\/\//i.test(url))) return null;
+  const clip = parseClip(v.clip);
+  if (!text || text.length > PHRASE.text || translation === null || url === null || title === null || sentence === null || headings === null || clip === null || !KINDS.includes(kind) || (url && !/^https?:\/\//i.test(url))) return null;
   let context;
   if (v.context !== undefined && v.context !== null) {
     const c = v.context;
@@ -57,7 +70,7 @@ function parsePhraseOp(v) {
     if (ct === null || note === null) return null;
     context = { translation: ct, ...(note && { note }), ...(c.wide && { wide: true }) };
   }
-  return { op: 'save-phrase', text, translation, ...(context && { context }), url, title, kind, sentence, ...(headings !== undefined && { headings }) };
+  return { op: 'save-phrase', text, translation, ...(context && { context }), url, title, kind, sentence, ...(headings !== undefined && { headings }), ...(clip && { clip }) };
 }
 
 // memo: {op:'memo', lemma, memo} 또는 {op:'memo', id, memo} 중 정확히 하나. memo 는 0~1000자('' 이면 지움).
@@ -172,6 +185,7 @@ export function createWords({ file, db, now = Date.now }) {
           ...(isObj(v.context) && { context: v.context }),
           ...(v.url && { url: str(v.url, PHRASE.url) }),
           ...(v.title && { title: str(v.title, PHRASE.title) }),
+          ...(parseClip(v.clip) && { clip: parseClip(v.clip) }),
           ...(Array.isArray(v.headings) && { headings: v.headings.slice(0, 3) }),
           ...withMemo(memoOf(v)),
           ...(rev && { review: rev }),
@@ -212,6 +226,7 @@ export function createWords({ file, db, now = Date.now }) {
           ...(isObj(v.context) && { context: v.context }),
           ...(v.url && { url: str(v.url, PHRASE.url) }),
           ...(v.title && { title: str(v.title, PHRASE.title) }),
+          ...(parseClip(v.clip) && { clip: parseClip(v.clip) }),
           ...(Array.isArray(v.headings) && { headings: v.headings.slice(0, 3) }),
           ...withMemo(memoOf(v)),
           ...(rev && { review: rev }),
@@ -335,6 +350,7 @@ export function createWords({ file, db, now = Date.now }) {
             gloss: item.gloss,
             sentence: item.sentence,
             ...(item.memo && { memo: item.memo }),
+            ...(item.url && { url: item.url }), // 장면(영상 주소 + t)이면 복습에서 다시 듣는다(27-4)
           },
         });
       }
@@ -353,6 +369,8 @@ export function createWords({ file, db, now = Date.now }) {
             text: item.text,
             translation: item.translation,
             ...(item.kind && { kind: item.kind }),
+            ...(item.url && { url: item.url }),
+            ...(item.clip && { clip: item.clip }),
           },
         });
       }
@@ -392,7 +410,7 @@ export function createWords({ file, db, now = Date.now }) {
     reviewQueue,
     // parseWordsOp 를 통과한 요청만 받는다. 바뀐 전체 상태를 돌려준다. memo/review 대상이 없으면 null(404).
     // ponytail: 메모리를 먼저 바꾸고 쓴다. 디스크 쓰기가 실패하면 이 실행 동안만 메모리와 파일이 어긋난다(파일 자체는 rename 으로 안 깨진다).
-    apply({ op, lemma, word, gloss, sentence, url, id, text, translation, context, title, kind, memo, headings, result }) {
+    apply({ op, lemma, word, gloss, sentence, url, id, text, translation, context, title, kind, memo, headings, result, clip }) {
       if (op === 'review') {
         const target = lemma !== undefined ? saved : phrases;
         const key = lemma !== undefined ? lemma : id;
@@ -440,7 +458,8 @@ export function createWords({ file, db, now = Date.now }) {
           const effectiveHeadings = headings !== undefined ? headings : prev?.headings;
           const ts = now(); // 시계는 한 번만 읽는다(저장 시각과 복습 시작일이 어긋나지 않게)
           const review = prev?.review ?? initialReview(dateOf(ts));
-          phrases.set(key, { text, translation, kind, ...(sentence && { sentence }), ...(context && { context }), ...(url && { url }), ...(title && { title }), ...(effectiveHeadings && { headings: effectiveHeadings }), ...withMemo(prev?.memo), review, ts }); // 다시 저장해도 메모와 복습 상태는 남긴다
+          // 다시 저장해도 메모와 복습 상태는 남긴다. clip(장면 구간)은 주소와 함께 다녀서 새 요청 것만 쓴다(27-3).
+          phrases.set(key, { text, translation, kind, ...(sentence && { sentence }), ...(context && { context }), ...(url && { url }), ...(title && { title }), ...(clip && { clip }), ...(effectiveHeadings && { headings: effectiveHeadings }), ...withMemo(prev?.memo), review, ts });
         } else {
           phrases.delete(key);
         }

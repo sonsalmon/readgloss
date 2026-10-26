@@ -56,20 +56,23 @@ test('계약 9 접착: 사전 카드가 저장 문맥·출처를 쓰고, 패널 
   assert.match(content, /current\.context \?\? \(current\.range && globalThis\.readglossContextFor\?\.\(current\.range, wide\)\)/, '[AI 문맥 뜻]에 저장 문장을 쓴다');
   assert.match(content, /const sourceUrl = \(\) => current\.source\?\.url \?\? location\.href\.slice\(0, 2000\)/, '[☆ 단어장] 저장 출처');
   assert.match(content, /globalThis\.readglossSelection\.lookupExtras\(d\)/);
-  assert.match(content, /document\.documentElement\.append\(host\)/, '카드 호스트를 문서 끝(패널 뒤)에 붙인다');
+  // T51b: 전체 화면(영상)일 때만 그 요소 안, 아니면 지금처럼 문서 끝(패널 뒤)
+  assert.match(content, /mountRoot\(\)\.append\(host\)/, '카드 호스트를 문서 끝(패널 뒤)에 붙인다');
+  assert.match(content, /fs\.localName !== 'video' \? fs : document\.documentElement;/, '전체 화면이 아니면 문서 끝');
   const panel = read('panel.js');
-  assert.match(panel, /const isCardPath = \(path\) => Array\.isArray\(path\) && path\.some\(\(n\) => n\?\.localName === 'readgloss-card'( \|\| n\?\.localName === 'readgloss-struct-card')?\)/); // T42: 문장 구조 카드도
+  assert.match(panel, /const isCardPath = \(path\) => Array\.isArray\(path\) && path\.some\(\(n\) => n\?\.localName === 'readgloss-card'( \|\| n\?\.localName === 'readgloss-struct-card')?( \|\| n\?\.localName === 'readgloss-subs')?\)/); // T42: 문장 구조 카드도, T51: 영상 자막 층도
   assert.match(panel, /!path\.includes\(host\) && !C\.isCardPath\(path\)/);
   assert.match(panel, /!e\.readglossCardClosed/);
 });
 
 // panel-words.js 의 preventDefault: 메모 입력칸 Enter 1곳 + T44c 복습 단축키(Space·1·2) 3곳.
 // 복습 단축키는 패널 shadow 안, [복습] 보기, 입력칸 밖, 수정키 없음일 때만 동작해야 한다(페이지 키를 막지 않는다).
+// T51d: 복습 방식 키(듣기 R · 고르기 1~4 · 고른 뒤 Space/Enter)는 같은 블록의 stop() 한 곳에서 막는다.
 function assertPanelPreventDefaults(pw) {
-  assert.equal((pw.match(/\.preventDefault\(/g) ?? []).length, 5, 'panel-words.js 의 preventDefault 는 메모 입력칸 Enter 1 + 복습 단축키 4(Space 앞면·뒷면, 1, 2)');
+  assert.equal((pw.match(/\.preventDefault\(/g) ?? []).length, 6, 'panel-words.js 의 preventDefault 는 메모 입력칸 Enter 1 + 복습 단축키 5(Space 앞면·뒷면, 1, 2, 복습 방식 키 stop)');
   const i = pw.indexOf("root.addEventListener('keydown'");
   const block = pw.slice(i, pw.indexOf('const chipBtns', i));
-  assert.equal((block.match(/\.preventDefault\(/g) ?? []).length, 4, '복습 단축키 블록에 preventDefault 4곳(Space 앞면·뒷면(FX-K: 뒷면 Space 는 막기만), 1, 2)');
+  assert.equal((block.match(/\.preventDefault\(/g) ?? []).length, 5, '복습 단축키 블록에 preventDefault 5곳(Space 앞면·뒷면(FX-K: 뒷면 Space 는 막기만), 1, 2, 복습 방식 키 stop)');
   assert.match(block, /if \(list !== 'review'\) return/);
   assert.match(block, /if \(isInput \|\| e\.ctrlKey \|\| e\.metaKey \|\| e\.altKey\) return/);
 }

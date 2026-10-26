@@ -214,11 +214,75 @@
     return state;
   }
 
+  // ---- 복습 방식(T51d, 변경 기록 27-4) ----
+  const REVIEW_MODES = [{ id: 'flip', title: '뒤집기' }, { id: 'choice', title: '고르기' }, { id: 'listen', title: '듣기' }];
+  const CHOICE_MAX = 80; // 보기 글 상한(구 번역은 길어서 자른다)
+  const shortChoice = (s) => {
+    const t = String(s ?? '').replace(/\s+/g, ' ').trim();
+    return t.length > CHOICE_MAX ? `${t.slice(0, CHOICE_MAX - 1)}…` : t;
+  };
+  // 고르기 보기 4개: 정답(그 카드의 뜻) + 단어장 다른 항목의 뜻 3개. 같은 뜻·빈 뜻은 빼고, 같은 종류(낱말·구)를 먼저 쓴다.
+  // 3개를 못 채우면 null(그 카드는 뒤집기로). rand 는 시험이 고정한다.
+  function quizChoices(card, state, rand = Math.random) {
+    const isWord = card?.type === 'word';
+    const answer = shortChoice(isWord ? card?.gloss : card?.translation);
+    if (!answer) return null;
+    const seen = new Set([answer]);
+    const same = [];
+    const other = [];
+    const add = (list, text) => {
+      const t = shortChoice(text);
+      if (t && !seen.has(t)) {
+        seen.add(t);
+        list.push(t);
+      }
+    };
+    for (const [k, v] of Object.entries(state?.saved ?? {})) if (!(isWord && k === card.key)) add(isWord ? same : other, v?.gloss);
+    for (const [k, v] of Object.entries(state?.phrases ?? {})) if (!(!isWord && k === card.key)) add(isWord ? other : same, v?.translation);
+    const pick = (list, n) => {
+      const a = [...list];
+      const out = [];
+      while (a.length && out.length < n) out.push(a.splice(Math.floor(rand() * a.length), 1)[0]);
+      return out;
+    };
+    const wrong = pick(same, 3);
+    if (wrong.length < 3) wrong.push(...pick(other, 3 - wrong.length));
+    if (wrong.length < 3) return null;
+    const all = [{ text: answer, correct: true }, ...wrong.map((text) => ({ text, correct: false }))];
+    for (let i = all.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [all[i], all[j]] = [all[j], all[i]];
+    }
+    return all;
+  }
+  // 듣기·🔊 로 읽을 글: 낱말 카드는 저장 문장(없으면 낱말), 구 카드는 영어 글
+  const listenText = (card) => (card?.type === 'word' ? card.sentence || card.word || card.key || '' : card?.text || '');
+  // 브라우저 음성: en-US(맥 Samantha·Google 이름 먼저) > 다른 영어
+  function pickVoice(voices) {
+    const en = (Array.isArray(voices) ? voices : []).filter((v) => /^en[-_]/i.test(v?.lang ?? ''));
+    const us = en.filter((v) => /^en[-_]us$/i.test(v.lang));
+    return us.find((v) => /samantha|google/i.test(v.name ?? '')) ?? us[0] ?? en[0] ?? null;
+  }
+  function speak(text) {
+    const syn = globalThis.speechSynthesis;
+    const t = String(text ?? '').trim().slice(0, 1000);
+    if (!syn || typeof globalThis.SpeechSynthesisUtterance !== 'function' || !t) return false;
+    syn.cancel();
+    const u = new globalThis.SpeechSynthesisUtterance(t);
+    u.lang = 'en-US';
+    const v = pickVoice(syn.getVoices?.());
+    if (v) u.voice = v;
+    u.rate = 0.95;
+    syn.speak(u);
+    return true;
+  }
+
   globalThis.readglossWords = {
     LISTS, SUBS, formatDate, counts, countsAll, actionsFor, rowsFor, buttonModel, eventDetail, wordEventDetail, messageFor,
     clip, PHRASE_FILTERS, phraseCounts, phrasePrimary, phraseRows, pickWord, lookupDetail, mydictRows, checkMydict, mydictMessage, mydictEventDetail, unsavePhraseMessage, memoMessage,
     memoKey, memoOk, memoErrorText,
     maskWord, nextCardState,
+    REVIEW_MODES, quizChoices, listenText, pickVoice, speak,
   };
 
   // ---- 그리기 ----
@@ -291,6 +355,16 @@
     .rev-done { padding: 24px 0; text-align: center; display: grid; gap: 6px; }
     .rev-done-title { font-size: 16px; font-weight: 700; color: var(--w-fg); }
     .rev-done-sub { font-size: 13px; color: var(--w-muted); }
+    .rev-modes { display: flex; gap: 4px; flex-wrap: wrap; }
+    .rev-tools { display: flex; gap: 6px; flex-wrap: wrap; }
+    .rev-hint { color: var(--w-muted); font-size: 12.5px; }
+    .rev-listen { color: var(--w-muted); font-size: 14px; }
+    .rev-choices { display: grid; gap: 6px; }
+    .rev-choice { text-align: left; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--w-border); background: none; font-size: 13.5px; overflow-wrap: anywhere; }
+    .rev-choice:hover:not([disabled]) { border-color: var(--w-accent); background: var(--w-soft); }
+    .rev-choice.ok { border-color: #1a7f37; background: rgba(26,127,55,.12); color: inherit; }
+    .rev-choice.bad { border-color: var(--w-err); background: rgba(209,36,47,.10); color: inherit; }
+    .rev-choice[disabled] { cursor: default; }
     [hidden] { display: none !important; }
   `;
 
@@ -332,6 +406,8 @@
     let cardState = { index: 0, side: 'front' };
     let reviewErr = '';
     let reviewedCount = 0;
+    let quiz = null; // 고르기: { key, choices(null = 보기 모자람), picked }
+    let heardFor = ''; // 듣기: 이 카드는 이미 한 번 들려줬다
     let adding = false;
     let editing = null; // 고치는 중인 key
     let draft = { ko: '', note: '' };
@@ -403,7 +479,7 @@
       return b;
     });
 
-    // 복습 단축키(Space: 뒤집기, 1: 아직, 2: 알아요) — 패널 shadow 안에서 입력칸 밖일 때만 동작
+    // 복습 단축키(Space: 뒤집기, 1: 아직, 2: 알아요 · 고르기는 1~4 다음 Space · 듣기는 R 다시 듣기) — 패널 shadow 안에서 입력칸 밖일 때만 동작
     root.addEventListener('keydown', (e) => {
       if (list !== 'review') return;
       const target = e.composedPath ? e.composedPath()[0] : e.target;
@@ -412,6 +488,25 @@
 
       const due = reviewData?.due || [];
       if (cardState.index >= due.length) return;
+      const stop = () => {
+        e.preventDefault();
+        e.stopPropagation();
+      };
+      if (e.code === 'KeyR' && !e.shiftKey && reviewMode() === 'listen') {
+        stop();
+        playCard(due[cardState.index]);
+        return;
+      }
+      if (quiz?.choices) {
+        if (quiz.picked < 0 && /^[1-4]$/.test(e.key)) {
+          stop();
+          answerChoice(Number(e.key) - 1);
+        } else if (quiz.picked >= 0 && (e.key === ' ' || e.code === 'Space' || e.key === 'Enter')) {
+          stop();
+          nextAfterChoice();
+        }
+        return;
+      }
 
       if (cardState.side === 'front') {
         if (e.key === ' ' || e.code === 'Space') {
@@ -725,12 +820,8 @@
       return li;
     }
 
-    // 복습 카드에 답하기(know: 알아요, again: 아직) -> 다리 op 'review' 전송
-    async function answerReview(result) {
-      if (busy) return;
-      const due = reviewData?.due || [];
-      const card = due[cardState.index];
-      if (!card) return;
+    // 복습 결과(know: 알아요, again: 아직)를 다리 op 'review' 로 보낸다. 저장되면 true.
+    async function sendResult(card, result) {
       busy = true;
       const isPhrase = card.type === 'phrase';
       const msg = {
@@ -743,8 +834,7 @@
       busy = false;
       if (r?.error || !r) {
         reviewErr = '저장하지 못했어요';
-        draw();
-        return;
+        return false;
       }
       reviewErr = '';
       reviewedCount++;
@@ -753,12 +843,57 @@
       } else if (reviewData?.counts) {
         if (reviewData.counts.due > 0) reviewData.counts.due--;
       }
+      return true;
+    }
+    // 다음 카드로. 다 봤는데 counts.due 가 남았으면(50개 넘게 밀림) 다시 받는다.
+    function nextCard() {
+      const due = reviewData?.due || [];
+      quiz = null;
       cardState = W.nextCardState(cardState, 'next');
       if (cardState.index >= due.length && (reviewData?.counts?.due ?? 0) > 0) {
         loadReview(false);
         return;
       }
       draw();
+    }
+    // 복습 카드에 답하기(뒤집기·듣기의 1·2)
+    async function answerReview(result) {
+      if (busy) return;
+      const card = (reviewData?.due || [])[cardState.index];
+      if (!card) return;
+      if (!(await sendResult(card, result))) return draw();
+      nextCard();
+    }
+    // 고르기: 고르면 바로 맞음 = 알아요, 틀림 = 아직으로 저장하고 뒷면을 펼친다. [다음]으로 넘어간다.
+    async function answerChoice(k) {
+      const card = (reviewData?.due || [])[cardState.index];
+      if (busy || !card || !quiz?.choices || quiz.picked >= 0 || !quiz.choices[k]) return;
+      quiz.picked = k;
+      if (!(await sendResult(card, quiz.choices[k].correct ? 'know' : 'again'))) {
+        quiz.picked = -1;
+        return draw();
+      }
+      cardState = { ...cardState, side: 'back' };
+      draw();
+    }
+    const nextAfterChoice = () => !busy && nextCard();
+    const reviewMode = () => (W.REVIEW_MODES.some((m) => m.id === ctx.settings?.reviewMode) ? ctx.settings.reviewMode : 'flip');
+    // 장면(영상 주소 + t 또는 clip): 지금 그 영상 페이지면 그 자리에서, 아니면 새 탭에서 그 구간만(27-4)
+    async function openScene(scene) {
+      if (globalThis.readglossVideoUi?.playScene?.(scene)) return;
+      const c = scene.clip ?? { start: scene.t, end: scene.t + 8 };
+      const r = await ctx.send({ type: 'video-open', url: scene.url, clip: { id: scene.id, start: c.start, end: c.end } });
+      if (r?.error) {
+        reviewErr = '영상을 열지 못했어요';
+        draw();
+      }
+    }
+    // 듣기: 같은 영상이면 장면 소리, 아니면 브라우저 음성
+    function playCard(card) {
+      if (!card) return;
+      const scene = globalThis.readglossVideo?.sceneOf?.(card);
+      if (scene && globalThis.readglossVideoUi?.playScene?.(scene)) return;
+      W.speak(W.listenText(card));
     }
 
     // 복습 화면 그리기
@@ -773,6 +908,25 @@
         revPane.append(el('div', 'status', reviewMessage));
         return;
       }
+
+      // 복습 방식 고르기(27-4): 뒤집기 · 고르기 · 듣기
+      const mode = reviewMode();
+      const modeBar = el('div', 'rev-modes');
+      modeBar.setAttribute('role', 'group');
+      modeBar.setAttribute('aria-label', '복습 방식');
+      for (const m of W.REVIEW_MODES) {
+        const b = btn(m.title, () => {
+          if (m.id === mode) return;
+          ctx.setSettings({ reviewMode: m.id });
+          quiz = null;
+          cardState = { ...cardState, side: 'front' };
+          reviewErr = '';
+          draw();
+        }, 'chip', `복습 방식: ${m.title}`);
+        b.setAttribute('aria-pressed', String(m.id === mode));
+        modeBar.append(b);
+      }
+      revPane.append(modeBar);
 
       const due = reviewData?.due || [];
       const curIndex = cardState.index;
@@ -791,6 +945,14 @@
       }
 
       const card = due[curIndex];
+      const cardKey = `${card.type}:${card.key}:${curIndex}`;
+      if (mode === 'choice') {
+        // 보기는 단어장(GET /words)이 와야 만든다. 아직이면 기다렸다가 다시 만든다.
+        if (quiz?.key !== cardKey || (quiz.waiting && state)) quiz = { key: cardKey, choices: state ? W.quizChoices(card, state) : null, picked: -1, waiting: !state };
+      } else quiz = null;
+      const choosing = Boolean(quiz?.choices);
+      const listening = mode === 'listen';
+      const scene = globalThis.readglossVideo?.sceneOf?.(card) ?? null;
       const remaining = due.length - curIndex;
       revPane.append(el('div', 'rev-remain', `남은 ${remaining}`));
 
@@ -798,7 +960,14 @@
       const isWord = card.type === 'word';
       const isBack = cardState.side === 'back';
 
-      if (isWord) {
+      if (listening && !isBack) {
+        cardBox.append(el('div', 'rev-listen', '들은 말을 떠올려 보세요'));
+        // 처음 보일 때 한 번 들려준다(복습 보기가 화면에 보일 때만 — 패널을 열면 모든 탭이 그려진다)
+        if (heardFor !== cardKey && list === 'review' && root.isConnected && root.offsetParent !== null && getComputedStyle(root).visibility !== 'hidden') {
+          heardFor = cardKey;
+          requestAnimationFrame(() => playCard(card));
+        }
+      } else if (isWord) {
         const lemmaText = card.lemma || card.key;
         cardBox.append(el('div', 'rev-head', lemmaText));
 
@@ -829,10 +998,44 @@
           }
         }
       }
+      // 소리: [🔊](브라우저 음성, 듣기에서는 장면 먼저) · [▶ 장면](영상 장면이 있는 카드)
+      const tools = el('div', 'rev-tools');
+      if (W.speak && globalThis.speechSynthesis) {
+        tools.append(btn(listening ? '🔊 다시 듣기 R' : '🔊', () => (listening ? playCard(card) : W.speak(W.listenText(card))), 'act', listening ? '다시 듣기 (R)' : '소리 내어 읽기'));
+      }
+      if (scene) tools.append(btn('▶ 장면', () => openScene(scene), 'act', '원래 영상 장면 듣기'));
+      if (tools.childElementCount) cardBox.append(tools);
       revPane.append(cardBox);
 
       const btnBar = el('div', 'rev-btns');
-      if (!isBack) {
+      if (choosing) {
+        // 고르기: 보기 4개(1~4). 고른 뒤에는 맞음·틀림을 색으로 보이고 [다음]
+        const box = el('div', 'rev-choices');
+        box.setAttribute('role', 'group');
+        box.setAttribute('aria-label', '뜻 고르기');
+        const answered = quiz.picked >= 0;
+        quiz.choices.forEach((c, k) => {
+          const b = btn(`${k + 1}. ${c.text}`, () => answerChoice(k), 'rev-choice', `${k + 1}번 ${c.text}`);
+          if (answered) {
+            b.disabled = true;
+            if (c.correct) b.classList.add('ok');
+            else if (k === quiz.picked) b.classList.add('bad');
+          }
+          box.append(b);
+        });
+        revPane.append(box);
+        if (answered) {
+          const right = quiz.choices[quiz.picked].correct;
+          const nextBtn = el('button', 'act primary rev-btn');
+          nextBtn.type = 'button';
+          nextBtn.append(right ? '맞았어요 · 다음' : '다음', el('span', 'kbd', 'Space'));
+          nextBtn.setAttribute('aria-label', `${right ? '맞았어요' : '틀렸어요'}, 다음 (Space)`);
+          nextBtn.addEventListener('click', nextAfterChoice);
+          btnBar.append(nextBtn);
+          if (hadFocus) requestAnimationFrame(() => nextBtn.focus());
+        } else if (hadFocus) requestAnimationFrame(() => box.querySelector('button')?.focus());
+      } else if (!isBack) {
+        if (mode === 'choice') revPane.append(el('div', 'rev-hint', quiz?.waiting ? '보기를 준비하는 중…' : '보기를 만들 단어가 모자라서 뒤집기로 볼게요'));
         const flipBtn = el('button', 'act primary rev-btn');
         flipBtn.type = 'button';
         flipBtn.append('뒤집기', el('span', 'kbd', 'Space'));

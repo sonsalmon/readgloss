@@ -16,6 +16,7 @@
     "export:notes": "node scripts/export-notes.mjs",
     "export:concepts": "node scripts/export-concepts.mjs",
     "scraps": "node scripts/scraps-cli.mjs",
-    "tasks:recheck": "node scripts/tasks-recheck.mjs"
+    "tasks:recheck": "node scripts/tasks-recheck.mjs",
+    "e2e": "node e2e/youtube.e2e.mjs"
   }
 }

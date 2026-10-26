@@ -58,8 +58,8 @@ test('T22-4·5·6 paragraph.js: bulkStep 으로 실패 3연속을 멈추고, loa
 test('T22-7 panel-words.js: 패널 메모 입력칸 Enter 판정도 memoKey 를 쓴다(한글 조합 중 Enter 무시)', () => {
   const src = read('panel-words.js');
   assert.match(src, /if \(W\.memoKey\(e\) === 'save'\)/);
-  // 메모 입력칸 Enter 한 곳(memoKey 판정 바로 뒤) + T44c 복습 단축키 3곳(계약 10 이 블록 범위를 따로 검사한다)
-  assert.equal((src.match(/\.preventDefault\(/g) ?? []).length, 5, 'preventDefault 는 메모 입력칸 Enter 1 + 복습 단축키 4');
+  // 메모 입력칸 Enter 한 곳(memoKey 판정 바로 뒤) + T44c 복습 단축키 4곳 + T51d 복습 방식 키 1곳(계약 10 이 블록 범위를 따로 검사한다)
+  assert.equal((src.match(/\.preventDefault\(/g) ?? []).length, 6, 'preventDefault 는 메모 입력칸 Enter 1 + 복습 단축키 5');
   assert.match(src, /if \(W\.memoKey\(e\) === 'save'\) \{\s*e\.preventDefault\(\)/, '메모 입력칸 Enter 의 preventDefault 는 memoKey 판정 안');
 });
 

@@ -13,10 +13,14 @@
     // 분야 용어집(보안·ML·수학)을 켤 사이트. 규칙은 sites 와 같다.
     glossarySites: Object.freeze(['academy.hackthebox.com', 'app.hackthebox.com', 'portswigger.net', 'owasp.org', '*.owasp.org', 'book.hacktricks.xyz', 'book.hacktricks.wiki', 'cloud.hacktricks.xyz', 'hacktricks.wiki', '*.hacktricks.wiki', 'tryhackme.com', 'attack.mitre.org', 'atlas.mitre.org', 'cwe.mitre.org', 'nvd.nist.gov', 'www.exploit-db.com', 'gtfobins.github.io', 'lolbas-project.github.io', 'arxiv.org']),
     floatingButton: { show: true, top: 60 },
+    // 유튜브 자막 층(변경 기록 27-2·27-6): 켜기, 한국어 줄, 어려운 단어 칠하기, 마우스를 올리면 멈춤, 자막 켜기 도움, 글자 크기 %, 가리기, 줄마다 멈춤
+    video: { subs: true, ko: true, hard: true, hoverPause: true, autoCC: true, fontPct: 100, hide: 'off', pauseEach: false },
+    reviewMode: 'flip', // 복습 방식(27-4): 뒤집기 · 고르기 · 듣기
   });
   const ENUMS = {
     level: LEVELS, repeat: ['page', 'paragraph', 'always'], mark: ['none', 'color', 'underline', 'background'], theme: ['auto', 'light', 'dark'], glossary: ['auto', 'off'],
     position: ['top', 'none'], color: ['text', 'accent', 'custom'], weight: ['light', 'normal', 'bold'],
+    hide: ['off', 'hard', 'all'], reviewMode: ['flip', 'choice', 'listen'],
   };
   const MAX_SITES = 200;
 
@@ -37,7 +41,8 @@
     const r = isObj(raw) ? raw : {};
     const a = isObj(r.annotation) ? r.annotation : {};
     const f = isObj(r.floatingButton) ? r.floatingButton : {};
-    const D = DEFAULTS, DA = D.annotation, DF = D.floatingButton;
+    const v = isObj(r.video) ? r.video : {};
+    const D = DEFAULTS, DA = D.annotation, DF = D.floatingButton, DV = D.video;
     return {
       enabled: bool(r.enabled, D.enabled),
       level: pickEnum(r.level, LEVELS, D.level),
@@ -68,6 +73,17 @@
       floatingButton: { show: bool(f.show, DF.show), top: num(f.top, 40, Infinity, DF.top) },
       structureHints: bool(r.structureHints, D.structureHints),
       savedMarks: bool(r.savedMarks, D.savedMarks),
+      video: {
+        subs: bool(v.subs, DV.subs),
+        ko: bool(v.ko, DV.ko),
+        hard: bool(v.hard, DV.hard),
+        hoverPause: bool(v.hoverPause, DV.hoverPause),
+        autoCC: bool(v.autoCC, DV.autoCC),
+        fontPct: num(v.fontPct, 60, 160, DV.fontPct),
+        hide: pickEnum(v.hide, ENUMS.hide, DV.hide),
+        pauseEach: bool(v.pauseEach, DV.pauseEach),
+      },
+      reviewMode: pickEnum(r.reviewMode, ENUMS.reviewMode, D.reviewMode),
     };
   }
 

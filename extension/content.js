@@ -124,6 +124,13 @@
   let toastKey = null; // 메시지가 떠 있는 동안 글자 키로 메모 칸을 여는 document 리스너
 
   const toastTheme = () => toastHost && (theme === 'auto' ? toastHost.removeAttribute('data-theme') : toastHost.setAttribute('data-theme', theme));
+
+  // 카드·확인 메시지를 붙일 곳(변경 기록 27-2): 전체 화면(영상 등)이면 그 요소 안. 문서 맨 위에 붙이면 전체 화면에서는 안 보인다.
+  // 전체 화면 요소는 화면을 덮는 fixed 상자라 그 안의 absolute 좌표는 화면 좌표다(스크롤을 더하지 않는다).
+  function mountRoot() {
+    const fs = document.fullscreenElement;
+    return fs && fs !== document.documentElement && fs !== document.body && fs.localName !== 'video' ? fs : document.documentElement;
+  }
   const stopToastKey = () => {
     if (toastKey) document.removeEventListener('keydown', toastKey, true);
     toastKey = null;
@@ -342,7 +349,7 @@
     for (const t of ['keypress', 'keyup']) ta.addEventListener(t, (e) => e.stopPropagation());
 
     shadow.append(style, pill);
-    document.documentElement.append(h);
+    mountRoot().append(h);
     placeToast();
     armKey();
     scheduleToast(ms ?? TOAST_MS); // ms: 짧게 떴다 사라질 확인(예: [나중에] 1.5초, 명세 13-1)
@@ -450,7 +457,7 @@
 
     card.append(tops, term, scroll, ai, aiWide, foot, links);
     shadow.append(style, card);
-    document.documentElement.append(host);
+    mountRoot().append(host);
     paintAiBtn();
     paintWordButtons();
     renderDictLinks();
@@ -480,11 +487,13 @@
 
   function place() {
     const a = current.anchor;
-    const rect = { left: a.left - scrollX, top: a.top - scrollY, bottom: a.bottom - scrollY };
+    const sx = current.fs ? 0 : scrollX; // 전체 화면 안에 붙인 카드는 화면 좌표(mountRoot)
+    const sy = current.fs ? 0 : scrollY;
+    const rect = { left: a.left - sx, top: a.top - sy, bottom: a.bottom - sy };
     const size = ui.card.getBoundingClientRect();
     const p = positionBubble({
       rect,
-      viewport: { width: document.documentElement.clientWidth, height: innerHeight, scrollX, scrollY },
+      viewport: { width: document.documentElement.clientWidth, height: innerHeight, scrollX: sx, scrollY: sy },
       size,
     });
     host.style.left = `${p.left}px`;
@@ -597,10 +606,12 @@
   }
 
   function close() {
+    const had = Boolean(host);
     seq++;
     current = null;
     host?.remove();
     host = ui = null;
+    if (had) window.dispatchEvent(new CustomEvent('readgloss:card-closed')); // 영상 자막 층이 멈춤을 풀지 정한다(27-2)
   }
   // 밖(단어장 형광펜 saved-marks.js)에서 그 낱말 범위로 사전 카드를 연다. 문장은 더블클릭과 같은 방식으로 자른다.
   function openFromRange({ range, rect } = {}) {
@@ -612,7 +623,7 @@
     const sentence = extractSentence(text, offset + picked.start, picked.word.length);
     openCard(picked.word, sentence, rect ?? range.getBoundingClientRect(), range);
   }
-  globalThis.readglossDictCardUi = { close, open: openFromRange };
+  globalThis.readglossDictCardUi = { close, open: openFromRange, isOpen: () => Boolean(host) };
 
   async function send(message) {
     try {
@@ -743,7 +754,7 @@
 
   function onDblClick(e) {
     if (host && e.composedPath().includes(host)) return; // 카드 안
-    if (e.composedPath().some((n) => n.localName === 'readgloss-ui' || n.localName === 'readgloss-toast')) return; // 떠 있는 버튼·패널·확인 메시지 안
+    if (e.composedPath().some((n) => n.localName === 'readgloss-ui' || n.localName === 'readgloss-toast' || n.localName === 'readgloss-subs')) return; // 떠 있는 버튼·패널·확인 메시지·영상 자막 층(낱말은 한 번 눌러 연다) 안
     const sel = getSelection();
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
     const range = sel.getRangeAt(0);
@@ -763,7 +774,10 @@
   // extras: 패널의 저장 문장에서 연 카드의 { context(그 문장), source(저장한 페이지) }. 페이지 글이 아니라 range 가 없다.
   function openCard(word, sentence, r, range, extras = {}) {
     if (host) close();
-    current = { word, sentence, range: range?.cloneRange(), ...extras, anchor: { left: r.left + scrollX, top: r.top + scrollY, bottom: r.bottom + scrollY } };
+    const fs = mountRoot() !== document.documentElement;
+    const sx = fs ? 0 : scrollX;
+    const sy = fs ? 0 : scrollY;
+    current = { word, sentence, range: range?.cloneRange(), ...extras, fs, anchor: { left: r.left + sx, top: r.top + sy, bottom: r.bottom + sy } };
     buildCard();
     askDict().catch(close); // 동기적으로 "찾는 중…" 부터 그린다
   }
@@ -791,6 +805,7 @@
     true,
   );
   document.addEventListener('mousedown', (e) => host && !e.composedPath().includes(host) && !e.composedPath().some((n) => n.localName === 'readgloss-toast') && close(), true); // 확인 메시지(메모)를 누를 땐 카드를 닫지 않는다
+  document.addEventListener('fullscreenchange', () => host && close()); // 붙인 곳(mountRoot)이 바뀌니 닫는다
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
 

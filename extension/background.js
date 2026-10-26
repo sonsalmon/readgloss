@@ -139,9 +139,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function words(msg, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
-  const { op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page, headings, result } = msg; // 구·문장(save-phrase·unsave-phrase) 필드는 T14, kind('expression'|'sentence')는 T17, memo 는 T19, headings 는 T33a, review 는 T44
+  const { op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page, headings, result, clip } = msg; // 구·문장(save-phrase·unsave-phrase) 필드는 T14, kind('expression'|'sentence')는 T17, memo 는 T19, headings 는 T33a, review 는 T44, clip(영상 장면 구간)은 T51c
   const path = op === 'review-queue' ? '/words/review' : '/words';
-  const init = op === 'get' || op === 'review-queue' ? { headers: { 'X-Bridge-Token': token } } : { method: 'POST', headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page, headings, result }) };
+  const init = op === 'get' || op === 'review-queue' ? { headers: { 'X-Bridge-Token': token } } : { method: 'POST', headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page, headings, result, clip }) };
   const res = await bridgeFetch(path, init);
   if (res.status === 401 && !retried) return words(msg, true);
   const data = await res.json().catch(() => ({}));
@@ -363,6 +363,54 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true; // 비동기 응답
 });
 
+
+// --- 영상 장면(T51c, 변경 기록 27-3): 복습 카드의 [▶ 장면]. 패널이 쓰고 있는 탭은 두고 새 탭을 연다.
+// 구간이 있으면 session storage 에 pendingClip 을 남기고, 새 영상 페이지(video-subs.js)가 'video-pending' 으로 꺼내 그 구간만 재생한다. ---
+const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
+function videoOpenOf(msg) {
+  let u;
+  try {
+    u = new URL(msg?.url);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' || u.hostname !== 'www.youtube.com' || u.pathname !== '/watch' || !VIDEO_ID.test(u.searchParams.get('v') ?? '')) return null;
+  const c = msg.clip;
+  if (c === undefined || c === null) return { url: u.href, clip: null };
+  const ok = typeof c === 'object' && c.id === u.searchParams.get('v') && [c.start, c.end].every((n) => typeof n === 'number' && Number.isFinite(n)) && c.start >= 0 && c.end > c.start && c.end - c.start <= 60;
+  return ok ? { url: u.href, clip: { id: c.id, start: c.start, end: c.end } } : null;
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'video-open') return;
+  const v = videoOpenOf(msg);
+  if (!v) {
+    sendResponse({ error: 'invalid-video' });
+    return;
+  }
+  const storage = chrome.storage.session ?? chrome.storage.local;
+  (v.clip ? storage.set({ pendingClip: { ...v.clip, ts: Date.now() } }) : storage.remove('pendingClip'))
+    .then(() => chrome.tabs.create({ url: v.url, active: true }))
+    .then(() => sendResponse({ ok: true }), (e) => sendResponse({ error: e?.message || 'open-failed' }));
+  return true; // 비동기 응답
+});
+
+// 기다리는 장면: 같은 영상이고 2분 안이면 꺼내 주고 지운다(다른 영상 탭이 먼저 물어도 남겨 둔다).
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || msg?.type !== 'video-pending') return;
+  const storage = chrome.storage.session ?? chrome.storage.local;
+  storage.get('pendingClip').then(async (data) => {
+    const p = data?.pendingClip;
+    if (!p || Date.now() - p.ts > 120_000) {
+      if (p) await storage.remove('pendingClip');
+      return sendResponse({ pending: null });
+    }
+    if (p.id !== msg.id) return sendResponse({ pending: null });
+    await storage.remove('pendingClip');
+    sendResponse({ pending: { id: p.id, start: p.start, end: p.end } });
+  }).catch(() => sendResponse({ pending: null }));
+  return true; // 비동기 응답
+});
 
 // --- 메모 점프(T29b): 다른 페이지 메모로 이동할 때 session storage 에 pendingMemo 저장 후 탭 주소 갱신 ---
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

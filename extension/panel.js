@@ -48,6 +48,7 @@
     { path: 'annotation.liftEm', min: -10, max: 6, step: 1, to: (v) => Math.round(v / 0.05), from: (n) => Math.round(n * 5) / 100 },
     { path: 'opacityInput', min: 40, max: 100, step: 5 },
     { path: 'opacityUi', min: 40, max: 100, step: 5 },
+    { path: 'video.fontPct', min: 60, max: 160, step: 10 },
   ];
   const CHOICES = [
     { path: 'repeat', options: [['page', '페이지에서 한 번'], ['paragraph', '문단마다 첫 등장'], ['always', '매번']] },
@@ -57,8 +58,10 @@
     { path: 'mark', options: [['none', '없음'], ['color', '글자색'], ['underline', '점선 밑줄'], ['background', '옅은 배경']] },
     { path: 'theme', options: [['auto', '자동'], ['light', '밝게'], ['dark', '어둡게']] },
     { path: 'glossary', options: [['auto', '자동'], ['off', '끄기']] },
+    { path: 'video.hide', options: [['off', '끔'], ['hard', '어려운 단어'], ['all', '문장 전체']] },
   ];
-  const TOGGLES = [{ path: 'enabled' }, { path: 'selectionTranslate' }, { path: 'floatingButton.show' }, { path: 'dimWhileReading' }, { path: 'structureHints' }, { path: 'savedMarks' }];
+  const TOGGLES = [{ path: 'enabled' }, { path: 'selectionTranslate' }, { path: 'floatingButton.show' }, { path: 'dimWhileReading' }, { path: 'structureHints' }, { path: 'savedMarks' },
+    { path: 'video.subs' }, { path: 'video.ko' }, { path: 'video.hard' }, { path: 'video.hoverPause' }, { path: 'video.autoCC' }, { path: 'video.pauseEach' }];
 
   // 슬라이더가 준 값(문자열 가능) -> 설정 patch. 범위·단계로 고치고, 숫자가 아니면 null.
   function sliderPatch(spec, raw) {
@@ -103,7 +106,8 @@
   }
 
   // 패널 위에 뜬 사전 카드(content.js 의 readgloss-card, 저장된 문장에서 더블클릭해 연 것), 확인 메시지(readgloss-toast), 개념 칸(readgloss-concept-form), 개념 카드(readgloss-concept-card), 메모장(readgloss-memo-pad)을 눌러도 패널은 닫지 않는다.
-  const isCardPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-card' || n?.localName === 'readgloss-struct-card');
+  // 영상 자막 층(readgloss-subs)도 그렇다: [영상] 탭 대본을 연 채 자막 낱말을 누를 수 있게(27-5).
+  const isCardPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-card' || n?.localName === 'readgloss-struct-card' || n?.localName === 'readgloss-subs');
   const isToastPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-toast');
   const isConceptPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-concept-form' || n?.localName === 'readgloss-concept-card');
   const isMemoPath = (path) => Array.isArray(path) && path.some((n) => n?.localName === 'readgloss-memo-pad');
@@ -210,8 +214,10 @@
     .close { all: unset; box-sizing: border-box; cursor: pointer; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; color: var(--rg-muted); font-size: 16px; }
     .close:hover { background: var(--rg-accent-soft); color: var(--rg-fg); }
     .close:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: -2px; }
-    .tabs { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--rg-border); }
-    .tab { all: unset; box-sizing: border-box; cursor: pointer; padding: 8px 10px; color: var(--rg-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    /* 탭 이름은 한 줄로. 유튜브처럼 탭이 늘면 줄이 접히지 않고 옆으로 넘긴다(T51e) */
+    .tabs { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--rg-border); overflow-x: auto; scrollbar-width: none; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { all: unset; box-sizing: border-box; flex: none; white-space: nowrap; cursor: pointer; padding: 8px 8px; color: var(--rg-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
     .tab:hover { color: var(--rg-fg); }
     .tab[aria-selected="true"] { color: var(--rg-accent); border-bottom-color: var(--rg-accent); font-weight: 600; }
     .tab:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: -2px; }
@@ -672,6 +678,7 @@
     'annotation.liftEm': (n) => `${(n * 5) / 100}em`,
     opacityInput: (n) => `${n}%`,
     opacityUi: (n) => `${n}%`,
+    'video.fontPct': (n) => `${n}%`,
   };
   const LABEL = {
     level: '수준', maxPerParagraph: '문단당 최대', repeat: '반복', 'annotation.position': '위치', 'annotation.sizePct': '크기',
@@ -680,6 +687,8 @@
     opacityInput: '입력 칸 투명도', opacityUi: '나머지 투명도', dimWhileReading: '읽는 동안 흐리게',
     structureHints: '문장 구조 표시',
     savedMarks: '단어장 단어 칠하기',
+    'video.subs': '유튜브 자막 층 켜기', 'video.ko': '한국어 줄 보이기', 'video.hard': '어려운 단어 칠하기', 'video.hoverPause': '자막에 마우스를 올리면 잠깐 멈춤',
+    'video.autoCC': '자막이 꺼져 있으면 켜기', 'video.pauseEach': '줄마다 멈춤', 'video.hide': '가리기(듣기 연습)', 'video.fontPct': '자막 크기',
   };
   const LEVEL_HINT = {
     A2: 'A2 이상: 거의 모든 단어에 뜻이 붙어요',
@@ -877,6 +886,9 @@
       slider('annotation.opacityPct'), choice('annotation.weight'), slider('annotation.liftEm'), toggle('structureHints'), toggle('savedMarks'),
       h('h3', { class: 'sec', text: '내게 맞추기' }), autoRow, offsetRow, statsHint, adaptiveMsg,
       h('h3', { class: 'sec', text: '단어 표시' }), choice('mark'),
+      h('h3', { class: 'sec', text: '영상 자막' }), toggle('video.subs', '유튜브 영상에서 영어·한국어 두 줄 자막. 유튜브 자막(CC) 단추로 켜고 꺼요. 낱말을 누르면 사전 카드.'),
+      toggle('video.ko', '맥 번역(무료)이에요. 자막 위 [풀이]는 AI 문맥 번역.'), toggle('video.hard'), toggle('video.hoverPause'), toggle('video.autoCC', '영상마다 한 번 CC 단추를 눌러요.'),
+      toggle('video.pauseEach', 'P 키로도 바꿔요. A 앞 줄 · S 이 줄 다시 · D 다음 줄.'), choice('video.hide', null, 'H 키로도 바꿔요. 가린 낱말을 누르거나 R 로 그 줄을 보여요.'), slider('video.fontPct'),
       h('h3', { class: 'sec', text: '화면' }), slider('opacityInput'), slider('opacityUi'), toggle('dimWhileReading', '메모할 때만 진해지고, 읽을 때는 설정한 투명도로 보여요.'),
       h('h3', { class: 'sec', text: '기타' }), toggle('allowCopy', '체크하지 않으면 복사할 때 주석 글자가 섞이지 않아요.'), toggle('selectionTranslate', '글을 드래그하면 맥 번역 카드가 떠요. 한 단어는 사전 카드로 열려요.'), choice('theme'), toggle('floatingButton.show', '숨겨도 브라우저 툴바의 readgloss 아이콘으로 패널을 열 수 있어요.'),
       h('h3', { class: 'sec', text: '끌 사이트' }), ...blockNodes,

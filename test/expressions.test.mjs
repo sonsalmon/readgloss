@@ -71,6 +71,6 @@ test('배선: 번역 응답의 expressions 와 save-phrase 의 kind 를 backgrou
 
 test('배선: 내용 스크립트 순서(T24 스크랩 파일 3개 포함)', () => {
   const m = JSON.parse(read('manifest.json'));
-  assert.deepEqual(m.content_scripts[0].js, ['text.js', 'settings-core.js', 'glossary-core.js', 'paragraph-core.js', 'annotate-core.js', 'content.js', 'paragraph.js', 'annotate.js', 'structure-core.js', 'structure.js', 'saved-marks-core.js', 'saved-marks.js', 'panel.js', 'panel-scraps.js', 'panel-concepts.js', 'panel-words.js', 'panel-study.js', 'vendor/approx-string-match.js', 'scrap-core.js', 'scrap.js', 'md-list.js', 'concept-core.js', 'concept.js', 'memo-core.js', 'study-time-core.js', 'study-time.js', 'memo-pad.js', 'selection-core.js', 'selection.js', 'opacity.js']); // T28: 개념 파일 3개, T29b: 메모장 2개, T34a: 투명도, T40a: 시간 2개
+  assert.deepEqual(m.content_scripts[0].js, ['text.js', 'settings-core.js', 'glossary-core.js', 'paragraph-core.js', 'annotate-core.js', 'content.js', 'paragraph.js', 'annotate.js', 'structure-core.js', 'structure.js', 'saved-marks-core.js', 'saved-marks.js', 'panel.js', 'panel-scraps.js', 'panel-concepts.js', 'panel-words.js', 'panel-study.js', 'vendor/approx-string-match.js', 'scrap-core.js', 'scrap.js', 'md-list.js', 'concept-core.js', 'concept.js', 'memo-core.js', 'study-time-core.js', 'study-time.js', 'memo-pad.js', 'selection-core.js', 'selection.js', 'opacity.js', 'video-core.js', 'video-subs.js', 'panel-video.js']); // T28: 개념 파일 3개, T29b: 메모장 2개, T34a: 투명도, T40a: 시간 2개, T51: 영상 3개
   assert.deepEqual(m.permissions, ['storage']);
 });

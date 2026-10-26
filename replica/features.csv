@@ -1,0 +1,35 @@
+feature,area,priority,original,clone,notes
+유튜브 영어 자막을 readgloss 자막 층으로 보이기,영상,must,yes,yes,"플레이어가 받아 온 자막을 엿듣는다(yt-hook) — 가짜 유튜브 페이지 e2e 통과, 진짜 유튜브는 정범 확인(M1)"
+한국어 줄 함께 보기(이중자막),영상,must,yes,yes,맥 번역(기기 안·무료)으로 지금 줄과 다음 몇 줄을 미리 번역
+자막 단어를 누르면 뜻·용법·예문·발음 카드,영상,must,yes,yes,readgloss 사전 카드를 그대로 연다(문맥 = 앞뒤 줄)
+자막 줄 저장(+),영상,must,yes,yes,구·문장으로 저장 + 장면(주소·시각·시작~끝)
+저장할 때 나온 장면(영상 주소와 시각)을 함께 남기기,단어장,must,yes,yes,낱말은 주소에 t= 붙임 · 구는 clip(시작·끝)
+난이도에 맞는 단어를 자막에서 칠하기,영상,must,yes,yes,/annotate(내게 맞춘 주석) 재사용
+단어장(공부한) 단어를 자막에서 칠하기,영상,must,yes,yes,saved-marks-core 활용형 규칙 재사용
+자막 가리기 듣기 연습(어려운 단어 · 문장 전체),듣기,must,yes,yes,누르거나 R로 보기
+장면 해설(줄 풀이와 기억할 표현),영상,must,yes,yes,문맥 번역(AI) 재사용 — 앞뒤 줄을 문맥으로
+전체 화면에서도 자막과 카드가 보이기,영상,must,yes,yes,카드를 전체 화면 요소 안에 붙인다 — 진짜 유튜브는 정범 확인(M5)
+매일 복습(간격 반복),복습,must,yes,yes,이미 있음(T44b·T44c 상자 5칸)
+복습에서 원래 장면 다시 듣기,복습,must,yes,yes,같은 영상이면 그 자리에서 · 아니면 새 탭에서 그 구간만 재생
+자막 켜기 도움(꺼져 있으면 켜기 · 자막 없음·영어 아님 안내),영상,must,no,yes,readgloss가 더한 것
+줄 다시 듣기 · 앞 줄 · 다음 줄,듣기,must,no,yes,readgloss가 더한 것(A·S·D) — 공개 자료에서 랭플릭스 기능으로 확인 못 함
+객관식 퀴즈(뜻 고르기 4지선다),복습,should,yes,yes,보기는 내 단어장의 다른 뜻에서
+듣기 복습(소리 먼저 · 글은 뒤집으면),복습,should,yes,yes,장면이 있으면 장면 · 없으면 브라우저 음성(TTS)
+발음 듣기(복습 카드의 단어·문장),복습,should,yes,yes,브라우저 음성(TTS)
+대본(전체 자막 목록 · 누르면 그 장면으로 · 줄마다 저장),영상,should,yes,yes,짐작(에피소드 대사 해설) — 패널 [영상] 탭
+이 영상의 어려운 단어 미리 보기,영상,should,yes,yes,유튜브 링크 → 수준별 어휘(출처 3) — 패널 [영상] 탭
+자막에 마우스를 올리면 잠깐 멈춤,영상,should,no,yes,readgloss가 더한 것
+줄마다 멈춤,듣기,should,no,yes,readgloss가 더한 것(P)
+자막 글자 크기,영상,should,no,yes,readgloss가 더한 것(설정)
+넷플릭스 이중자막,영상,could,yes,no,다음 회차 후보 — 넷플릭스는 영상 시각을 바꾸면 플레이어가 멈춰서 줄 이동이 어렵고 이 환경에서 화면 확인을 못 함
+숙어·구동사 따로 칠하기,영상,could,yes,no,AI 풀이를 부른 줄의 표현만 칠할 수 있음 — 줄마다 AI를 부르면 구독 한도를 많이 씀
+유튜브 쇼츠,영상,could,no,no,readgloss가 더할 수 있는 것(플레이어가 다름)
+다른 사이트에 박힌 유튜브(iframe),영상,could,no,no,readgloss가 더할 수 있는 것(all_frames 꺼져 있음)
+랭플릭스가 고른 시리즈 목록,콘텐츠,skip,yes,skip,랭플릭스 편집 콘텐츠 — readgloss는 아무 유튜브 영상에서 쓴다
+원어민이 고른 에피소드별 표현·해설,콘텐츠,skip,yes,skip,랭플릭스 편집 콘텐츠 — 대신 AI 풀이
+랭플릭스 웹 홈에서 볼 영상 고르기,콘텐츠,skip,yes,skip,유튜브에서 바로 쓴다
+모바일 앱,플랫폼,skip,yes,skip,readgloss는 맥 크롬 확장 + 로컬 다리
+구글 계정 로그인·동기화,계정,skip,yes,skip,한 사람·한 기기
+구독 결제,결제,skip,yes,skip,개인 도구
+섀도잉(따라 말하기) 채점,말하기,skip,yes,skip,아웃풋 — 영어 튜터 몫
+AI 회화,말하기,skip,yes,skip,아웃풋 — 영어 튜터 몫
