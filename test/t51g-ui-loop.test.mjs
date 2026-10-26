@@ -149,7 +149,10 @@ test('자막 층: 마우스는 두 줄·막대·풀이만 받고, 지난 줄은 
   assert.match(src, /\.w\.hard:hover \.g, \.lines:focus \.w\.hard\.cur \.g \{ display: block; \}/, '키보드 자리 낱말도 뜻 풍선');
   assert.match(src, /if \(e\.key === 'Escape' && !e\.readglossCardClosed\) e\.target\?\.blur\?\.\(\);/);
   assert.match(src, /←→ 낱말 · Enter 사전 · Esc 나가기'\);/, '두 줄 묶음 이름에 새 키 안내(감사 2회차 7)');
-  assert.match(src, /lines\.addEventListener\('mousedown', \(e\) => e\.preventDefault\(\)\);/, '마우스로는 포커스를 옮기지 않는다(감사 2회차 1)');
+  assert.match(src, /if \(e\.target\.closest\?\.\('\.ko'\)\) koPress = true;\s*else e\.preventDefault\(\);/, '마우스로는 포커스를 옮기지 않는다(감사 2회차 1), 한국어 줄은 끌어 고르기가 된다(3회차)');
+  assert.match(src, /if \(!koPress\) return;\s*koPress = false;\s*lines\.blur\(\);/, '한국어 줄을 고른 뒤 포커스는 놓는다');
+  assert.match(src, /\.lines:focus-visible \{ outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 2px rgba\(8, 8, 8, \.92\), 0 0 0 6px rgba\(8, 8, 8, \.92\); \}/, '포커스 표시 검정·흰·검정 세 겹(3회차)');
+  assert.match(src, /button\[aria-pressed="true"\], button\[aria-expanded="true"\] \{ background: linear-gradient\(rgba\(62, 166, 255, \.32\), rgba\(62, 166, 255, \.32\)\), rgba\(28, 28, 28, \.92\);/, '눌린 단추는 어두운 바탕 위 옅은 파랑(밝은 영상 위 흰 글자 1.35:1 이던 것, 3회차)');
   assert.match(src, /if \(box\.contains\(e\.relatedTarget\) \|\| !document\.hasFocus\(\)\) return;\s*holdOff\('keys'\);\s*ui\.wcur = -1;/, '층을 떠나면 낱말 자리를 지우되, 창을 잠깐 떠날 때는 그대로(영상이 저절로 재생되지 않게)');
   assert.match(src, /const anchor = r && inLayer \? \{ left: r\.left, right: r\.right, top: r\.top, bottom: innerHeight \} : r;/, '확인 메시지는 층 위에');
   assert.match(src, /for \(const m of text\.matchAll\(\/\[\\p\{L\}\\p\{N\}\]\+\/gu\)\)/, '문장 전체 가리기는 한 글자·숫자도');

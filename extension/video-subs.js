@@ -351,8 +351,9 @@
     .lines, .bar, .note { pointer-events: auto; }
     .lines { order: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; border-radius: 6px; }
     .lines:focus { outline: none; }
-    /* 포커스 표시는 흰 테두리 + 검은 테두리 두 겹: 영상이 밝든 어둡든 하나는 3:1 이상으로 보인다(파랑 한 겹은 흰 화면에서 2.6:1) */
-    .lines:focus-visible { outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 2px rgba(8, 8, 8, .92); }
+    /* 포커스 표시는 검정·흰·검정 세 겹(안 2px 검정 + 흰 테두리 + 밖 2px 검정): 영상이 밝든 어둡든, 어두운 자막 바탕 옆이든 흰 줄이 보인다
+       (파랑 한 겹은 흰 화면에서 2.6:1, 흰+검정 두 겹은 흰 화면에서 안쪽 검정만 남아 바탕이 굵어진 것처럼 보였다) */
+    .lines:focus-visible { outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 2px rgba(8, 8, 8, .92), 0 0 0 6px rgba(8, 8, 8, .92); }
     .note { order: -2; } .bar { order: -1; } .msg { order: 1; } /* 화면 차례(풀이 → 막대 → 두 줄 → 안내)와 Tab 차례(두 줄 → 막대 → 풀이)를 따로 */
     .en, .ko { box-sizing: border-box; max-width: 100%; padding: .08em .45em; border-radius: 4px; background: rgba(8, 8, 8, .74); color: #fff; text-align: center; line-height: 1.38; overflow-wrap: anywhere; }
     .en { font-size: var(--fs, 22px); user-select: none; }
@@ -379,12 +380,13 @@
       border-radius: 6px; border: 1px solid rgba(255, 255, 255, .2); background: rgba(28, 28, 28, .92); color: #fff;
       font: max(12px, calc(var(--fs, 22px) * .56))/1.7 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; white-space: nowrap; }
     button:hover:not(:disabled) { border-color: #fff; }
-    button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 2px rgba(8, 8, 8, .92); }
+    button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 2px rgba(8, 8, 8, .92), 0 0 0 6px rgba(8, 8, 8, .92); }
     /* 글이 바뀌는 단추(가리기·저장): 글을 모두 한 칸에 겹쳐 두고 하나만 보인다 — 폭이 가장 긴 글로 고정돼 눌러도 막대가 흔들리지 않는다 */
     button.stack { display: inline-grid; place-items: center; }
     button.stack > span { grid-area: 1 / 1; }
     button.stack > span:not(.on) { visibility: hidden; }
-    button[aria-pressed="true"], button[aria-expanded="true"] { background: rgba(62, 166, 255, .32); border-color: #3ea6ff; }
+    /* 눌린 단추: 옅은 파랑을 어두운 단추 바탕 위에 얹는다(파랑만 반투명이면 밝은 영상 위에서 흰 글자가 1.35:1) */
+    button[aria-pressed="true"], button[aria-expanded="true"] { background: linear-gradient(rgba(62, 166, 255, .32), rgba(62, 166, 255, .32)), rgba(28, 28, 28, .92); border-color: #3ea6ff; }
     button:disabled { opacity: .45; cursor: default; }
     .note { position: relative; box-sizing: border-box; max-width: min(100%, 720px); max-height: 38vh; overflow-y: auto; padding: 8px 36px 8px 12px; border-radius: 8px;
       background: rgba(20, 20, 20, .94); color: #eee; font: max(13px, calc(var(--fs, 22px) * .6))/1.55 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; text-align: left; }
@@ -451,7 +453,18 @@
     lines.tabIndex = 0;
     lines.setAttribute('role', 'group');
     lines.setAttribute('aria-label', 'readgloss 자막 — A 앞 줄 · S 이 줄 다시 · D 다음 줄 · H 가리기 · R 가린 줄 보기 · P 줄마다 멈춤 · ←→ 낱말 · Enter 사전 · Esc 나가기');
-    lines.addEventListener('mousedown', (e) => e.preventDefault()); // 마우스로 낱말을 눌러도 포커스는 옮기지 않는다(화살표·Space 는 유튜브 몫으로 남는다). Tab 으로만 들어온다
+    // 마우스로 눌러도 포커스는 층으로 옮기지 않는다(화살표·Space 는 유튜브 몫으로 남는다). Tab 으로만 들어온다.
+    // 한국어 줄은 끌어서 고르기(복사)가 되게 기본 동작을 두고, 손을 떼면 포커스만 놓는다(고른 글은 남는다).
+    let koPress = false;
+    lines.addEventListener('mousedown', (e) => {
+      if (e.target.closest?.('.ko')) koPress = true;
+      else e.preventDefault();
+    });
+    window.addEventListener('mouseup', () => {
+      if (!koPress) return;
+      koPress = false;
+      lines.blur();
+    }, true);
     const en = el('div', 'en');
     en.lang = 'en';
     const ko = el('div', 'ko');

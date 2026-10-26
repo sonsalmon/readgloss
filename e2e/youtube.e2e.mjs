@@ -577,7 +577,7 @@ try {
     const ring = await subs(`function(){ const s = getComputedStyle(this.querySelector('.lines')); return [s.outlineStyle, s.outlineColor, s.boxShadow] }`);
     assert.equal(ring[0], 'solid');
     assert.equal(ring[1], 'rgb(255, 255, 255)');
-    assert.match(ring[2], /rgba\(8, 8, 8, 0\.92\) 0px 0px 0px 2px/);
+    assert.equal(ring[2], 'rgba(8, 8, 8, 0.92) 0px 0px 0px 2px, rgba(8, 8, 8, 0.92) 0px 0px 0px 6px', '검정·흰·검정 세 겹(3회차)');
     const t0 = await vtime();
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowRight');
@@ -615,6 +615,24 @@ try {
     await until(async () => (await vtime()) >= t0 + 4.9, 2000, '화살표는 유튜브 5초 이동');
     assert.equal(await subs(`function(){ return this.querySelectorAll('.w.cur').length }`), 0, '낱말 자리 없음');
     await seek(3.0);
+  });
+
+  await step('UI-9 한국어 줄은 끌어서 고를 수 있고(포커스는 놓는다), 눌린 막대 단추는 어두운 바탕 위 옅은 파랑', async () => {
+    await page.mouse.move(5, 880);
+    await seek(3.0);
+    await until(async () => (await enText())?.startsWith('Attackers'), 3000, '줄');
+    const r = await subs(`function(){ const k = this.querySelector('.ko').getBoundingClientRect(); return { x1: k.left + 4, x2: k.right - 4, y: k.top + k.height / 2 } }`);
+    await page.mouse.move(r.x1, r.y);
+    await page.mouse.down();
+    await page.mouse.move(r.x2, r.y, { steps: 6 });
+    await page.mouse.up();
+    const picked = await page.evaluate(() => String(getSelection()));
+    assert.ok(picked.length > 2, `한국어 줄을 고를 수 있다(${JSON.stringify(picked)})`);
+    assert.equal(await page.evaluate(() => document.activeElement?.localName), 'body', '고른 뒤 포커스는 층에 남지 않는다');
+    await page.evaluate(() => getSelection().removeAllRanges());
+    await page.mouse.move(5, 880);
+    const pressed = await subs(`function(){ const b = [...this.querySelectorAll('.bar button')].find((x) => x.getAttribute('aria-pressed') === 'true'); const s = b && getComputedStyle(b); return s && [b.textContent, s.backgroundImage.startsWith('linear-gradient'), s.backgroundColor] }`);
+    assert.deepEqual(pressed, ['한', true, 'rgba(28, 28, 28, 0.92)'], '눌린 [한]: 옅은 파랑 아래 어두운 바탕');
   });
 
   await step('전체 화면: 사전 카드가 전체 화면 요소(플레이어) 안에 뜨고, 전체 화면을 나오면 닫힌다', async () => {
