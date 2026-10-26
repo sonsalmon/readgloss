@@ -57,7 +57,8 @@ test('계약 9 접착: 사전 카드가 저장 문맥·출처를 쓰고, 패널 
   assert.match(content, /const sourceUrl = \(\) => current\.source\?\.url \?\? location\.href\.slice\(0, 2000\)/, '[☆ 단어장] 저장 출처');
   assert.match(content, /globalThis\.readglossSelection\.lookupExtras\(d\)/);
   // T51b: 전체 화면(영상)일 때만 그 요소 안, 아니면 지금처럼 문서 끝(패널 뒤)
-  assert.match(content, /mountRoot\(\)\.append\(host\)/, '카드 호스트를 문서 끝(패널 뒤)에 붙인다');
+  assert.match(content, /mountIn\(host\)/, '카드 호스트를 문서 끝(패널 뒤)에 붙인다(mountIn → mountRoot)');
+  assert.match(content, /const root = mountRoot\(\);[\s\S]{0,240}root\.append\(h\)/, 'mountIn 은 mountRoot 에 붙인다');
   assert.match(content, /fs\.localName !== 'video' \? fs : document\.documentElement;/, '전체 화면이 아니면 문서 끝');
   const panel = read('panel.js');
   assert.match(panel, /const isCardPath = \(path\) => Array\.isArray\(path\) && path\.some\(\(n\) => n\?\.localName === 'readgloss-card'( \|\| n\?\.localName === 'readgloss-struct-card')?( \|\| n\?\.localName === 'readgloss-subs')?\)/); // T42: 문장 구조 카드도, T51: 영상 자막 층도

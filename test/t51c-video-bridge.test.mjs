@@ -20,6 +20,11 @@ test('parseClip: 없으면 undefined, 맞으면 소수 둘째 자리, 틀리면 
     assert.equal(parseClip(bad), null, JSON.stringify(bad));
   }
   assert.deepEqual(CLIP, { maxLength: 60, maxEnd: 86_400 });
+  // 코드 검토 7: 길이는 1/100초 정수로 잰다(64.01 - 4.01 = 60.00000000000001 이어도 60초)
+  assert.deepEqual(parseClip({ start: 4.01, end: 64.01 }), { start: 4.01, end: 64.01 });
+  assert.deepEqual(parseClip({ start: 0.14, end: 60.14 }), { start: 0.14, end: 60.14 });
+  assert.deepEqual(parseClip({ start: 1234.56, end: 1294.56 }), { start: 1234.56, end: 1294.56 });
+  assert.equal(parseClip({ start: 0.14, end: 60.15 }), null);
 });
 
 test('parseWordsOp: save-phrase 에 clip 이 실리고, 틀린 clip 은 요청 전체를 거절', () => {

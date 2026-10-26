@@ -44,9 +44,11 @@ export function parseClip(v) {
   if (typeof v !== 'object' || Array.isArray(v)) return null;
   const { start, end } = v;
   if (typeof start !== 'number' || typeof end !== 'number' || !Number.isFinite(start) || !Number.isFinite(end)) return null;
-  if (start < 0 || end <= start || end > CLIP.maxEnd || end - start > CLIP.maxLength) return null;
-  const r = { start: Math.round(start * 100) / 100, end: Math.round(end * 100) / 100 };
-  return r.end > r.start ? r : null;
+  // 길이는 1/100초 정수로 잰다(소수 뺄셈 오차로 딱 60초가 60.00000000000001 이 되지 않게)
+  const s = Math.round(start * 100);
+  const e = Math.round(end * 100);
+  if (start < 0 || end > CLIP.maxEnd || e <= s || e - s > CLIP.maxLength * 100) return null;
+  return { start: s / 100, end: e / 100 };
 }
 
 // save-phrase / unsave-phrase 요청 -> 정규화한 요청 | null

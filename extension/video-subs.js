@@ -29,7 +29,7 @@
     hard: new Map(), asked: new Set(), annotBusy: false, annotErrAt: 0, hardVer: 0,
     koBusy: false, koAll: false, koErr: '', koErrAt: 0,
     savedForms: new Map(), phrases: {}, savedVer: 0, saving: false,
-    note: null, waitSince: Date.now(), ccTried: new Set(), msg: '', msgAt: 0,
+    note: null, waitSince: Date.now(), ccTried: new Set(), msg: '', msgAt: 0, ad: false, shown: false,
   };
   // 잠깐 멈춤(마우스를 올림·사전 카드·풀이): 이유가 하나라도 있으면 멈춰 두고, 우리가 멈춘 것만 다시 재생한다. 사용자가 직접 재생하면 이유를 다 지운다.
   const hold = { reasons: new Set(), paused: false, ours: false };
@@ -74,7 +74,13 @@
   const notify = (what, i) => listeners.forEach((cb) => { try { cb(what, i); } catch { /* 탭 그리기 오류는 무시 */ } });
   const titleNow = () => V.titleOf(document.title);
   const wordsChanged = () => window.dispatchEvent(new CustomEvent('readgloss:words', { detail: { known: [], unknown: [] } })); // 패널이 다시 읽게(주석은 반응하지 않게 빈 목록)
-  const toast = (text, anchorEl) => globalThis.readglossToast?.show({ text, anchor: anchorEl?.getBoundingClientRect?.() ?? null, ms: 1800 });
+  // 확인 메시지: 자막 층 안 단추에서 낸 것은 층 전체 위에 띄운다(아래로 띄우면 방금 저장한 줄을 가린다 — 바닥을 화면 끝으로 주면 위에 놓인다)
+  function toast(text, anchorEl) {
+    const inLayer = Boolean(ui && anchorEl && ui.box.contains(anchorEl));
+    const r = (inLayer ? ui.box : anchorEl)?.getBoundingClientRect?.() ?? null;
+    const anchor = r && inLayer ? { left: r.left, right: r.right, top: r.top, bottom: innerHeight } : r;
+    globalThis.readglossToast?.show({ text, anchor, ms: 1800 });
+  }
 
   // ---- 자막 받기(yt-hook.js) ----
   // 같은 트랙을 다시 받아도(replay) 번역·칠하기를 버리지 않게 내용 열쇠로 비교한다
@@ -125,6 +131,9 @@
   // ---- 페이지·플레이어 ----
   function checkPage() {
     attach();
+    const ad = adShowing();
+    if (S.ad && !ad) S.waitSince = Date.now(); // 광고가 끝났다: 자막 켜기·안내까지 기다리는 시간은 이제부터 잰다
+    S.ad = ad;
     const id = location.pathname === '/watch' ? V.videoIdOf(location.href) : null;
     if (id !== S.id) {
       S.id = id;
@@ -276,8 +285,9 @@
     // 장면 구간은 자막이 없어도(자막 꺼짐·자막 없는 영상) 끝에서 멈춘다
     if (S.clip) {
       if (t >= S.clip.end) {
+        const reached = t < S.clip.end + 1; // 재생하다 끝에 닿았다(사용자가 끝 너머로 옮겼으면 멈추지 않고 구간만 끝낸다)
         S.clip = null;
-        video.pause();
+        if (reached) video.pause();
       } else if (t < S.clip.start - 1) S.clip = null; // 사용자가 구간 밖으로 옮겼다
     }
     if (!S.cues.length) {
@@ -319,47 +329,70 @@
       video.play()?.catch?.(() => { hold.ours = false; });
     }
   }
-  // 다른 낱말을 누르면 카드가 닫혔다 곧 다시 열린다: 잠깐 기다렸다가 정말 닫혔을 때만 멈춤을 푼다
-  window.addEventListener('readgloss:card-closed', () => setTimeout(() => { if (!globalThis.readglossDictCardUi?.isOpen?.()) holdOff('card'); }, 150));
+  // 카드가 닫히면 멈춤을 푼다. 다른 낱말을 누르면 카드가 닫혔다 곧 다시 열리니 잠깐 기다리고, 누르는 중(영상 위를 눌러 닫음)이면
+  // 손을 뗀 뒤에 정한다: 유튜브는 영상 클릭으로 재생·멈춤을 바꾸니, 먼저 재생하면 그 클릭이 다시 멈춰 버린다(누른 시간에 따라 결과가 갈렸다).
+  let pressing = false;
+  window.addEventListener('pointerdown', (e) => { if (e.isTrusted) pressing = true; }, true);
+  const release = () => setTimeout(() => { pressing = false; }, 0); // 같은 누름의 click 이 다 돈 다음
+  window.addEventListener('pointerup', release, true);
+  window.addEventListener('pointercancel', release, true);
+  function afterCardClosed(until) {
+    if (pressing && Date.now() < until) return void setTimeout(() => afterCardClosed(until), 50);
+    if (!globalThis.readglossDictCardUi?.isOpen?.()) holdOff('card'); // 그 사이 사용자가 재생했으면 이유가 이미 지워져 아무것도 안 한다
+  }
+  window.addEventListener('readgloss:card-closed', () => setTimeout(() => afterCardClosed(Date.now() + 2000), 150));
 
   // ---- 그리기 ----
   const CSS = `
-    .box { pointer-events: auto; box-sizing: border-box; max-width: min(92%, 1100px); display: flex; flex-direction: column; align-items: center; gap: 4px;
+    .box { pointer-events: none; box-sizing: border-box; max-width: min(92%, 1100px); display: flex; flex-direction: column; align-items: center;
       font-family: "YouTube Noto", Roboto, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
-    .lines { order: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; border-radius: 6px; transition: opacity .15s; }
+    /* 마우스는 두 줄·막대(보일 때)·풀이만 받는다: 빈 자리·숨은 막대 자리·안내 위에서는 멈추지 않는다.
+       그 사이에 틈을 두지 않는다(틈을 지나면 마우스가 층을 나갔다 들어와 재생됐다가 다시 멈춘다). */
+    .lines, .bar, .note { pointer-events: auto; }
+    .lines { order: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; border-radius: 6px; }
+    .lines:focus { outline: none; }
     .lines:focus-visible { outline: 2px solid #3ea6ff; outline-offset: 2px; }
     .note { order: -2; } .bar { order: -1; } .msg { order: 1; } /* 화면 차례(풀이 → 막대 → 두 줄 → 안내)와 Tab 차례(두 줄 → 막대 → 풀이)를 따로 */
-    .lines.past { opacity: .62; }
     .en, .ko { box-sizing: border-box; max-width: 100%; padding: .08em .45em; border-radius: 4px; background: rgba(8, 8, 8, .74); color: #fff; text-align: center; line-height: 1.38; overflow-wrap: anywhere; }
     .en { font-size: var(--fs, 22px); user-select: none; }
     .ko { font-size: calc(var(--fs, 22px) * .82); color: #f1f1f1; }
     .ko.err { color: #c9c9c9; font-size: calc(var(--fs, 22px) * .62); }
+    /* 지난 줄(다음 줄 전 빈 사이): 바탕은 그대로 두고 글자만 흐리게 — 밝은 화면 위에서도 읽힌다 */
+    .lines.past .en, .lines.past .ko { color: rgba(255, 255, 255, .72); }
     .en:empty, .ko:empty { display: none; }
     .w { position: relative; cursor: pointer; border-radius: 3px; }
     .w:hover { background: rgba(255, 255, 255, .2); }
     .w.hard { text-decoration: underline dotted rgba(255, 214, 102, .95); text-decoration-thickness: .08em; text-underline-offset: .2em; }
     .w.saved { background: rgba(56, 189, 248, .34); }
-    .w.hid { color: transparent; background: rgba(255, 255, 255, .24); text-decoration: none; }
-    .w .g { display: none; position: absolute; left: 50%; bottom: 100%; transform: translate(-50%, -2px); white-space: nowrap; pointer-events: none;
+    .w.hid { color: transparent; background: rgba(255, 255, 255, .38); box-shadow: inset 0 -2px 0 rgba(255, 255, 255, .85); text-decoration: none; }
+    .lines:focus .w.cur { outline: 2px solid #3ea6ff; outline-offset: 1px; } /* 키보드 낱말 자리(←·→) */
+    .w .g { display: none; position: absolute; left: 50%; bottom: 100%; z-index: 1; transform: translate(-50%, -2px); white-space: nowrap; pointer-events: none;
       padding: 1px 6px; border-radius: 4px; background: rgba(20, 20, 20, .94); color: #ffe08a; font-size: max(12px, .52em); line-height: 1.5; }
-    .w.hard:hover .g { display: block; }
+    .w.hard:hover .g, .lines:focus .w.hard.cur .g { display: block; }
     .w.hid .g { display: none !important; }
-    .bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; visibility: hidden; opacity: 0; transition: opacity .15s, visibility .15s; }
-    .box:hover .bar, .box:focus-within .bar { visibility: visible; opacity: 1; } /* 숨은 막대 자리에 마우스가 지나가도 멈추지 않게 visibility 로 */
-    button { all: unset; box-sizing: border-box; cursor: pointer; padding: 0 8px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, .2);
-      background: rgba(28, 28, 28, .92); color: #fff; font: 12px/1.7 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; white-space: nowrap; }
+    /* 막대: 숨어 있을 때는 visibility 라 마우스를 받지 않는다. 아래 여백은 뜻 풍선 자리(풍선이 단추를 가리지 않게)이고 막대의 일부라 두 줄과 틈이 없다 */
+    .bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 4px 0 max(22px, calc(var(--fs, 22px) * .85)); visibility: hidden; opacity: 0; transition: opacity .15s, visibility .15s; }
+    .box:hover .bar, .box:focus-within .bar { visibility: visible; opacity: 1; }
+    /* 단추: 누를 자리 24px 이상, 글자는 자막 크기를 따라 커진다 */
+    button { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; padding: 0 9px; cursor: pointer;
+      border-radius: 6px; border: 1px solid rgba(255, 255, 255, .2); background: rgba(28, 28, 28, .92); color: #fff;
+      font: max(12px, calc(var(--fs, 22px) * .56))/1.7 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; white-space: nowrap; }
     button:hover:not(:disabled) { border-color: #fff; }
     button:focus-visible { outline: 2px solid #3ea6ff; outline-offset: 1px; }
     button[aria-pressed="true"], button[aria-expanded="true"] { background: rgba(62, 166, 255, .32); border-color: #3ea6ff; }
     button:disabled { opacity: .45; cursor: default; }
-    .note { position: relative; box-sizing: border-box; max-width: min(100%, 720px); max-height: 38vh; overflow-y: auto; padding: 8px 30px 8px 12px; border-radius: 8px;
-      background: rgba(20, 20, 20, .94); color: #eee; font: 13px/1.55 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; text-align: left; }
-    .note .x { position: absolute; top: 6px; right: 6px; padding: 0 6px; }
+    .note { position: relative; box-sizing: border-box; max-width: min(100%, 720px); max-height: 38vh; overflow-y: auto; padding: 8px 36px 8px 12px; border-radius: 8px;
+      background: rgba(20, 20, 20, .94); color: #eee; font: max(13px, calc(var(--fs, 22px) * .6))/1.55 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; text-align: left; }
+    .note .x { position: absolute; top: 6px; right: 6px; padding: 0; }
     .note .tr { font-weight: 600; color: #fff; }
     .note .nt { color: #c8c8c8; margin-top: 3px; }
     .note .ex { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; }
     .note .ex .en2 { font-weight: 600; } .note .ex .ko2 { color: #c8c8c8; }
-    .msg { padding: 4px 12px; border-radius: 6px; background: rgba(20, 20, 20, .88); color: #eee; font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+    .msg { margin-top: 4px; padding: 4px 12px; border-radius: 6px; background: rgba(20, 20, 20, .88); color: #eee;
+      font: max(13px, calc(var(--fs, 22px) * .6))/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+    /* 안내만 뜰 때(우리 두 줄이 없을 때)는 유튜브 자막이 보일 수 있으니 그 자리 위로 올린다 */
+    .box:has(.lines[hidden]) .msg { margin-bottom: max(3.4em, calc(var(--fs, 22px) * 3)); }
+    .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     [hidden] { display: none !important; }
     @media (prefers-reduced-motion: reduce) { .bar, .lines { transition: none; } }
   `;
@@ -377,7 +410,7 @@
     b.addEventListener('click', (e) => {
       e.stopPropagation();
       onclick(e);
-      b.blur(); // 키보드는 유튜브(k·Space 등)로 돌려준다
+      if (e.detail > 0) b.blur(); // 마우스로 눌렀으면 키보드는 유튜브(k·Space 등)로 돌려준다. 키보드로 눌렀으면 그 자리에 둔다(Esc 로 나간다)
     });
     return b;
   }
@@ -419,23 +452,67 @@
     const msg = el('div', 'msg');
     msg.hidden = true;
     msg.setAttribute('role', 'status');
+    const sr = el('div', 'sr'); // 키보드 낱말 자리를 읽어 주는 곳(화면에는 안 보인다)
+    sr.setAttribute('aria-live', 'polite');
     box.append(lines, bar, note, msg);
-    shadow.append(style, box);
-    ui = { box, bar, note, lines, en, ko, msg, prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, koBtn, saveBtn, explainBtn, lineKey: '', noteKey: '', tokens: [] };
+    shadow.append(style, box, sr);
+    ui = { box, bar, note, lines, en, ko, msg, sr, prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, koBtn, saveBtn, explainBtn, lineKey: '', noteKey: '', tokens: [], wcur: -1, wcurFor: '' };
 
     en.addEventListener('click', (e) => {
       const sp = e.target?.closest?.('.w');
-      const cue = S.cues[S.cur];
-      if (!sp || !cue) return;
-      if (sp.classList.contains('hid')) {
-        S.revealed = S.cur; // 가린 낱말을 누르면 그 줄을 보인다
-        return renderLine();
+      if (sp) pickWord(sp);
+    });
+    // 두 줄에 포커스가 있을 때: ←·→ 낱말 자리, Enter 그 낱말 사전(가린 낱말이면 그 줄 보이기), Esc 나가기.
+    // 화살표는 유튜브의 5초 이동으로 새지 않게 여기서 멈춘다(포커스가 우리 층 밖이면 건드리지 않는다).
+    lines.addEventListener('keydown', (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const words = ui.tokens.flatMap((tk, k) => (tk.w ? [k] : []));
+        if (!words.length) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const at = words.indexOf(ui.wcur);
+        const step = e.key === 'ArrowRight' ? 1 : -1;
+        moveCursor(words[at < 0 ? (step > 0 ? 0 : words.length - 1) : Math.min(words.length - 1, Math.max(0, at + step))]);
+      } else if (e.key === 'Enter' && ui.wcur >= 0) {
+        const sp = ui.en.querySelector(`.w[data-k="${ui.wcur}"]`);
+        if (!sp) return;
+        e.preventDefault();
+        e.stopPropagation();
+        pickWord(sp);
       }
-      const tk = ui.tokens[Number(sp.dataset.k)];
-      if (tk?.w) lookupWord(tk.t, S.cur, sp.getBoundingClientRect());
+    });
+    // 키보드 멈춤은 포커스가 층(두 줄·막대·풀이)을 떠날 때 푼다(두 줄 → 막대로 Tab 하는 동안은 그 줄에 머문다)
+    box.addEventListener('focusout', (e) => { if (!box.contains(e.relatedTarget)) holdOff('keys'); });
+    // Esc: 층 안 포커스를 놓아 키보드를 유튜브로 돌려준다(같은 Esc 로 사전 카드를 닫았으면 그대로 둔다)
+    box.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !e.readglossCardClosed) e.target?.blur?.();
     });
     box.addEventListener('mouseenter', () => vs().hoverPause && holdOn('hover'));
     box.addEventListener('mouseleave', () => holdOff('hover'));
+  }
+
+  // 낱말 하나 고르기(마우스·Enter): 가린 낱말이면 그 줄을 보이고, 아니면 사전 카드
+  function pickWord(sp) {
+    if (!S.cues[S.cur]) return;
+    if (sp.classList.contains('hid')) {
+      S.revealed = S.cur;
+      return renderLine();
+    }
+    const tk = ui.tokens[Number(sp.dataset.k)];
+    if (tk?.w) lookupWord(tk.t, S.cur, sp.getBoundingClientRect());
+  }
+  // 키보드 낱말 자리 옮기기. 움직이는 동안 줄이 넘어가지 않게 마우스를 올린 것처럼 잠깐 멈춘다(마우스 멈춤 설정을 따른다)
+  function moveCursor(k) {
+    if (vs().hoverPause) holdOn('keys');
+    ui.en.querySelector('.w.cur')?.classList.remove('cur');
+    ui.wcur = k;
+    const sp = ui.en.querySelector(`.w[data-k="${k}"]`);
+    if (!sp) return;
+    sp.classList.add('cur');
+    const tk = ui.tokens[k];
+    const h = vs().hard ? S.hard.get(tk.lower) : null;
+    ui.sr.textContent = sp.classList.contains('hid') ? '가린 낱말, Enter 로 그 줄 보기' : `${tk.t}${h?.gloss ? `, ${h.gloss}` : ''}`;
   }
 
   // 글자 크기는 플레이어 높이를 따라가고, 줄은 유튜브 조작 막대 위에 둔다(막대가 숨어도 같은 자리 — 마우스를 올렸을 때 자막이 움직이지 않게)
@@ -452,6 +529,10 @@
     const show = visible();
     document.documentElement.toggleAttribute('data-readgloss-subs', show);
     if (show) ensurePageStyle();
+    if (show !== S.shown) {
+      S.shown = show;
+      if (show) setTimeout(() => { pumpKo(); pumpAnnot(); }, 0); // 층이 다시 보이면(CC 켬·광고 끝) 지금 줄 근처를 채운다
+    }
     const msg = waitMessage();
     if (msg !== S.msg) {
       S.msg = msg;
@@ -482,6 +563,11 @@
     const key = cue ? [S.mainKey, i, S.revealed === i, v.hide, v.hard, v.ko, S.ko[i] ?? '', S.koErr, S.hardVer, S.savedVer].join('|') : '';
     if (key === ui.lineKey) return;
     ui.lineKey = key;
+    const cursorFor = `${S.mainKey}|${i}`;
+    if (ui.wcurFor !== cursorFor) {
+      ui.wcurFor = cursorFor; // 다른 줄이 되면 키보드 낱말 자리는 처음부터
+      ui.wcur = -1;
+    }
     ui.en.replaceChildren();
     ui.tokens = [];
     if (!cue) {
@@ -489,11 +575,13 @@
       return;
     }
     const toks = V.tokenize(cue.text);
-    const hid = V.maskFlags(toks, S.revealed === i ? 'off' : v.hide, (w) => S.hard.has(w));
+    const mode = S.revealed === i ? 'off' : v.hide;
+    const hid = V.maskFlags(toks, mode, (w) => S.hard.has(w));
     toks.forEach((tk, k) => {
-      if (!tk.w) return void ui.en.append(tk.t);
+      if (!tk.w) return void appendRest(tk.t, mode === 'all');
       const sp = el('span', 'w', tk.t);
       sp.dataset.k = String(k);
+      if (k === ui.wcur) sp.classList.add('cur');
       const h = S.hard.get(tk.lower);
       if (v.hard && h) {
         sp.classList.add('hard');
@@ -502,7 +590,7 @@
       if (S.savedForms.has(tk.lower)) sp.classList.add('saved');
       if (hid[k]) {
         sp.classList.add('hid');
-        sp.title = '가린 낱말 — 누르거나 R 로 보기';
+        sp.title = HID_TITLE;
       }
       ui.en.append(sp);
     });
@@ -510,6 +598,21 @@
     const koText = S.ko[i] || (S.koErr && !S.koFail.has(i) ? S.koErr : '');
     ui.ko.textContent = v.ko ? koText : '';
     ui.ko.classList.toggle('err', !S.ko[i] && Boolean(koText));
+  }
+
+  // 낱말이 아닌 조각. 문장 전체 가리기면 그 안의 글자·숫자(한 글자 a·I, x86, café 등)도 가린다 — 사전 낱말이 아니라 누르면 그 줄을 보이기만 한다
+  const HID_TITLE = '가린 낱말 — 누르거나 R 로 보기';
+  function appendRest(text, hideAll) {
+    if (!hideAll) return void ui.en.append(text);
+    let last = 0;
+    for (const m of text.matchAll(/[\p{L}\p{N}]+/gu)) {
+      if (m.index > last) ui.en.append(text.slice(last, m.index));
+      const sp = el('span', 'w hid', m[0]);
+      sp.title = HID_TITLE;
+      ui.en.append(sp);
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) ui.en.append(text.slice(last));
   }
 
   function setBtn(b, text, label) {
@@ -599,10 +702,17 @@
     const cue = S.cues[i];
     if (!cue || S.saving) return;
     S.saving = true;
+    const key = S.mainKey; // 번역을 기다리는 사이 다른 영상으로 가면 새 영상 주소·제목으로 잘못 저장하지 않게, 누를 때 값을 잡아 둔다
+    const id = S.id;
+    const title = titleNow();
     const pid = Sel.findPhrase(S.phrases, cue.text);
     let ko = S.ko[i] || '';
     if (!pid && !ko) ko = (await send({ type: 'mt', text: cue.text }))?.translation || ''; // 한국어 줄을 꺼 두었어도 복습 뒷면에 번역이 있게
-    const r = await send(pid ? { type: 'words', op: 'unsave-phrase', id: pid } : V.lineMessage({ cue, ko, id: S.id, title: titleNow() }));
+    if (key !== S.mainKey) {
+      S.saving = false;
+      return;
+    }
+    const r = await send(pid ? { type: 'words', op: 'unsave-phrase', id: pid } : V.lineMessage({ cue, ko, id, title }));
     S.saving = false;
     if (r?.phrases) {
       S.phrases = r.phrases;
@@ -617,7 +727,8 @@
   async function toggleExpression(row, cue, b) {
     if (!cue) return;
     const msg = Sel.expressionToggle(row, { sentence: cue.text, url: V.sceneUrl(S.id, cue.start), title: titleNow() });
-    if (msg.op === 'save-phrase') msg.clip = V.clipOfCue(cue); // 표현도 그 줄 소리로 복습할 수 있게
+    const clip = V.clipOfCue(cue);
+    if (msg.op === 'save-phrase' && V.validClip(clip)) msg.clip = clip; // 표현도 그 줄 소리로 복습할 수 있게
     b.disabled = true;
     const r = await send(msg);
     b.disabled = false;
@@ -651,8 +762,9 @@
   }
 
   // ---- 한국어 줄(맥 번역): 한 번에 하나씩, 지금 줄 근처부터 ----
+  // 지금 줄 근처는 한국어 줄이 보일 때만(층이 꺼졌거나 CC 를 껐으면 맥 번역을 부르지 않는다). [한국어 모두 보기]는 한국어 줄 설정과 상관없이 대본 전체를.
   async function pumpKo() {
-    if (S.koBusy || !vs().ko || !S.cues.length || !S.id) return;
+    if (S.koBusy || !S.cues.length || !S.id || !(S.koAll || (vs().ko && visible()))) return;
     if (S.koErr) {
       if (Date.now() - S.koErrAt < ERR_PAUSE_MS) return;
       S.koErr = '';
@@ -684,8 +796,10 @@
   // ---- 어려운 단어(/annotate): 지금 줄부터 30줄 안의 아직 안 물은 낱말 ----
   async function askAnnot(words) {
     S.annotBusy = true;
-    const r = await send({ type: 'annotate', words, level: settings.level });
+    const level = settings.level;
+    const r = await send({ type: 'annotate', words, level });
     S.annotBusy = false;
+    if (level !== settings.level) return true; // 그 사이 수준이 바뀌었다(apply 가 칠하기를 비웠다): 옛 수준 답은 버리고 새 수준으로 다시 묻게
     if (!r?.items || typeof r.items !== 'object') {
       S.annotErrAt = Date.now();
       return false;
@@ -705,7 +819,7 @@
   }
   function pumpAnnot() {
     const v = vs();
-    if (!(v.hard || v.hide === 'hard') || !S.cues.length || S.annotBusy || Date.now() - S.annotErrAt < ERR_PAUSE_MS) return;
+    if (!(v.hard || v.hide === 'hard') || !visible() || S.annotBusy || Date.now() - S.annotErrAt < ERR_PAUSE_MS) return; // 층이 보일 때만(대본 전체는 annotateAll)
     const { words } = V.annotateBatch(S.cues, Math.max(0, S.cur), S.asked);
     if (words.length) askAnnot(words).then((ok) => ok && pumpAnnot());
   }
@@ -765,9 +879,13 @@
   }
 
   // ---- 키(27-2): 입력칸 밖·고른 글 없음·우리 다른 화면(패널·카드·메모장) 밖 ----
+  // 360° 영상은 W·A·S·D 로 둘러본다: 그 플레이어에서는 줄 이동 키(A·S·D)를 유튜브에 양보한다
+  const spherical = () => Boolean(player?.classList.contains('ytp-webgl-spherical') || player?.querySelector('.ytp-webgl-spherical-control'));
   window.addEventListener('keydown', (e) => {
+    if (!e.isTrusted) return; // 페이지 스크립트가 만든 키로 설정(가리기·줄마다 멈춤)을 바꾸지 못하게
     const act = V.keyAction(e);
     if (!act || !visible()) return;
+    if ((act === 'prev' || act === 'repeat' || act === 'next') && spherical()) return;
     const path = e.composedPath();
     if (Sel.isTypingPath(path, e.isComposing)) return;
     if (path.some((n) => typeof n?.localName === 'string' && n.localName.startsWith('readgloss-') && n !== host)) return;

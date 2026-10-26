@@ -312,3 +312,17 @@ test('annotateBatch: 글자 합이 maxChars(기본 12000)를 넘기 전에 멈�
   assert.ok(JSON.stringify({ words }).length < 16 * 1024);
   assert.equal(V.annotateBatch(cues, 0, new Set(), { maxChars: 10 }).words.length, 0);
 });
+
+test('코드 검토 7: 60초 넘는 줄의 구간은 소수 오차 없이 60초 안(다리 parseClip 이 거절하지 않게), 아주 짧은 줄은 구간 없이 저장', async () => {
+  const { parseClip } = await import('../bridge/words.mjs');
+  for (let s = 0; s < 120; s += 0.0137) {
+    const clip = V.clipOfCue({ start: s, end: s + 75 });
+    assert.equal(V.validClip(clip), true, JSON.stringify(clip));
+    assert.deepEqual(parseClip(clip), clip, `다리도 받는다 ${JSON.stringify(clip)}`);
+  }
+  assert.deepEqual(V.clipOfCue({ start: 0.145, end: 70 }), { start: 0.14, end: 60.14 }, '끝은 반올림한 시작 + 60초');
+  assert.equal(V.validClip({ start: 0.14, end: 60.15 }), false, '60.01초는 길다');
+  assert.equal(V.validClip({ start: 1.001, end: 1.004 }), false, '1/100초 안의 구간은 없다');
+  const tiny = V.lineMessage({ cue: { start: 5.001, end: 5.003, text: 'Hi there' }, id: ID });
+  assert.equal('clip' in tiny, false);
+});

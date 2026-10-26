@@ -341,9 +341,14 @@
   const sceneUrl = (id, sec) => `https://www.youtube.com/watch?v=${id}&t=${Math.max(0, Math.floor(Number(sec) || 0))}s`;
 
   // 장면 구간 { start, end }: 다리 words.mjs 와 같은 규칙(0 ≤ start < end ≤ 86400, 길이 ≤ 60)
+  // 길이는 1/100초 정수로 잰다: 소수로 빼면 60.14 - 0.14 가 60.00000000000001 이 되어 60초 구간이 거절된다
   const finite = (v) => typeof v === 'number' && Number.isFinite(v);
-  const validClip = (c) => isObj(c) && finite(c.start) && finite(c.end) && c.start >= 0 && c.end > c.start && c.end <= MAX_TIME && c.end - c.start <= MAX_CLIP;
-  const clipOfCue = (cue) => ({ start: round(cue.start, 2), end: round(Math.min(cue.end, cue.start + MAX_CLIP), 2) });
+  const cs = (v) => Math.round(v * 100);
+  const validClip = (c) => isObj(c) && finite(c.start) && finite(c.end) && c.start >= 0 && c.end <= MAX_TIME && cs(c.end) > cs(c.start) && cs(c.end) - cs(c.start) <= MAX_CLIP * 100;
+  function clipOfCue(cue) {
+    const s = cs(cue.start);
+    return { start: s / 100, end: Math.min(cs(cue.end), s + MAX_CLIP * 100) / 100 };
+  }
   // 낱말 장면(t 만 있음)의 구간. t 는 줄 시작을 초 단위로 내린 값이라 [t, t+1) 안에서 시작한 첫 줄이 그 장면이다.
   // 그런 줄이 없으면 t 가 든 줄, 그것도 없으면 t 부터 6초.
   function clipAt(cues, t) {
@@ -367,7 +372,9 @@
 
   // 줄 저장 메시지(다리 save-phrase)
   function lineMessage({ cue, ko = '', id, title = '' }) {
-    const msg = { type: 'words', op: 'save-phrase', text: clipStart(cleanText(cue.text), MAX_LINE), translation: clipStart(cleanText(ko), 2000), kind: 'sentence', url: sceneUrl(id, cue.start), clip: clipOfCue(cue) };
+    const msg = { type: 'words', op: 'save-phrase', text: clipStart(cleanText(cue.text), MAX_LINE), translation: clipStart(cleanText(ko), 2000), kind: 'sentence', url: sceneUrl(id, cue.start) };
+    const clip = clipOfCue(cue);
+    if (validClip(clip)) msg.clip = clip; // 아주 짧은 줄(1/100초 안)은 구간 없이 — 틀린 구간이면 다리가 저장을 통째로 거절한다
     const t = clipStart(cleanText(title), MAX_TITLE);
     if (t) msg.title = t;
     return msg;

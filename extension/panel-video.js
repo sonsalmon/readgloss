@@ -1,5 +1,6 @@
 // 패널 [영상] 탭(변경 기록 27-5): 유튜브에서만 등록한다. 대본(줄 누르면 그 장면) · 어려운 단어 미리 보기 · 한국어 모두 보기.
 // 자막 층(video-subs.js)이 내놓은 globalThis.readglossVideoUi 를 읽고 부르기만 한다. 판단은 video-core.js.
+// 패널의 탭들은 shadow root 하나를 같이 쓴다: 이 탭 CSS 는 모두 .rgv 아래로 묶고 이름에 v- 를 붙여 다른 탭과 서로 새지 않게 한다.
 (() => {
   if (typeof document === 'undefined' || !/(^|\.)youtube\.com$/.test(location.hostname)) return;
   const V = globalThis.readglossVideo;
@@ -7,30 +8,35 @@
 
   const CSS = `
     .rgv { --v-fg: var(--rg-fg, #1f2328); --v-muted: var(--rg-muted, #656d76); --v-border: var(--rg-border, #e3e6ea); --v-accent: var(--rg-accent, #2f6feb);
-      --v-soft: var(--rg-accent-soft, rgba(47,111,235,.10)); color: var(--v-fg); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif; }
+      --v-soft: var(--rg-accent-soft, rgba(47,111,235,.10)); --v-ink: var(--rg-accent-ink, #245ac4);
+      color: var(--v-fg); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif; }
     @media (prefers-color-scheme: dark) {
-      .rgv { --v-fg: var(--rg-fg, #e6e8eb); --v-muted: var(--rg-muted, #9aa3ad); --v-border: var(--rg-border, #343a44); --v-accent: var(--rg-accent, #6b9bff); --v-soft: var(--rg-accent-soft, rgba(107,155,255,.14)); }
+      .rgv { --v-fg: var(--rg-fg, #e6e8eb); --v-muted: var(--rg-muted, #9aa3ad); --v-border: var(--rg-border, #343a44); --v-accent: var(--rg-accent, #6b9bff);
+        --v-soft: var(--rg-accent-soft, rgba(107,155,255,.14)); --v-ink: var(--rg-accent-ink, #8db4ff); }
     }
-    button { font: inherit; color: inherit; cursor: pointer; }
-    button:focus-visible { outline: 2px solid var(--v-accent); outline-offset: 2px; }
-    .title { font-weight: 700; overflow-wrap: anywhere; }
-    .info, .status { color: var(--v-muted); font-size: 12.5px; }
-    .tools { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
-    .act { padding: 2px 10px; border-radius: 7px; border: 1px solid var(--v-border); background: none; font-size: 12.5px; }
-    .act:hover { background: var(--v-soft); border-color: var(--v-accent); color: var(--v-accent); }
-    .act[aria-pressed="true"] { background: var(--v-soft); border-color: var(--v-accent); color: var(--v-accent); font-weight: 600; }
-    .hard { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 8px; }
-    .chip { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--v-border); background: none; font-size: 12.5px; text-align: left; }
-    .chip:hover { border-color: var(--v-accent); background: var(--v-soft); }
-    .chip .g { color: var(--v-muted); }
-    ol { list-style: none; margin: 0; padding: 0; }
-    li { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: start; padding: 6px 4px; border-top: 1px solid var(--v-border); border-radius: 6px; }
-    li.cur { background: var(--v-soft); }
-    .t { padding: 0 4px; border: 0; background: none; color: var(--v-accent); font-size: 12px; font-variant-numeric: tabular-nums; }
-    .txt { cursor: pointer; min-width: 0; overflow-wrap: anywhere; }
-    .ko { color: var(--v-muted); font-size: 12.5px; }
-    .star { padding: 0 6px; border: 0; background: none; color: var(--v-accent); font-size: 14px; }
-    [hidden] { display: none !important; }
+    .rgv button { box-sizing: border-box; margin: 0; font: inherit; color: inherit; background: none; cursor: pointer; }
+    .rgv button:focus-visible { outline: 2px solid var(--v-accent); outline-offset: 2px; }
+    .rgv .v-title { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+    .rgv .v-info, .rgv .v-status { color: var(--v-muted); font-size: 12.5px; font-weight: 400; }
+    .rgv .v-tools { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+    .rgv .v-act { min-height: 28px; padding: 3px 12px; border-radius: 7px; border: 1px solid var(--v-border); font-size: 12.5px; font-weight: 400; }
+    .rgv .v-act:hover { background: var(--v-soft); border-color: var(--v-accent); color: var(--v-ink); }
+    .rgv .v-act[aria-pressed="true"] { background: var(--v-soft); border-color: var(--v-accent); color: var(--v-ink); font-weight: 600; }
+    .rgv .v-hard { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
+    .rgv .v-chip { min-height: 26px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--v-border); font-size: 12.5px; text-align: left; }
+    .rgv .v-chip:hover { border-color: var(--v-accent); background: var(--v-soft); }
+    .rgv .v-chip .v-g { color: var(--v-muted); }
+    .rgv .v-list { list-style: none; margin: 0; padding: 0; }
+    .rgv .v-row { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: start; margin: 0; padding: 6px 4px; border-top: 1px solid var(--v-border); border-radius: 6px; }
+    .rgv .v-row:hover:not(.v-cur) { background: color-mix(in srgb, var(--v-soft) 50%, transparent); }
+    .rgv .v-row.v-cur { background: var(--v-soft); }
+    .rgv .v-t { min-width: 40px; min-height: 24px; padding: 0 4px; border: 0; border-radius: 5px; color: var(--v-ink); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .rgv .v-txt { min-width: 0; cursor: pointer; overflow-wrap: anywhere; font-weight: 400; }
+    .rgv .v-txt:hover .v-en { text-decoration: underline; text-underline-offset: 2px; }
+    .rgv .v-ko { color: var(--v-muted); font-size: 12.5px; }
+    .rgv .v-star { min-width: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 6px; color: var(--v-ink); font-size: 15px; line-height: 1; }
+    .rgv .v-star:hover { background: var(--v-soft); }
+    .rgv [hidden] { display: none !important; }
   `;
 
   function el(tag, cls, text) {
@@ -39,7 +45,7 @@
     if (text !== undefined) n.textContent = text;
     return n;
   }
-  function btn(text, label, onclick, cls = 'act') {
+  function btn(text, label, onclick, cls = 'v-act') {
     const b = el('button', cls, text);
     b.type = 'button';
     b.setAttribute('aria-label', label);
@@ -59,22 +65,19 @@
     const root = el('div', 'rgv');
     const style = el('style');
     style.textContent = CSS;
-    const titleEl = el('div', 'title');
-    const infoEl = el('div', 'info');
-    infoEl.setAttribute('role', 'status');
+    const titleEl = el('div', 'v-title');
+    const infoEl = el('div', 'v-info'); // 줄마다 바뀌는 번역 진행은 여기 말고 [한국어] 단추에(읽어 주기가 줄마다 울리지 않게)
     const hardBtn = btn('어려운 단어 보기', '이 영상의 어려운 단어 미리 보기', () => showHard());
     const koBtn = btn('한국어 모두 보기', '대본 전체를 맥 번역으로', () => ui()?.setKoAll(!ui().state().koAll));
-    const tools = el('div', 'tools');
+    const tools = el('div', 'v-tools');
     tools.append(hardBtn, koBtn);
-    const hardBox = el('div', 'hard');
+    const hardBox = el('div', 'v-hard');
     hardBox.hidden = true;
     hardBox.setAttribute('role', 'group');
     hardBox.setAttribute('aria-label', '어려운 단어');
-    const status = el('div', 'status');
-    status.setAttribute('role', 'status');
-    const list = el('ol');
+    const list = el('ol', 'v-list');
     list.setAttribute('aria-label', '대본');
-    root.append(style, titleEl, infoEl, tools, hardBox, status, list);
+    root.append(style, titleEl, infoEl, tools, hardBox, list);
     container.replaceChildren(root);
 
     let rows = []; // 줄마다 { li, ko, star }
@@ -94,18 +97,25 @@
     function build() {
       const st = ui()?.state();
       const key = st ? `${st.id}|${st.cues.length}|${st.cues[0]?.start}|${st.kind}` : '';
-      if (key === builtKey) return;
+      if (key === builtKey) {
+        // 같은 대본이어도 한국어 줄은 바뀔 수 있다(나중에 온 유튜브 한국어 자막은 'ko' 알림 없이 한꺼번에 채워진다)
+        rows.forEach((r, i) => {
+          const t = st?.ko[i] || '';
+          if (r.ko.textContent !== t) r.ko.textContent = t;
+        });
+        return;
+      }
       builtKey = key;
       curRow = -1;
       rows = (st?.cues ?? []).map((c, i) => {
-        const li = el('li');
-        const t = btn(V.fmtTime(c.start), `${V.fmtTime(c.start)} 그 장면으로`, () => ui()?.seek(i), 't');
-        const txt = el('div', 'txt');
-        txt.append(el('div', 'en', c.text));
-        const ko = el('div', 'ko', st.ko[i] || '');
+        const li = el('li', 'v-row');
+        const t = btn(V.fmtTime(c.start), `${V.fmtTime(c.start)} 그 장면으로`, () => ui()?.seek(i), 'v-t');
+        const txt = el('div', 'v-txt');
+        txt.append(el('div', 'v-en', c.text));
+        const ko = el('div', 'v-ko', st.ko[i] || '');
         txt.append(ko);
         txt.addEventListener('click', () => ui()?.seek(i));
-        const star = btn('☆', '이 줄 구·문장에 저장', () => ui()?.saveLine(i, star), 'star');
+        const star = btn('☆', '이 줄 구·문장에 저장', () => ui()?.saveLine(i, star), 'v-star');
         li.append(t, txt, star);
         return { li, ko, star };
       });
@@ -136,9 +146,9 @@
         infoEl.textContent = st.message || '자막을 기다리는 중… (유튜브 자막(CC)을 켜 주세요)';
         return;
       }
+      infoEl.textContent = `영어 자막 · ${st.cues.length}줄 · ${st.kind === 'asr' ? '자동 생성' : '사람이 씀'}`;
       const done = st.ko.filter(Boolean).length;
-      infoEl.textContent = `영어 자막 · ${st.cues.length}줄 · ${st.kind === 'asr' ? '자동 생성' : '사람이 씀'}${done ? ` · 한국어 ${done}/${st.cues.length}` : ''}`;
-      koBtn.textContent = st.koAll ? '한국어 받는 중 · 멈추기' : '한국어 모두 보기';
+      koBtn.textContent = st.koAll ? `한국어 받는 중 ${done}/${st.cues.length} · 멈추기` : done >= st.cues.length ? '한국어 모두 받음' : '한국어 모두 보기';
       koBtn.setAttribute('aria-pressed', String(st.koAll));
     }
 
@@ -147,12 +157,12 @@
       const st = ui()?.state();
       const i = st?.cur ?? -1;
       if (i === curRow && !force) return;
-      rows[curRow]?.li.classList.remove('cur');
+      rows[curRow]?.li.classList.remove('v-cur');
       rows[curRow]?.li.removeAttribute('aria-current');
       curRow = i;
       const r = rows[i];
       if (!r) return;
-      r.li.classList.add('cur');
+      r.li.classList.add('v-cur');
       r.li.setAttribute('aria-current', 'true');
       if (!scroller) {
         scroller = scrollerOf(root);
@@ -174,19 +184,19 @@
       hardBtn.setAttribute('aria-pressed', String(hardOpen));
       hardBox.hidden = !hardOpen;
       if (!hardOpen) return;
-      hardBox.replaceChildren(el('span', 'status', '대본 전체 낱말을 보는 중…'));
+      hardBox.replaceChildren(el('span', 'v-status', '대본 전체 낱말을 보는 중…'));
       const ok = await ui()?.annotateAll();
       if (!root.isConnected || !hardOpen) return;
-      if (!ok) return hardBox.replaceChildren(el('span', 'status', '다리에 연결하지 못했어요'));
+      if (!ok) return hardBox.replaceChildren(el('span', 'v-status', '다리에 연결하지 못했어요'));
       paintHard();
     }
     function paintHard() {
       const st = ui()?.state();
       const words = st ? V.previewWords(st.cues, st.hard) : [];
-      if (!words.length) return hardBox.replaceChildren(el('span', 'status', '지금 수준에서 어려운 단어가 없어요'));
+      if (!words.length) return hardBox.replaceChildren(el('span', 'v-status', '지금 수준에서 어려운 단어가 없어요'));
       hardBox.replaceChildren(...words.map((w) => {
-        const b = btn('', `${w.word} ${w.gloss}, ${w.count}번, 처음 나온 줄로`, () => ui()?.seek(w.first), 'chip');
-        b.append(`${w.word} `, el('span', 'g', `${w.gloss}${w.count > 1 ? ` ×${w.count}` : ''}`));
+        const b = btn('', `${w.word} ${w.gloss}, ${w.count}번, 처음 나온 줄로`, () => ui()?.seek(w.first), 'v-chip');
+        b.append(`${w.word} `, el('span', 'v-g', `${w.gloss}${w.count > 1 ? ` ×${w.count}` : ''}`));
         return b;
       }));
     }

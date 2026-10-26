@@ -131,6 +131,13 @@
     const fs = document.fullscreenElement;
     return fs && fs !== document.documentElement && fs !== document.body && fs.localName !== 'video' ? fs : document.documentElement;
   }
+  // 전체 화면 요소(영상 플레이어 등) 안에 붙일 때는 누름이 그 요소로 새지 않게 한다: 플레이어가 클릭으로 재생·멈춤, 더블클릭으로 전체 화면 끄기를 한다
+  // (video-subs.js 자막 층과 같은 막기). 바깥 닫기 등 document 캡처 듣기는 그대로 받는다.
+  function mountIn(h) {
+    const root = mountRoot();
+    if (root !== document.documentElement) for (const t of ['click', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'contextmenu']) h.addEventListener(t, (e) => e.stopPropagation());
+    root.append(h);
+  }
   const stopToastKey = () => {
     if (toastKey) document.removeEventListener('keydown', toastKey, true);
     toastKey = null;
@@ -349,7 +356,7 @@
     for (const t of ['keypress', 'keyup']) ta.addEventListener(t, (e) => e.stopPropagation());
 
     shadow.append(style, pill);
-    mountRoot().append(h);
+    mountIn(h);
     placeToast();
     armKey();
     scheduleToast(ms ?? TOAST_MS); // ms: 짧게 떴다 사라질 확인(예: [나중에] 1.5초, 명세 13-1)
@@ -457,7 +464,7 @@
 
     card.append(tops, term, scroll, ai, aiWide, foot, links);
     shadow.append(style, card);
-    mountRoot().append(host);
+    mountIn(host);
     paintAiBtn();
     paintWordButtons();
     renderDictLinks();

@@ -292,80 +292,93 @@
   // 패널 껍데기가 정한 토큰(--rg-*)을 쓰고, 껍데기 없이 시험할 때를 위해 밝은/어두운 기본값을 둔다.
   const CSS = `
     .rgw { --w-fg: var(--rg-fg, #1f2328); --w-muted: var(--rg-muted, #656d76); --w-border: var(--rg-border, #e3e6ea); --w-accent: var(--rg-accent, #2f6feb);
-      --w-soft: var(--rg-accent-soft, rgba(47,111,235,.10)); --w-err: #d1242f; color: var(--w-fg); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif; }
+      --w-soft: var(--rg-accent-soft, rgba(47,111,235,.10)); --w-ink: var(--rg-accent-ink, #245ac4); --w-err: #d1242f; --w-ok: #1a7f37;
+      color: var(--w-fg); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif; }
     @media (prefers-color-scheme: dark) {
       .rgw { --w-fg: var(--rg-fg, #e6e8eb); --w-muted: var(--rg-muted, #9aa3ad); --w-border: var(--rg-border, #343a44); --w-accent: var(--rg-accent, #6b9bff);
-        --w-soft: var(--rg-accent-soft, rgba(107,155,255,.14)); --w-err: #ff7b72; }
+        --w-soft: var(--rg-accent-soft, rgba(107,155,255,.14)); --w-ink: var(--rg-accent-ink, #8db4ff); --w-err: #ff7b72; --w-ok: #3fb950; }
     }
-    :host([data-theme="light"]) .rgw { --w-err: #d1242f; }
-    :host([data-theme="dark"]) .rgw { --w-err: #ff7b72; }
-    .subs { display: flex; gap: 4px; flex-wrap: wrap; }
-    button { font: inherit; color: inherit; cursor: pointer; }
-    button:focus-visible, input:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid var(--w-accent); outline-offset: 2px; }
-    .sub { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--w-border); background: none; font-size: 13px; }
-    .sub[aria-pressed="true"] { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-accent); font-weight: 600; }
-    .n { margin-left: 4px; font-variant-numeric: tabular-nums; opacity: .8; }
-    .q { box-sizing: border-box; width: 100%; margin: 10px 0 6px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--w-border); background: none; color: inherit; font: inherit; }
-    .status { color: var(--w-muted); font-size: 13px; padding: 6px 0; word-break: keep-all; overflow-wrap: anywhere; }
-    ul { list-style: none; margin: 0; padding: 0; }
-    li { padding: 9px 0; border-top: 1px solid var(--w-border); }
-    .top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-    .lemma { font-weight: 700; font-size: 15px; }
-    .gloss { color: var(--w-fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .wrap { white-space: normal; overflow-wrap: anywhere; }
-    .sent { color: var(--w-muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .sent.wrap { white-space: normal; overflow-wrap: anywhere; }
-    .memo { color: var(--w-muted); font-size: 12.5px; margin-top: 3px; overflow-wrap: anywhere; white-space: pre-wrap; }
-    .memo::before { content: "메모 · "; color: var(--w-accent); font-weight: 600; }
-    .exp { color: var(--w-muted); font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
-    .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
-    .date { color: var(--w-muted); font-size: 12px; margin-right: auto; font-variant-numeric: tabular-nums; }
-    .src { color: var(--w-accent); font-size: 12px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .act { padding: 1px 9px; border-radius: 7px; border: 1px solid var(--w-border); background: none; font-size: 12.5px; }
-    .act:hover { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-accent); }
-    .act[disabled] { opacity: .55; cursor: default; }
-    .act.primary { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-accent); font-weight: 600; }
-    .ptext { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 600; overflow-wrap: anywhere; }
-    .ptrans { margin-top: 2px; overflow-wrap: anywhere; }
-    .plabel { margin-top: 4px; color: var(--w-accent); font-size: 12px; font-weight: 700; }
-    .pexp { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-    .badge { flex: none; padding: 0 7px; border-radius: 999px; background: var(--w-soft); color: var(--w-accent); font-size: 11.5px; font-weight: 700; }
-    .psent { margin-top: 2px; color: var(--w-muted); font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-    .kinds { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
-    .chip { padding: 1px 9px; border-radius: 999px; border: 1px solid var(--w-border); background: none; font-size: 12.5px; }
-    .chip[aria-pressed="true"] { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-accent); font-weight: 600; }
-    .lk { cursor: text; }
-    .form { display: grid; gap: 6px; padding: 8px 0; }
-    .form label { display: grid; gap: 2px; font-size: 12px; color: var(--w-muted); }
-    .form input { box-sizing: border-box; width: 100%; padding: 4px 8px; border-radius: 7px; border: 1px solid var(--w-border); background: none; color: var(--w-fg); font: inherit; font-size: 13.5px; }
-    .form textarea { box-sizing: border-box; width: 100%; min-height: 44px; padding: 4px 8px; border-radius: 7px; border: 1px solid var(--w-border); background: none; color: var(--w-fg); font: inherit; font-size: 13.5px; resize: vertical; }
-    .btns { display: flex; gap: 6px; justify-content: flex-end; }
-    .err { color: var(--w-err); font-size: 12.5px; overflow-wrap: anywhere; }
-    .addbar { margin: 8px 0 0; }
-    .rev-pane { display: grid; gap: 12px; padding: 10px 0; }
-    .rev-remain { color: var(--w-muted); font-size: 13px; font-weight: 600; }
-    .rev-card { border: 1px solid var(--w-border); border-radius: 10px; padding: 16px; background: none; display: grid; gap: 10px; }
-    .rev-head { font-size: 20px; font-weight: 700; color: var(--w-fg); line-height: 1.3; }
-    .rev-phrase-text { font-size: 16px; }
-    .rev-sent { color: var(--w-fg); font-size: 14px; line-height: 1.6; word-break: keep-all; overflow-wrap: anywhere; }
-    .rev-gloss { font-size: 16px; font-weight: 600; color: var(--w-accent); }
-    .rev-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
-    .rev-btn { padding: 6px 14px; font-size: 13.5px; border-radius: 8px; }
-    .kbd { display: inline-block; margin-left: 6px; padding: 1px 5px; font-size: 11px; font-family: inherit; border-radius: 4px; border: 1px solid var(--w-border); opacity: .8; background: var(--w-soft); color: var(--w-accent); }
-    .rev-done { padding: 24px 0; text-align: center; display: grid; gap: 6px; }
-    .rev-done-title { font-size: 16px; font-weight: 700; color: var(--w-fg); }
-    .rev-done-sub { font-size: 13px; color: var(--w-muted); }
-    .rev-modes { display: flex; gap: 4px; flex-wrap: wrap; }
-    .rev-tools { display: flex; gap: 6px; flex-wrap: wrap; }
-    .rev-hint { color: var(--w-muted); font-size: 12.5px; }
-    .rev-listen { color: var(--w-muted); font-size: 14px; }
-    .rev-choices { display: grid; gap: 6px; }
-    .rev-choice { text-align: left; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--w-border); background: none; font-size: 13.5px; overflow-wrap: anywhere; }
-    .rev-choice:hover:not([disabled]) { border-color: var(--w-accent); background: var(--w-soft); }
-    .rev-choice.ok { border-color: #1a7f37; background: rgba(26,127,55,.12); color: inherit; }
-    .rev-choice.bad { border-color: var(--w-err); background: rgba(209,36,47,.10); color: inherit; }
-    .rev-choice[disabled] { cursor: default; }
-    [hidden] { display: none !important; }
+    :host([data-theme="light"]) .rgw { --w-err: #d1242f; --w-ok: #1a7f37; }
+    :host([data-theme="dark"]) .rgw { --w-err: #ff7b72; --w-ok: #3fb950; }
+    .rgw .subs { display: flex; gap: 4px; flex-wrap: wrap; }
+    .rgw button { font: inherit; color: inherit; cursor: pointer; }
+    .rgw button:focus-visible, .rgw input:focus-visible, .rgw summary:focus-visible, .rgw a:focus-visible { outline: 2px solid var(--w-accent); outline-offset: 2px; }
+    .rgw .sub { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--w-border); background: none; font-size: 13px; }
+    .rgw .sub[aria-pressed="true"] { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-ink); font-weight: 600; }
+    .rgw .n { margin-left: 4px; font-variant-numeric: tabular-nums; opacity: .8; }
+    .rgw .q { box-sizing: border-box; width: 100%; margin: 10px 0 6px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--w-border); background: none; color: inherit; font: inherit; }
+    .rgw .status { color: var(--w-muted); font-size: 13px; padding: 6px 0; word-break: keep-all; overflow-wrap: anywhere; }
+    .rgw ul { list-style: none; margin: 0; padding: 0; }
+    .rgw li { padding: 9px 0; border-top: 1px solid var(--w-border); }
+    .rgw .top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+    .rgw .lemma { font-weight: 700; font-size: 15px; }
+    .rgw .gloss { color: var(--w-fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rgw .wrap { white-space: normal; overflow-wrap: anywhere; }
+    .rgw .sent { color: var(--w-muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rgw .sent.wrap { white-space: normal; overflow-wrap: anywhere; }
+    .rgw .memo { color: var(--w-muted); font-size: 12.5px; margin-top: 3px; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .rgw .memo::before { content: "메모 · "; color: var(--w-accent); font-weight: 600; }
+    .rgw .exp { color: var(--w-muted); font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
+    .rgw .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+    .rgw .date { color: var(--w-muted); font-size: 12px; margin-right: auto; font-variant-numeric: tabular-nums; }
+    .rgw .src { color: var(--w-accent); font-size: 12px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rgw .act { padding: 1px 9px; border-radius: 7px; border: 1px solid var(--w-border); background: none; font-size: 12.5px; }
+    .rgw .act:hover { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-ink); }
+    .rgw .act[disabled] { opacity: .55; cursor: default; }
+    .rgw .act.primary { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-ink); font-weight: 600; }
+    .rgw .ptext { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 600; overflow-wrap: anywhere; }
+    .rgw .ptrans { margin-top: 2px; overflow-wrap: anywhere; }
+    .rgw .plabel { margin-top: 4px; color: var(--w-accent); font-size: 12px; font-weight: 700; }
+    .rgw .pexp { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+    .rgw .badge { flex: none; padding: 0 7px; border-radius: 999px; background: var(--w-soft); color: var(--w-ink); font-size: 11.5px; font-weight: 700; }
+    .rgw .psent { margin-top: 2px; color: var(--w-muted); font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+    .rgw .kinds { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+    .rgw .chip { padding: 1px 9px; border-radius: 999px; border: 1px solid var(--w-border); background: none; font-size: 12.5px; }
+    .rgw .chip[aria-pressed="true"] { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-ink); font-weight: 600; }
+    .rgw .lk { cursor: text; }
+    .rgw .form { display: grid; gap: 6px; padding: 8px 0; }
+    .rgw .form label { display: grid; gap: 2px; font-size: 12px; color: var(--w-muted); }
+    .rgw .form input { box-sizing: border-box; width: 100%; padding: 4px 8px; border-radius: 7px; border: 1px solid var(--w-border); background: none; color: var(--w-fg); font: inherit; font-size: 13.5px; }
+    .rgw .form textarea { box-sizing: border-box; width: 100%; min-height: 44px; padding: 4px 8px; border-radius: 7px; border: 1px solid var(--w-border); background: none; color: var(--w-fg); font: inherit; font-size: 13.5px; resize: vertical; }
+    .rgw .btns { display: flex; gap: 6px; justify-content: flex-end; }
+    .rgw .err { color: var(--w-err); font-size: 12.5px; overflow-wrap: anywhere; }
+    .rgw .addbar { margin: 8px 0 0; }
+    .rgw .rev-pane { display: grid; gap: 12px; padding: 10px 0; }
+    .rgw .rev-remain { color: var(--w-muted); font-size: 13px; font-weight: 600; }
+    .rgw .rev-card { border: 1px solid var(--w-border); border-radius: 10px; padding: 16px; background: none; display: grid; gap: 10px; }
+    .rgw .rev-head { font-size: 20px; font-weight: 700; color: var(--w-fg); line-height: 1.3; }
+    .rgw .rev-phrase-text { font-size: 16px; }
+    .rgw .rev-sent { color: var(--w-fg); font-size: 14px; line-height: 1.6; word-break: keep-all; overflow-wrap: anywhere; }
+    .rgw .rev-gloss { font-size: 16px; font-weight: 600; color: var(--w-accent); }
+    .rgw .rev-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+    .rgw .rev-btn { padding: 6px 14px; font-size: 13.5px; border-radius: 8px; }
+    .rgw .kbd { display: inline-block; margin-left: 6px; padding: 0 5px; font-size: 11.5px; font-weight: 600; font-family: inherit; border-radius: 4px; border: 1px solid var(--w-border); background: var(--w-soft); color: var(--w-fg); }
+    .rgw .rev-done { padding: 24px 0; text-align: center; display: grid; gap: 6px; }
+    .rgw .rev-done-title { font-size: 16px; font-weight: 700; color: var(--w-fg); }
+    .rgw .rev-done-sub { font-size: 13px; color: var(--w-muted); }
+    .rgw .rev-modes { display: flex; gap: 6px; flex-wrap: wrap; }
+    .rgw .rev-mode { min-height: 26px; padding: 2px 11px; border-radius: 999px; border: 1px solid var(--w-border); background: none; font-size: 12.5px; }
+    .rgw .rev-mode:hover { border-color: var(--w-accent); }
+    .rgw .rev-mode[aria-pressed="true"] { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-ink); font-weight: 600; }
+    .rgw .rev-tools { display: flex; gap: 6px; flex-wrap: wrap; }
+    .rgw .rev-tool { display: inline-flex; align-items: center; gap: 5px; min-width: 28px; min-height: 28px; padding: 2px 9px; }
+    .rgw .rev-tool svg { flex: none; width: 16px; height: 16px; }
+    .rgw .rev-tool .kbd { margin-left: 1px; }
+    .rgw .rev-hint { color: var(--w-muted); font-size: 12.5px; }
+    .rgw .rev-listen { color: var(--w-muted); font-size: 14px; }
+    .rgw .rev-choices { display: grid; gap: 6px; }
+    .rgw .rev-choices:focus { outline: none; }
+    .rgw .rev-choices:focus-visible { outline: 2px solid var(--w-accent); outline-offset: 3px; border-radius: 8px; }
+    .rgw .rev-choice { display: flex; align-items: baseline; gap: 6px; text-align: left; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--w-border); background: none; font-size: 13.5px; overflow-wrap: anywhere; }
+    .rgw .rev-choice:hover:not([disabled]) { border-color: var(--w-accent); background: var(--w-soft); }
+    .rgw .rev-choice.ok { border-color: var(--w-ok); background: color-mix(in srgb, var(--w-ok) 12%, transparent); color: inherit; }
+    .rgw .rev-choice.bad { border-color: var(--w-err); background: color-mix(in srgb, var(--w-err) 10%, transparent); color: inherit; }
+    .rgw .rev-choice[disabled] { cursor: default; }
+    .rgw .rev-choice[disabled]:not(.ok):not(.bad) { opacity: .6; }
+    .rgw .rev-mark { flex: none; min-width: 1em; font-weight: 700; }
+    .rgw .rev-choice.ok .rev-mark { color: var(--w-ok); }
+    .rgw .rev-choice.bad .rev-mark { color: var(--w-err); }
+    .rgw [hidden] { display: none !important; }
   `;
 
   function el(tag, cls, text) {
@@ -380,6 +393,18 @@
     if (aria) b.setAttribute('aria-label', aria);
     b.addEventListener('click', onclick);
     return b;
+  }
+  // 선 아이콘(24 격자, paragraph.js 와 같은 방식). 글자 대신 쓰는 장식이라 읽어 주지 않는다
+  function icon(paths) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    for (const [k, v] of [['viewBox', '0 0 24 24'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '2'], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']]) svg.setAttribute(k, v);
+    for (const d of paths) {
+      const p = document.createElementNS(NS, 'path');
+      p.setAttribute('d', d);
+      svg.append(p);
+    }
+    return svg;
   }
   function field(labelText, value = '', maxLength) {
     const input = el('input');
@@ -498,13 +523,16 @@
         return;
       }
       if (quiz?.choices) {
-        if (quiz.picked < 0 && /^[1-4]$/.test(e.key)) {
-          stop();
-          answerChoice(Number(e.key) - 1);
-        } else if (quiz.picked >= 0 && (e.key === ' ' || e.code === 'Space' || e.key === 'Enter')) {
-          stop();
-          nextAfterChoice();
-        }
+        // 고르기: 1~4 는 고르기, Space·Enter 는 고른 뒤 다음. 눌러 둔 키(반복)·고르기 전 Space·Enter 는 먹어서
+        // 새 카드 첫 보기가 저절로 눌리지 않게 한다. 다만 Tab 으로 간 단추 위의 Space·Enter 는 그 단추를 누른다.
+        const pick = /^[1-4]$/.test(e.key);
+        const next = e.key === ' ' || e.code === 'Space' || e.key === 'Enter';
+        if (!pick && !next) return;
+        if (next && !e.repeat && target?.localName === 'button') return void e.stopPropagation(); // 단추 기본 동작은 두고 페이지(유튜브 Space)로만 안 새게
+        stop();
+        if (e.repeat) return;
+        if (pick && quiz.picked < 0) answerChoice(Number(e.key) - 1);
+        else if (next && quiz.picked >= 0) nextAfterChoice();
         return;
       }
 
@@ -917,12 +945,14 @@
       for (const m of W.REVIEW_MODES) {
         const b = btn(m.title, () => {
           if (m.id === mode) return;
+          const answered = quiz?.picked >= 0; // 고르기에서 이미 답한 카드는 결과가 저장됐다: 같은 카드를 다시 답하지 않게 다음으로
           ctx.setSettings({ reviewMode: m.id });
+          reviewErr = '';
+          if (answered) return nextCard();
           quiz = null;
           cardState = { ...cardState, side: 'front' };
-          reviewErr = '';
           draw();
-        }, 'chip', `복습 방식: ${m.title}`);
+        }, 'rev-mode', `복습 방식: ${m.title}`);
         b.setAttribute('aria-pressed', String(m.id === mode));
         modeBar.append(b);
       }
@@ -998,42 +1028,62 @@
           }
         }
       }
-      // 소리: [🔊](브라우저 음성, 듣기에서는 장면 먼저) · [▶ 장면](영상 장면이 있는 카드)
+      // 소리: [소리](브라우저 음성, 듣기에서는 장면 먼저) · [장면](영상 장면이 있는 카드). 아이콘은 Lucide(ISC) volume-2 · play
       const tools = el('div', 'rev-tools');
       if (W.speak && globalThis.speechSynthesis) {
-        tools.append(btn(listening ? '🔊 다시 듣기 R' : '🔊', () => (listening ? playCard(card) : W.speak(W.listenText(card))), 'act', listening ? '다시 듣기 (R)' : '소리 내어 읽기'));
+        const b = btn('', () => (listening ? playCard(card) : W.speak(W.listenText(card))), 'act rev-tool', listening ? '다시 듣기 (R)' : '소리 내어 읽기');
+        b.title = listening ? '다시 듣기 (R)' : '소리 내어 읽기';
+        b.append(icon(['M11 5 6 9H2v6h4l5 4V5z', 'M15.54 8.46a5 5 0 0 1 0 7.07', 'M19.07 4.93a10 10 0 0 1 0 14.14']));
+        if (listening) b.append('다시 듣기', el('span', 'kbd', 'R'));
+        tools.append(b);
       }
-      if (scene) tools.append(btn('▶ 장면', () => openScene(scene), 'act', '원래 영상 장면 듣기'));
+      if (scene) {
+        // 새 탭을 여는 단추라 페이지 스크립트의 .click() 은 무시한다(패널 shadow 는 open, panel.js 의 AI 단추와 같은 방식)
+        const b = btn('', (e) => e.isTrusted !== false && openScene(scene), 'act rev-tool', '원래 영상 장면 듣기');
+        b.append(icon(['M6 3l14 9-14 9V3z']), '장면');
+        tools.append(b);
+      }
       if (tools.childElementCount) cardBox.append(tools);
       revPane.append(cardBox);
 
       const btnBar = el('div', 'rev-btns');
       if (choosing) {
-        // 고르기: 보기 4개(1~4). 고른 뒤에는 맞음·틀림을 색으로 보이고 [다음]
+        // 고르기: 보기 4개(1~4). 고른 뒤에는 맞음·틀림을 색과 표시(✓ 정답 · ✕ 내 답)로 보이고 [다음]
         const box = el('div', 'rev-choices');
         box.setAttribute('role', 'group');
-        box.setAttribute('aria-label', '뜻 고르기');
+        box.setAttribute('aria-label', '뜻 고르기 (1~4)');
+        box.tabIndex = -1; // 새 카드에서 포커스는 묶음에: 첫 보기에 두면 Enter·Space 한 번에 그 보기가 골라진다
         const answered = quiz.picked >= 0;
         quiz.choices.forEach((c, k) => {
-          const b = btn(`${k + 1}. ${c.text}`, () => answerChoice(k), 'rev-choice', `${k + 1}번 ${c.text}`);
+          const b = btn('', () => answerChoice(k), 'rev-choice', `${k + 1}번 ${c.text}`);
+          const mark = answered && c.correct ? '✓' : answered && k === quiz.picked ? '✕' : '';
+          const m = el('span', 'rev-mark', mark);
+          m.setAttribute('aria-hidden', 'true');
+          b.append(m, el('span', '', `${k + 1}. ${c.text}`));
           if (answered) {
             b.disabled = true;
-            if (c.correct) b.classList.add('ok');
-            else if (k === quiz.picked) b.classList.add('bad');
+            if (c.correct) {
+              b.classList.add('ok');
+              b.setAttribute('aria-label', `정답${k === quiz.picked ? '(내 답)' : ''}: ${k + 1}번 ${c.text}`);
+            } else if (k === quiz.picked) {
+              b.classList.add('bad');
+              b.setAttribute('aria-label', `내 답(틀림): ${k + 1}번 ${c.text}`);
+            }
           }
           box.append(b);
         });
         revPane.append(box);
         if (answered) {
           const right = quiz.choices[quiz.picked].correct;
+          const text = `${right ? '맞았어요' : '아직이에요'} · 다음`;
           const nextBtn = el('button', 'act primary rev-btn');
           nextBtn.type = 'button';
-          nextBtn.append(right ? '맞았어요 · 다음' : '다음', el('span', 'kbd', 'Space'));
-          nextBtn.setAttribute('aria-label', `${right ? '맞았어요' : '틀렸어요'}, 다음 (Space)`);
+          nextBtn.append(text, el('span', 'kbd', 'Space'));
+          nextBtn.setAttribute('aria-label', `${text} (Space)`);
           nextBtn.addEventListener('click', nextAfterChoice);
           btnBar.append(nextBtn);
           if (hadFocus) requestAnimationFrame(() => nextBtn.focus());
-        } else if (hadFocus) requestAnimationFrame(() => box.querySelector('button')?.focus());
+        } else if (hadFocus) requestAnimationFrame(() => box.focus());
       } else if (!isBack) {
         if (mode === 'choice') revPane.append(el('div', 'rev-hint', quiz?.waiting ? '보기를 준비하는 중…' : '보기를 만들 단어가 모자라서 뒤집기로 볼게요'));
         const flipBtn = el('button', 'act primary rev-btn');

@@ -94,7 +94,8 @@ test('background words 중계: save-phrase 의 clip 을 다리로 넘긴다', as
 test('content.js: 카드·확인 메시지는 전체 화면 요소 안에(mountRoot), 닫힐 때 readgloss:card-closed, 자막 층 더블클릭 무시', () => {
   const src = read('content.js');
   assert.match(src, /function mountRoot\(\)/);
-  assert.equal((src.match(/mountRoot\(\)\.append\(/g) ?? []).length, 2, '카드와 확인 메시지 둘 다');
+  assert.equal((src.match(/mountIn\((host|h)\);/g) ?? []).length, 2, '카드와 확인 메시지 둘 다');
+  assert.match(src, /if \(root !== document\.documentElement\) for \(const t of \['click', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'contextmenu'\]\) h\.addEventListener\(t, \(e\) => e\.stopPropagation\(\)\)/, '전체 화면 요소 안이면 누름이 플레이어로 새지 않게(재생·멈춤, 더블클릭 전체 화면 끄기)');
   assert.doesNotMatch(src, /document\.documentElement\.append\(/, '문서 맨 위에 바로 붙이는 곳이 남지 않았다');
   assert.match(src, /fs\.localName !== 'video'/, '영상 요소 자체가 전체 화면이면 문서에');
   assert.match(src, /new CustomEvent\('readgloss:card-closed'\)/);
@@ -145,7 +146,8 @@ test('video-subs.js 소스: 글은 textContent 로만, 플레이어 클릭 막�
   assert.match(src, /source: \{ url: V\.sceneUrl\(S\.id, cue\.start\), title \}/, '단어장에 장면 주소가 남는다');
   assert.match(src, /type: 'translate-context'/);
   assert.match(src, /type: 'mt', text/);
-  assert.match(src, /type: 'annotate', words, level: settings\.level/);
+  assert.match(src, /const level = settings\.level;\s*const r = await send\(\{ type: 'annotate', words, level \}\);/);
+  assert.match(src, /if \(level !== settings\.level\) return true;/, '수준이 바뀐 사이 온 답은 버린다');
   assert.match(src, /type: 'video-pending', id/);
   assert.match(src, /V\.keyAction\(e\)/);
   assert.match(src, /Sel\.isTypingPath\(path, e\.isComposing\)/);

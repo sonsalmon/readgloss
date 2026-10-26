@@ -377,7 +377,7 @@ function videoOpenOf(msg) {
   if (u.protocol !== 'https:' || u.hostname !== 'www.youtube.com' || u.pathname !== '/watch' || !VIDEO_ID.test(u.searchParams.get('v') ?? '')) return null;
   const c = msg.clip;
   if (c === undefined || c === null) return { url: u.href, clip: null };
-  const ok = typeof c === 'object' && c.id === u.searchParams.get('v') && [c.start, c.end].every((n) => typeof n === 'number' && Number.isFinite(n)) && c.start >= 0 && c.end > c.start && c.end - c.start <= 60;
+  const ok = typeof c === 'object' && c.id === u.searchParams.get('v') && [c.start, c.end].every((n) => typeof n === 'number' && Number.isFinite(n)) && c.start >= 0 && c.end > c.start && Math.round(c.end * 100) - Math.round(c.start * 100) <= 6000; // 길이는 1/100초 정수로(words.mjs parseClip 과 같다)
   return ok ? { url: u.href, clip: { id: c.id, start: c.start, end: c.end } } : null;
 }
 

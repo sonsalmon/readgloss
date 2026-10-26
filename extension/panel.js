@@ -168,9 +168,10 @@
   const C = globalThis.readglossPanelCore;
   const SAVE_DELAY = 100; // 슬라이더를 끄는 동안 저장을 모아서 한 번에(화면 반영은 바로)
   const FONT = '-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif';
-  const LIGHT = `--rg-bg: #ffffff; --rg-fg: #1f2328; --rg-muted: #656d76; --rg-border: #e3e6ea; --rg-accent: #2f6feb;
+  // --rg-accent-ink: 옅은 강조 바탕(--rg-accent-soft) 위 글자색(대비 4.5:1 이상). 탭의 눌린 칩·단추 글자에 쓴다
+  const LIGHT = `--rg-bg: #ffffff; --rg-fg: #1f2328; --rg-muted: #656d76; --rg-border: #e3e6ea; --rg-accent: #2f6feb; --rg-accent-ink: #245ac4;
     --rg-accent-soft: rgba(47,111,235,.10); --rg-shadow: 0 8px 28px rgba(15,23,42,.14), 0 1px 3px rgba(15,23,42,.08); color-scheme: light;`;
-  const DARK = `--rg-bg: #1e2127; --rg-fg: #e6e8eb; --rg-muted: #9aa3ad; --rg-border: #343a44; --rg-accent: #6b9bff;
+  const DARK = `--rg-bg: #1e2127; --rg-fg: #e6e8eb; --rg-muted: #9aa3ad; --rg-border: #343a44; --rg-accent: #6b9bff; --rg-accent-ink: #8db4ff;
     --rg-accent-soft: rgba(107,155,255,.14); --rg-shadow: 0 8px 28px rgba(0,0,0,.45); color-scheme: dark;`;
   const BRIDGE_HELP = '터미널에서 node ~/dev/readgloss/bridge/server.mjs 를 실행해 주세요';
 
