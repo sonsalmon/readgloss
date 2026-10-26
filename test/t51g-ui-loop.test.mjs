@@ -6,10 +6,11 @@ import { readFileSync } from 'node:fs';
 
 const read = (f) => readFileSync(new URL(`../extension/${f}`, import.meta.url), 'utf8');
 
-// 탭 소스의 `const CSS = \`...\`` 안 규칙 머리(선택자)들. @media 안도 본다.
-function selectorsOf(src) {
-  const start = src.indexOf('const CSS = `');
-  const css = src.slice(start + 13, src.indexOf('\n  `;', start)).replace(/\/\*[\s\S]*?\*\//g, '');
+// 탭 소스의 `const <name> = \`...\`` 안 규칙 머리(선택자)들. @media 안도 본다. ${...} 끼워 넣기는 빼고 읽는다.
+function selectorsOf(src, name = 'CSS') {
+  const head = `const ${name} = \``;
+  const start = src.indexOf(head);
+  const css = src.slice(start + head.length, src.indexOf('\n  `;', start)).replace(/\$\{[^}]*\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
   const out = [];
   let depth = 0;
   let media = 0;
@@ -54,7 +55,7 @@ test('토큰: --rg-accent-ink(옅은 강조 바탕 위 글자, 4.5:1 이상)와 
   assert.match(panel, /const LIGHT = `[^`]*--rg-accent-ink: #245ac4;/);
   assert.match(panel, /const DARK = `[^`]*--rg-accent-ink: #8db4ff;/);
   const words = read('panel-words.js');
-  assert.match(words, /--w-ok: #1a7f37;/);
+  assert.match(words, /--w-err: #b31d28; --w-ok: #116329;/, '밝음: ✓·✕ 표시가 옅은 바탕 위에서도 4.5:1(감사 2회차 4)');
   assert.match(words, /--w-ok: #3fb950;/);
   assert.match(words, /:host\(\[data-theme="dark"\]\) \.rgw \{[^}]*--w-ok: #3fb950;/, '설정 테마를 따른다');
   // 계산한 대비(밝음: ink #245ac4 / 옅은 바탕 = 5.54, 어두움: #8db4ff = 6.17)
@@ -74,6 +75,35 @@ test('토큰: --rg-accent-ink(옅은 강조 바탕 위 글자, 4.5:1 이상)와 
   assert.ok(ratio(hex('#245ac4'), mix(hex('#2f6feb'), hex('#ffffff'), 0.1)) >= 4.5);
   assert.ok(ratio(hex('#8db4ff'), mix(hex('#6b9bff'), hex('#1e2127'), 0.14)) >= 4.5);
   assert.ok(ratio(hex('#3fb950'), hex('#1e2127')) >= 4.5);
+  assert.ok(ratio(hex('#116329'), mix(hex('#116329'), hex('#ffffff'), 0.12)) >= 4.5, '✓ 표시 / 맞음 바탕');
+  assert.ok(ratio(hex('#b31d28'), mix(hex('#b31d28'), hex('#ffffff'), 0.10)) >= 4.5, '✕ 표시 / 틀림 바탕');
+});
+
+test('감사 2회차 3·5: 공부 기록·내 단어는 껍데기 이름(.head·.sec·.status)을 쓰지 않고, 옅은 강조 바탕 위 글자는 ink 색', () => {
+  const study = read('panel-study.js');
+  // 탭이 만드는 요소의 클래스(el('div', 'a b')·className·classList·class: ·btn(…, 'cls')) 중 껍데기 CSS 가 꾸미는 이름이 있으면
+  // 그 규칙이 탭 안으로 내려온다(공부 기록 줄 전체가 12px·굵게·옅은 색이던 것)
+  const shell = new Set(selectorsOf(read('panel.js'), 'STYLE_TEXT').flatMap((x) => [...x.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((m) => m[1])));
+  for (const file of ['panel-video.js', 'panel-words.js', 'panel-study.js', 'panel-concepts.js', 'panel-scraps.js']) {
+    const src = read(file);
+    const dom = new Set();
+    for (const re of [/el\('[a-z0-9]+',\s*'([^']+)'/g, /className\s*=\s*'([^']+)'/g, /class:\s*'([^']+)'/g, /btn\([^)]*?,\s*'([a-z][\w -]*)'[,)]/g]) {
+      for (const m of src.matchAll(re)) m[1].split(/\s+/).forEach((c) => dom.add(c));
+    }
+    for (const m of src.matchAll(/classList\.(?:add|toggle)\('([^']+)'/g)) dom.add(m[1]);
+    assert.ok(dom.size > 5, `${file} 클래스를 읽었다`);
+    assert.deepEqual([...dom].filter((c) => shell.has(c)), [], `${file}: 껍데기 규칙이 걸리는 이름`);
+  }
+  assert.match(study, /--s-ink: var\(--rg-accent-ink, #245ac4\)/);
+  for (const sel of ['.rg-view-tab[aria-selected="true"]', '.rng[aria-pressed="true"]', '.badge', '.time-sum-val']) {
+    const rule = study.slice(study.indexOf(`.rgs ${sel} {`), study.indexOf('}', study.indexOf(`.rgs ${sel} {`)));
+    assert.match(rule, /color: var\(--s-ink\)/, sel);
+  }
+  const panel = read('panel.js');
+  for (const sel of ['.mitem:hover', '.seg button[aria-pressed="true"]', '.btn:hover:not(:disabled)']) {
+    const at = panel.indexOf(`${sel} {`);
+    assert.match(panel.slice(at, panel.indexOf('}', at)), /color: var\(--rg-accent-ink\)/, sel);
+  }
 });
 
 test('복습 고르기: 맞음·틀림을 색 말고 표시(✓·✕)와 읽어 주는 이름으로도, 새 카드 포커스는 보기 묶음에', () => {
@@ -118,6 +148,9 @@ test('자막 층: 마우스는 두 줄·막대·풀이만 받고, 지난 줄은 
   assert.match(src, /\.lines:focus \.w\.cur \{ outline: 2px solid/);
   assert.match(src, /\.w\.hard:hover \.g, \.lines:focus \.w\.hard\.cur \.g \{ display: block; \}/, '키보드 자리 낱말도 뜻 풍선');
   assert.match(src, /if \(e\.key === 'Escape' && !e\.readglossCardClosed\) e\.target\?\.blur\?\.\(\);/);
+  assert.match(src, /←→ 낱말 · Enter 사전 · Esc 나가기'\);/, '두 줄 묶음 이름에 새 키 안내(감사 2회차 7)');
+  assert.match(src, /lines\.addEventListener\('mousedown', \(e\) => e\.preventDefault\(\)\);/, '마우스로는 포커스를 옮기지 않는다(감사 2회차 1)');
+  assert.match(src, /if \(box\.contains\(e\.relatedTarget\) \|\| !document\.hasFocus\(\)\) return;\s*holdOff\('keys'\);\s*ui\.wcur = -1;/, '층을 떠나면 낱말 자리를 지우되, 창을 잠깐 떠날 때는 그대로(영상이 저절로 재생되지 않게)');
   assert.match(src, /const anchor = r && inLayer \? \{ left: r\.left, right: r\.right, top: r\.top, bottom: innerHeight \} : r;/, '확인 메시지는 층 위에');
   assert.match(src, /for \(const m of text\.matchAll\(\/\[\\p\{L\}\\p\{N\}\]\+\/gu\)\)/, '문장 전체 가리기는 한 글자·숫자도');
 });
@@ -134,4 +167,21 @@ test('코드 검토 2·3·5·6·12·13: 저장 값 미리 잡기, 누르는 중 
   assert.match(src, /if \(S\.ad && !ad\) S\.waitSince = Date\.now\(\);/);
   assert.match(src, /if \(!e\.isTrusted\) return; \/\/ 페이지 스크립트가 만든 키/);
   assert.match(src, /ytp-webgl-spherical/);
+});
+
+test('감사 2회차 6: 뿌리로 묶지 않은 개념·스크랩북 탭 CSS 는 클래스로만 시작하고, 이름이 패널 껍데기·다른 탭과 겹치지 않는다', () => {
+  const classes = (sels) => new Set(sels.flatMap((x) => [...x.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((m) => m[1])));
+  const sets = {
+    shell: classes(selectorsOf(read('panel.js'), 'STYLE_TEXT')),
+    words: classes(selectorsOf(read('panel-words.js'))),
+    study: classes(selectorsOf(read('panel-study.js'))),
+    video: classes(selectorsOf(read('panel-video.js'))),
+  };
+  for (const [file, name] of [['panel-concepts.js', 'CSS'], ['panel-scraps.js', 'STYLE_TEXT']]) {
+    const sels = selectorsOf(read(file), name);
+    assert.ok(sels.length > 15, `${file} 규칙을 읽었다(${sels.length})`);
+    assert.deepEqual(sels.filter((x) => !x.startsWith('.')), [], `${file}: 맨 요소·속성 선택자는 모든 탭에 걸린다`);
+    const mine = classes(sels);
+    for (const [other, set] of Object.entries(sets)) assert.deepEqual([...mine].filter((c) => set.has(c)), [], `${file} ↔ ${other} 같은 이름`);
+  }
 });

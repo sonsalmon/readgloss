@@ -198,7 +198,7 @@
     .menu-card { display: flex; flex-direction: column; min-width: 150px; padding: 4px; border-radius: var(--rg-radius);
       background: var(--rg-bg); border: 1px solid var(--rg-border); box-shadow: var(--rg-shadow); }
     .mitem { all: unset; box-sizing: border-box; cursor: pointer; padding: 6px 10px; border-radius: 7px; white-space: nowrap; font-size: 13px; }
-    .mitem:hover { background: var(--rg-accent-soft); color: var(--rg-accent); }
+    .mitem:hover { background: var(--rg-accent-soft); color: var(--rg-accent-ink); }
     .mitem:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: -2px; }
 
     .panel { position: fixed; top: 0; right: 0; z-index: 1; width: 340px; max-width: 100vw; height: 100vh; height: 100dvh; display: flex; flex-direction: column;
@@ -235,7 +235,7 @@
     .seg { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
     .seg button { padding: 3px 10px; border-radius: 7px; border: 1px solid var(--rg-border); background: transparent; font-size: 13px; }
     .seg button:hover { border-color: var(--rg-accent); }
-    .seg button[aria-pressed="true"] { background: var(--rg-accent-soft); border-color: var(--rg-accent); color: var(--rg-accent); font-weight: 600; }
+    .seg button[aria-pressed="true"] { background: var(--rg-accent-soft); border-color: var(--rg-accent); color: var(--rg-accent-ink); font-weight: 600; }
     input[type="color"] { width: 32px; height: 26px; padding: 0; border: 1px solid var(--rg-border); border-radius: 6px; background: none; cursor: pointer; vertical-align: middle; }
     .check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
     .check input { margin: 4px 0 0; accent-color: var(--rg-accent); }
@@ -246,7 +246,7 @@
     .glossites.dim > :not(.rowhead):not(.hint) { opacity: .5; }
     .sites .name { overflow-wrap: anywhere; font-size: 13px; }
     .btn { padding: 3px 10px; border-radius: 7px; border: 1px solid var(--rg-border); background: transparent; font-size: 12.5px; white-space: nowrap; }
-    .btn:hover:not(:disabled) { background: var(--rg-accent-soft); border-color: var(--rg-accent); color: var(--rg-accent); }
+    .btn:hover:not(:disabled) { background: var(--rg-accent-soft); border-color: var(--rg-accent); color: var(--rg-accent-ink); }
     .btn:disabled { opacity: .55; cursor: default; }
     .addrow { display: flex; gap: 6px; margin-top: 8px; }
     .addrow input { flex: 1; min-width: 0; padding: 3px 8px; border-radius: 7px; border: 1px solid var(--rg-border); background: var(--rg-bg); color: var(--rg-fg); font: inherit; font-size: 13px; }

@@ -351,7 +351,8 @@
     .lines, .bar, .note { pointer-events: auto; }
     .lines { order: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; border-radius: 6px; }
     .lines:focus { outline: none; }
-    .lines:focus-visible { outline: 2px solid #3ea6ff; outline-offset: 2px; }
+    /* 포커스 표시는 흰 테두리 + 검은 테두리 두 겹: 영상이 밝든 어둡든 하나는 3:1 이상으로 보인다(파랑 한 겹은 흰 화면에서 2.6:1) */
+    .lines:focus-visible { outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 2px rgba(8, 8, 8, .92); }
     .note { order: -2; } .bar { order: -1; } .msg { order: 1; } /* 화면 차례(풀이 → 막대 → 두 줄 → 안내)와 Tab 차례(두 줄 → 막대 → 풀이)를 따로 */
     .en, .ko { box-sizing: border-box; max-width: 100%; padding: .08em .45em; border-radius: 4px; background: rgba(8, 8, 8, .74); color: #fff; text-align: center; line-height: 1.38; overflow-wrap: anywhere; }
     .en { font-size: var(--fs, 22px); user-select: none; }
@@ -378,7 +379,11 @@
       border-radius: 6px; border: 1px solid rgba(255, 255, 255, .2); background: rgba(28, 28, 28, .92); color: #fff;
       font: max(12px, calc(var(--fs, 22px) * .56))/1.7 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; white-space: nowrap; }
     button:hover:not(:disabled) { border-color: #fff; }
-    button:focus-visible { outline: 2px solid #3ea6ff; outline-offset: 1px; }
+    button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 2px rgba(8, 8, 8, .92); }
+    /* 글이 바뀌는 단추(가리기·저장): 글을 모두 한 칸에 겹쳐 두고 하나만 보인다 — 폭이 가장 긴 글로 고정돼 눌러도 막대가 흔들리지 않는다 */
+    button.stack { display: inline-grid; place-items: center; }
+    button.stack > span { grid-area: 1 / 1; }
+    button.stack > span:not(.on) { visibility: hidden; }
     button[aria-pressed="true"], button[aria-expanded="true"] { background: rgba(62, 166, 255, .32); border-color: #3ea6ff; }
     button:disabled { opacity: .45; cursor: default; }
     .note { position: relative; box-sizing: border-box; max-width: min(100%, 720px); max-height: 38vh; overflow-y: auto; padding: 8px 36px 8px 12px; border-radius: 8px;
@@ -430,10 +435,12 @@
     const prevBtn = button('‹', '앞 줄 (A)', () => run('prev'));
     const repeatBtn = button('↻', '이 줄 다시 (S)', () => run('repeat'));
     const nextBtn = button('›', '다음 줄 (D)', () => run('next'));
-    const hideBtn = button('가리기: 끔', '가리기 바꾸기 (H)', () => run('hide'));
+    const hideBtn = button('', '가리기 바꾸기 (H)', () => run('hide'));
+    stackLabels(hideBtn, Object.fromEntries(V.HIDE_MODES.map((m) => [m, `가리기: ${V.HIDE_LABEL[m]}`])));
     const pauseBtn = button('줄마다 멈춤', '줄마다 멈춤 (P)', () => run('pauseEach'));
     const koBtn = button('한', '한국어 줄 보이기', () => setVideo({ ko: !vs().ko }));
-    const saveBtn = button('☆ 저장', '이 줄 구·문장에 저장', () => saveLine(S.cur, saveBtn));
+    const saveBtn = button('', '이 줄 구·문장에 저장', () => saveLine(S.cur, saveBtn));
+    stackLabels(saveBtn, { off: '☆ 저장', on: '★ 저장됨' });
     const explainBtn = button('풀이', '이 줄 AI 풀이(문맥 번역)', () => explain(S.cur));
     bar.append(prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, koBtn, saveBtn, explainBtn);
     const note = el('div', 'note');
@@ -443,7 +450,8 @@
     // 키보드만 쓸 때: Tab 으로 두 줄에 오면 막대가 보이고 다음 Tab 이 막대 단추로 간다(27-2)
     lines.tabIndex = 0;
     lines.setAttribute('role', 'group');
-    lines.setAttribute('aria-label', 'readgloss 자막 — A 앞 줄 · S 이 줄 다시 · D 다음 줄 · H 가리기 · R 가린 줄 보기 · P 줄마다 멈춤');
+    lines.setAttribute('aria-label', 'readgloss 자막 — A 앞 줄 · S 이 줄 다시 · D 다음 줄 · H 가리기 · R 가린 줄 보기 · P 줄마다 멈춤 · ←→ 낱말 · Enter 사전 · Esc 나가기');
+    lines.addEventListener('mousedown', (e) => e.preventDefault()); // 마우스로 낱말을 눌러도 포커스는 옮기지 않는다(화살표·Space 는 유튜브 몫으로 남는다). Tab 으로만 들어온다
     const en = el('div', 'en');
     en.lang = 'en';
     const ko = el('div', 'ko');
@@ -482,8 +490,14 @@
         pickWord(sp);
       }
     });
-    // 키보드 멈춤은 포커스가 층(두 줄·막대·풀이)을 떠날 때 푼다(두 줄 → 막대로 Tab 하는 동안은 그 줄에 머문다)
-    box.addEventListener('focusout', (e) => { if (!box.contains(e.relatedTarget)) holdOff('keys'); });
+    // 포커스가 층(두 줄·막대·풀이)을 떠나면 키보드 멈춤을 풀고 낱말 자리를 지운다(다시 들어오면 첫 낱말부터).
+    // 층 안에서 옮길 때(두 줄 → 막대 Tab)와 창을 잠깐 떠날 때(돌아오면 그대로 — 그 사이 영상이 저절로 재생되지 않게)는 그대로 둔다.
+    box.addEventListener('focusout', (e) => {
+      if (box.contains(e.relatedTarget) || !document.hasFocus()) return;
+      holdOff('keys');
+      ui.wcur = -1;
+      ui.en.querySelector('.w.cur')?.classList.remove('cur');
+    });
     // Esc: 층 안 포커스를 놓아 키보드를 유튜브로 돌려준다(같은 Esc 로 사전 카드를 닫았으면 그대로 둔다)
     box.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !e.readglossCardClosed) e.target?.blur?.();
@@ -615,8 +629,16 @@
     if (last < text.length) ui.en.append(text.slice(last));
   }
 
-  function setBtn(b, text, label) {
-    if (b.textContent !== text) b.textContent = text;
+  function stackLabels(b, labels) {
+    b.classList.add('stack');
+    b.replaceChildren(...Object.entries(labels).map(([k, t]) => {
+      const sp = el('span', '', t);
+      sp.dataset.k = k;
+      return sp;
+    }));
+  }
+  function showLabel(b, k, label) {
+    for (const sp of b.children) sp.classList.toggle('on', sp.dataset.k === k);
     b.setAttribute('aria-label', label);
     b.title = label;
   }
@@ -624,11 +646,11 @@
     const v = vs();
     const cue = S.cues[S.cur];
     const hide = V.HIDE_LABEL[v.hide] ?? '끔';
-    setBtn(ui.hideBtn, `가리기: ${hide}`, `가리기 바꾸기 (H) — 지금 ${hide}`);
+    showLabel(ui.hideBtn, v.hide, `가리기 바꾸기 (H) — 지금 ${hide}`);
     ui.pauseBtn.setAttribute('aria-pressed', String(v.pauseEach));
     ui.koBtn.setAttribute('aria-pressed', String(v.ko));
     const saved = cue ? Boolean(Sel.findPhrase(S.phrases, cue.text)) : false;
-    setBtn(ui.saveBtn, saved ? '★ 저장됨' : '☆ 저장', saved ? '이 줄 저장 빼기' : '이 줄 구·문장에 저장');
+    showLabel(ui.saveBtn, saved ? 'on' : 'off', saved ? '이 줄 저장 빼기' : '이 줄 구·문장에 저장');
     ui.saveBtn.setAttribute('aria-pressed', String(saved));
     ui.explainBtn.setAttribute('aria-expanded', String(Boolean(S.note) && S.note.i === S.cur));
     for (const b of [ui.prevBtn, ui.repeatBtn, ui.nextBtn, ui.saveBtn, ui.explainBtn]) b.disabled = !cue;

@@ -285,10 +285,10 @@
 
   const CSS = `
     .rgs { --s-fg: var(--rg-fg, #1f2328); --s-muted: var(--rg-muted, #656d76); --s-border: var(--rg-border, #e3e6ea); --s-accent: var(--rg-accent, #2f6feb);
-      --s-soft: var(--rg-accent-soft, rgba(47,111,235,.10)); color: var(--s-fg); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif; }
+      --s-soft: var(--rg-accent-soft, rgba(47,111,235,.10)); --s-ink: var(--rg-accent-ink, #245ac4); color: var(--s-fg); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif; }
     @media (prefers-color-scheme: dark) {
       .rgs { --s-fg: var(--rg-fg, #e6e8eb); --s-muted: var(--rg-muted, #9aa3ad); --s-border: var(--rg-border, #343a44); --s-accent: var(--rg-accent, #6b9bff);
-        --s-soft: var(--rg-accent-soft, rgba(107,155,255,.14)); }
+        --s-soft: var(--rg-accent-soft, rgba(107,155,255,.14)); --s-ink: var(--rg-accent-ink, #8db4ff); }
     }
     .rgs button { font: inherit; color: inherit; cursor: pointer; }
     .rgs button:focus-visible, .rgs summary:focus-visible, .rgs a:focus-visible { outline: 2px solid var(--s-accent); outline-offset: 2px; }
@@ -296,16 +296,17 @@
 
     .rgs .view-switch { display: flex; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--s-border); margin-bottom: 12px; }
     .rgs .rg-view-tab { padding: 3px 14px; border-radius: 999px; border: 1px solid var(--s-border); background: none; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--s-muted); }
-    .rgs .rg-view-tab[aria-selected="true"] { background: var(--s-soft); border-color: var(--s-accent); color: var(--s-accent); font-weight: 600; }
+    .rgs .rg-view-tab[aria-selected="true"] { background: var(--s-soft); border-color: var(--s-accent); color: var(--s-ink); font-weight: 600; }
 
-    .rgs .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    /* s- 이름: 패널 껍데기(panel.js)의 .head·.sec·.status 규칙(머리 줄·설정 칸 제목)이 이 탭에 걸리지 않게 */
+    .rgs .s-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .rgs h3 { margin: 0; font-size: 12px; letter-spacing: .02em; color: var(--s-muted); }
-    .rgs .sec { margin-top: 16px; }
-    .rgs .sec:first-child { margin-top: 0; }
+    .rgs .s-sec { margin-top: 16px; }
+    .rgs .s-sec:first-child { margin-top: 0; }
     .rgs .ranges { display: flex; gap: 4px; }
     .rgs .rng { padding: 2px 9px; border-radius: 999px; border: 1px solid var(--s-border); background: none; font-size: 12.5px; }
-    .rgs .rng[aria-pressed="true"] { background: var(--s-soft); border-color: var(--s-accent); color: var(--s-accent); font-weight: 600; }
-    .rgs .status { color: var(--s-muted); font-size: 13px; padding: 6px 0; word-break: keep-all; overflow-wrap: anywhere; }
+    .rgs .rng[aria-pressed="true"] { background: var(--s-soft); border-color: var(--s-accent); color: var(--s-ink); font-weight: 600; }
+    .rgs .s-status { color: var(--s-muted); font-size: 13px; padding: 6px 0; word-break: keep-all; overflow-wrap: anywhere; }
     .rgs .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
     .rgs .chip { display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--s-border); font-size: 12.5px; }
     .rgs .chip b { font-variant-numeric: tabular-nums; font-size: 14px; }
@@ -327,7 +328,7 @@
     .rgs .it:first-child { border-top: 0; }
     .rgs .r1 { display: flex; align-items: center; gap: 6px; color: var(--s-muted); font-size: 12px; }
     .rgs .time { font-variant-numeric: tabular-nums; }
-    .rgs .badge { padding: 0 7px; border-radius: 999px; background: var(--s-soft); color: var(--s-accent); font-size: 11.5px; font-weight: 600; }
+    .rgs .badge { padding: 0 7px; border-radius: 999px; background: var(--s-soft); color: var(--s-ink); font-size: 11.5px; font-weight: 600; }
     .rgs .txt { font-weight: 600; overflow-wrap: anywhere; }
     .rgs .ko { overflow-wrap: anywhere; }
     .rgs .src { color: var(--s-accent); font-size: 12px; }
@@ -335,7 +336,7 @@
     .rgs /* 시간 보기 스타일 */
     .time-top-summary { margin-top: 10px; padding: 10px 12px; background: var(--s-soft); border-radius: 8px; border: 1px solid var(--s-border); }
     .rgs .time-sum-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 13.5px; font-weight: 600; }
-    .rgs .time-sum-val { font-size: 15px; font-variant-numeric: tabular-nums; color: var(--s-accent); }
+    .rgs .time-sum-val { font-size: 15px; font-variant-numeric: tabular-nums; color: var(--s-ink); }
 
     .rgs .top-sections { margin-top: 10px; border-top: 1px dashed var(--s-border); padding-top: 8px; }
     .rgs .top-sec-head { font-size: 12px; color: var(--s-muted); font-weight: 600; margin-bottom: 6px; }
@@ -414,7 +415,7 @@
     // 1. [기록] 보기 컨테이너
     // ==========================================
     const recordsContainer = el('div', 'records-view');
-    const head = el('div', 'head');
+    const head = el('div', 's-head');
     head.append(el('h3', '', '오늘'));
     const ranges = el('div', 'ranges');
     ranges.setAttribute('role', 'group');
@@ -428,18 +429,18 @@
       return b;
     });
     head.append(ranges);
-    const recordsStatus = el('div', 'status');
+    const recordsStatus = el('div', 's-status');
     recordsStatus.setAttribute('role', 'status');
-    const todayBox = el('div', 'sec');
-    const barsBox = el('div', 'sec');
-    const listBox = el('div', 'sec');
+    const todayBox = el('div', 's-sec');
+    const barsBox = el('div', 's-sec');
+    const listBox = el('div', 's-sec');
     recordsContainer.append(head, recordsStatus, todayBox, barsBox, listBox);
 
     // ==========================================
     // 2. [시간] 보기 컨테이너
     // ==========================================
     const timeContainer = el('div', 'time-view');
-    const timeHead = el('div', 'head');
+    const timeHead = el('div', 's-head');
     timeHead.append(el('h3', '', '공부 시간'));
 
     const timeRanges = el('div', 'ranges');
@@ -459,7 +460,7 @@
     timeRanges.append(todayTimeBtn, weekTimeBtn);
     timeHead.append(timeRanges);
 
-    const timeStatus = el('div', 'status');
+    const timeStatus = el('div', 's-status');
     timeStatus.setAttribute('role', 'status');
 
     const timeSummaryBox = el('div', 'time-top-summary');

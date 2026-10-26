@@ -164,7 +164,9 @@ async function tools(page) {
   // 영어 줄 글(뜻 풍선 .g 는 뺀다)
   const enText = () => subs(`function(){ const e = this.querySelector('.en'); return e && [...e.childNodes].map((n) => (n.nodeType === 3 ? n.data : n.firstChild?.textContent ?? '')).join('') }`).catch(() => null);
   const clickWord = (w) => subs(`function(){ const s = [...this.querySelectorAll('.w')].find((n) => n.firstChild?.textContent === ${JSON.stringify(w)}); if (s) s.click(); return Boolean(s) }`);
-  const barButton = (label) => subs(`function(){ const b = [...this.querySelectorAll('.bar button')].find((x) => x.textContent === ${JSON.stringify(label)}); if (b) b.click(); return Boolean(b) }`);
+  // 막대 단추의 보이는 글(가리기·저장은 글을 겹쳐 두고 span.on 만 보인다)
+  const LABEL = `(b) => (b.querySelector('span.on')?.textContent ?? b.textContent)`;
+  const barButton = (label) => subs(`function(){ const b = [...this.querySelectorAll('.bar button')].find((x) => (${LABEL})(x) === ${JSON.stringify(label)}); if (b) b.click(); return Boolean(b) }`);
   const until = async (fn, ms = 8000, what = '조건') => {
     const end = Date.now() + ms;
     for (;;) {
@@ -197,7 +199,7 @@ async function tools(page) {
   };
   const selectTab = (name) => until(() => panel(`function(){ const t = [...this.querySelectorAll('.tab')].find((b) => b.textContent === ${JSON.stringify(name)}); if (t) t.click(); return Boolean(t) }`), 3000, `${name} 탭`);
   const noToast = () => until(async () => (await page.locator('readgloss-toast').count()) === 0, 5000, '확인 메시지가 사라짐(떠 있으면 글자 키가 메모를 연다)');
-  return { page, cdp, call, shadowNodes, inShadow, subs, panel, card, enText, clickWord, barButton, until, seek, vtime, paused, shot, openPanel, selectTab, trustedClick, noToast };
+  return { page, cdp, call, shadowNodes, inShadow, subs, panel, card, enText, clickWord, barButton, LABEL, until, seek, vtime, paused, shot, openPanel, selectTab, trustedClick, noToast };
 }
 
 try {
@@ -212,7 +214,7 @@ try {
   const page = await ctx.newPage();
   await page.goto(WATCH);
   const T = await tools(page);
-  const { subs, panel, card, enText, clickWord, barButton, until, seek, vtime, paused, shot, openPanel, selectTab, trustedClick, noToast } = T;
+  const { subs, panel, card, enText, clickWord, barButton, LABEL, until, seek, vtime, paused, shot, openPanel, selectTab, trustedClick, noToast } = T;
   const sw = ctx.serviceWorkers()[0];
   const setVideo = (patch) => sw.evaluate(async (patch) => {
     const { settings = {} } = await chrome.storage.local.get('settings');
@@ -324,14 +326,20 @@ try {
     await seek(3.0);
     await until(async () => (await enText())?.startsWith('Attackers'), 3000, '줄');
     const hidden = () => subs(`function(){ return this.querySelectorAll('.w.hid').length }`);
+    // 감사 2회차 9: 가리기 글이 바뀌어도 막대 단추 자리가 그대로(숨은 막대도 자리는 잰다)
+    const prevX = () => subs(`function(){ return Math.round(this.querySelector('.bar button').getBoundingClientRect().left) }`);
+    const xs = [await prevX()];
     await page.keyboard.press('KeyH');
     await until(async () => (await hidden()) === 1, 3000, '어려운 단어(payload) 가림');
+    xs.push(await prevX());
     await shot('ui-hide-hard');
     await page.keyboard.press('KeyH');
     await until(async () => (await hidden()) === 8, 3000, '문장 전체 가림(낱말 7개 + 한 글자 a)');
     // 보이는 글자가 하나도 없다(뜻 풍선 .g 는 뺀다)
     const leftover = await subs(`function(){ const out = []; const walk = (n) => { for (const c of n.childNodes) { if (c.nodeType === 3) { if (/[A-Za-z0-9]/.test(c.data) && !c.parentElement.closest('.hid')) out.push(c.data) } else if (!c.classList.contains('g')) walk(c) } }; walk(this.querySelector('.en')); return out }`);
     assert.deepEqual(leftover, [], '문장 전체 가리기에 새는 글자');
+    xs.push(await prevX());
+    assert.equal(new Set(xs).size, 1, `가리기 단계마다 ‹ 자리가 같다 ${JSON.stringify(xs)}`);
     await shot('ui-hide-all');
     await subs(`function(){ this.querySelector('.w.hid').click() }`);
     await until(async () => (await hidden()) === 0, 3000, '눌러서 보기');
@@ -339,7 +347,7 @@ try {
   });
 
   await step('CR-11 페이지 스크립트가 만든 H 키는 무시한다(설정이 바뀌지 않는다)', async () => {
-    const hideLabel = () => subs(`function(){ return [...this.querySelectorAll('.bar button')].find((b) => b.textContent.startsWith('가리기'))?.textContent }`);
+    const hideLabel = () => subs(`function(){ const b = this.querySelector('.bar button.stack'); return b && (${LABEL})(b) }`);
     await noToast();
     assert.equal(await hideLabel(), '가리기: 끔');
     await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyH', key: 'h', bubbles: true })));
@@ -374,7 +382,7 @@ try {
     assert.equal(p.url, `${WATCH}&t=2s`);
     assert.match(p.translation, /^번역\d+:Attackers/);
     assert.equal(p.title, 'Buffer overflows explained');
-    await until(() => subs(`function(){ return [...this.querySelectorAll('.bar button')].some((b) => b.textContent === '★ 저장됨') }`), 3000, '★');
+    await until(() => subs(`function(){ return [...this.querySelectorAll('.bar button')].some((b) => (${LABEL})(b) === '★ 저장됨') }`), 3000, '★');
   });
 
   await step('F01-H7 [풀이] = 문맥 번역(앞뒤 줄) + 기억할 표현 저장(clip 포함)', async () => {
@@ -565,6 +573,11 @@ try {
     await page.focus('.ytp-subtitles-button');
     await page.keyboard.press('Tab');
     assert.equal(await subs(`function(){ return this.activeElement?.className }`), 'lines');
+    // 감사 2회차 2: 포커스 표시는 흰 테두리 + 검은 테두리 두 겹(밝은 화면에서도 보인다)
+    const ring = await subs(`function(){ const s = getComputedStyle(this.querySelector('.lines')); return [s.outlineStyle, s.outlineColor, s.boxShadow] }`);
+    assert.equal(ring[0], 'solid');
+    assert.equal(ring[1], 'rgb(255, 255, 255)');
+    assert.match(ring[2], /rgba\(8, 8, 8, 0\.92\) 0px 0px 0px 2px/);
     const t0 = await vtime();
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowRight');
@@ -583,6 +596,25 @@ try {
     assert.equal(await page.evaluate(() => document.activeElement?.localName), 'readgloss-subs', '첫 Esc 는 카드만 닫는다');
     await page.keyboard.press('Escape');
     assert.equal(await page.evaluate(() => document.activeElement?.localName), 'body', '두 번째 Esc 로 층을 나온다');
+    assert.equal(await subs(`function(){ return this.querySelectorAll('.w.cur').length }`), 0, '층을 나오면 낱말 자리를 지운다(다시 들어오면 첫 낱말부터)');
+  });
+
+  await step('UI-8 마우스로 낱말을 눌러 카드를 열고 닫아도 포커스는 층에 남지 않는다(화살표는 유튜브 5초 이동, 막대는 숨음)', async () => {
+    await seek(3.0);
+    await until(async () => (await enText())?.startsWith('Attackers'), 3000, '줄');
+    await trustedClick(subs, `function(){ return [...this.querySelectorAll('.w')].find((n) => n.firstChild?.textContent === 'bug') }`);
+    await until(async () => (await page.locator('readgloss-card').count()) === 1, 3000, '사전 카드');
+    await page.keyboard.press('Escape');
+    await until(async () => (await page.locator('readgloss-card').count()) === 0, 2000, '카드 닫힘');
+    await page.mouse.move(5, 880);
+    assert.equal(await page.evaluate(() => document.activeElement?.localName), 'body', '마우스로 누른 뒤 포커스가 층으로 가지 않는다');
+    await until(async () => (await subs(`function(){ return getComputedStyle(this.querySelector('.bar')).visibility }`)) === 'hidden', 1000, '막대 숨음');
+    await page.evaluate(() => document.querySelector('video').pause());
+    const t0 = await vtime();
+    await page.keyboard.press('ArrowRight');
+    await until(async () => (await vtime()) >= t0 + 4.9, 2000, '화살표는 유튜브 5초 이동');
+    assert.equal(await subs(`function(){ return this.querySelectorAll('.w.cur').length }`), 0, '낱말 자리 없음');
+    await seek(3.0);
   });
 
   await step('전체 화면: 사전 카드가 전체 화면 요소(플레이어) 안에 뜨고, 전체 화면을 나오면 닫힌다', async () => {
@@ -713,12 +745,21 @@ try {
     await until(async () => (await panelBg()) === 'rgb(255, 255, 255)', 3000, '밝은 테마');
     await page.waitForTimeout(100);
     await shot('ui-light-settings-video');
+    // 감사 2회차 5: 옅은 강조 바탕 위 눌린 글자는 ink 색(밝음 #245ac4 = rgb(36, 90, 196))
+    const ink = 'rgb(36, 90, 196)';
+    assert.equal(await panel(`function(){ return getComputedStyle(this.querySelector('.seg button[aria-pressed="true"]')).color }`), ink, '설정 눌린 칸');
     await tabShots('light');
+    // 감사 2회차 3·5: 공부 기록은 껍데기 규칙(.head·.sec)이 걸리지 않아 본문 크기·색, 머리 줄 안쪽 여백·밑줄 없음, 눌린 칩 ink
+    const study = await panel(`function(){ const ko = this.querySelector('.rgs .it .ko'); const sec = this.querySelector('.rgs .s-sec'); const head = this.querySelector('.rgs .s-head'); const g = (n) => n && getComputedStyle(n); return { ko: ko && [g(ko).fontSize, g(ko).color, g(ko).fontWeight], sec: [g(sec).fontSize, g(sec).fontWeight], head: [g(head).paddingLeft, g(head).borderBottomStyle], rng: g(this.querySelector('.rgs .rng[aria-pressed="true"]')).color, view: g(this.querySelector('.rgs .rg-view-tab[aria-selected="true"]')).color } }`);
+    assert.deepEqual(study, { ko: ['14px', 'rgb(31, 35, 40)', '400'], sec: ['14px', '400'], head: ['0px', 'none'], rng: ink, view: ink });
     // 단어장 목록 줄은 다른 탭 규칙에 갈리지 않는다([영상] 탭의 옛 li 격자가 새면 grid 가 된다)
     await selectTab('내 단어');
     await panel(`function(){ [...this.querySelectorAll('.rgw .sub')].find((x) => x.textContent.startsWith('단어장')).click() }`);
     const li = await until(() => panel(`function(){ const l = this.querySelector('.rgw ul li'); return l && [getComputedStyle(l).display, getComputedStyle(l).borderTopStyle] }`), 3000, '단어장 목록 줄');
     assert.deepEqual(li, ['list-item', 'solid']);
+    // 감사 2회차 8: 단어장 줄 단추·종류 칩도 24px 이상
+    const small = await panel(`function(){ return [...this.querySelectorAll('.rgw .act, .rgw .chip')].filter((b) => b.offsetParent).map((b) => [b.textContent, Math.round(b.getBoundingClientRect().height)]).filter(([, h]) => h < 24) }`);
+    assert.deepEqual(small, []);
     await page.keyboard.press('Escape');
   });
 

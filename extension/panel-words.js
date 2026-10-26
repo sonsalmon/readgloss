@@ -292,13 +292,13 @@
   // 패널 껍데기가 정한 토큰(--rg-*)을 쓰고, 껍데기 없이 시험할 때를 위해 밝은/어두운 기본값을 둔다.
   const CSS = `
     .rgw { --w-fg: var(--rg-fg, #1f2328); --w-muted: var(--rg-muted, #656d76); --w-border: var(--rg-border, #e3e6ea); --w-accent: var(--rg-accent, #2f6feb);
-      --w-soft: var(--rg-accent-soft, rgba(47,111,235,.10)); --w-ink: var(--rg-accent-ink, #245ac4); --w-err: #d1242f; --w-ok: #1a7f37;
+      --w-soft: var(--rg-accent-soft, rgba(47,111,235,.10)); --w-ink: var(--rg-accent-ink, #245ac4); --w-err: #b31d28; --w-ok: #116329;
       color: var(--w-fg); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif; }
     @media (prefers-color-scheme: dark) {
       .rgw { --w-fg: var(--rg-fg, #e6e8eb); --w-muted: var(--rg-muted, #9aa3ad); --w-border: var(--rg-border, #343a44); --w-accent: var(--rg-accent, #6b9bff);
         --w-soft: var(--rg-accent-soft, rgba(107,155,255,.14)); --w-ink: var(--rg-accent-ink, #8db4ff); --w-err: #ff7b72; --w-ok: #3fb950; }
     }
-    :host([data-theme="light"]) .rgw { --w-err: #d1242f; --w-ok: #1a7f37; }
+    :host([data-theme="light"]) .rgw { --w-err: #b31d28; --w-ok: #116329; }
     :host([data-theme="dark"]) .rgw { --w-err: #ff7b72; --w-ok: #3fb950; }
     .rgw .subs { display: flex; gap: 4px; flex-wrap: wrap; }
     .rgw button { font: inherit; color: inherit; cursor: pointer; }
@@ -307,7 +307,7 @@
     .rgw .sub[aria-pressed="true"] { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-ink); font-weight: 600; }
     .rgw .n { margin-left: 4px; font-variant-numeric: tabular-nums; opacity: .8; }
     .rgw .q { box-sizing: border-box; width: 100%; margin: 10px 0 6px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--w-border); background: none; color: inherit; font: inherit; }
-    .rgw .status { color: var(--w-muted); font-size: 13px; padding: 6px 0; word-break: keep-all; overflow-wrap: anywhere; }
+    .rgw .w-status { color: var(--w-muted); font-size: 13px; padding: 6px 0; word-break: keep-all; overflow-wrap: anywhere; }
     .rgw ul { list-style: none; margin: 0; padding: 0; }
     .rgw li { padding: 9px 0; border-top: 1px solid var(--w-border); }
     .rgw .top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
@@ -322,7 +322,7 @@
     .rgw .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
     .rgw .date { color: var(--w-muted); font-size: 12px; margin-right: auto; font-variant-numeric: tabular-nums; }
     .rgw .src { color: var(--w-accent); font-size: 12px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .rgw .act { padding: 1px 9px; border-radius: 7px; border: 1px solid var(--w-border); background: none; font-size: 12.5px; }
+    .rgw .act { min-height: 24px; padding: 1px 9px; border-radius: 7px; border: 1px solid var(--w-border); background: none; font-size: 12.5px; }
     .rgw .act:hover { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-ink); }
     .rgw .act[disabled] { opacity: .55; cursor: default; }
     .rgw .act.primary { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-ink); font-weight: 600; }
@@ -333,7 +333,7 @@
     .rgw .badge { flex: none; padding: 0 7px; border-radius: 999px; background: var(--w-soft); color: var(--w-ink); font-size: 11.5px; font-weight: 700; }
     .rgw .psent { margin-top: 2px; color: var(--w-muted); font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
     .rgw .kinds { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
-    .rgw .chip { padding: 1px 9px; border-radius: 999px; border: 1px solid var(--w-border); background: none; font-size: 12.5px; }
+    .rgw .chip { min-height: 24px; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--w-border); background: none; font-size: 12.5px; }
     .rgw .chip[aria-pressed="true"] { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-ink); font-weight: 600; }
     .rgw .lk { cursor: text; }
     .rgw .form { display: grid; gap: 6px; padding: 8px 0; }
@@ -458,7 +458,7 @@
     search.type = 'search';
     search.placeholder = '찾기: 단어는 앞부분, 구·문장·내 용어집은 포함';
     search.setAttribute('aria-label', '찾기: 단어는 앞부분, 구·문장·내 용어집은 포함');
-    const status = el('div', 'status');
+    const status = el('div', 'w-status'); // 껍데기 머리의 .status 규칙이 걸리지 않게 w- 이름
     status.setAttribute('role', 'status');
 
     // 내 사전 맨 위: [직접 추가] 버튼과 접히는 입력 폼(한 번만 만들고 hidden 으로 여닫는다)
@@ -933,7 +933,7 @@
       revPane.replaceChildren();
 
       if (reviewMessage) {
-        revPane.append(el('div', 'status', reviewMessage));
+        revPane.append(el('div', 'w-status', reviewMessage));
         return;
       }
 
