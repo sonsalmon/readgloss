@@ -263,8 +263,10 @@ try {
     const hidden = () => subs(`function(){ return this.querySelectorAll('.w.hid').length }`);
     await page.keyboard.press('KeyH');
     await until(async () => (await hidden()) === 1, 3000, '어려운 단어(payload) 가림');
+    await shot('ui-hide-hard');
     await page.keyboard.press('KeyH');
     await until(async () => (await hidden()) === 7, 3000, '문장 전체 가림(낱말 7개 — 한 글자 a 는 낱말이 아니다)');
+    await shot('ui-hide-all');
     await subs(`function(){ this.querySelector('.w.hid').click() }`);
     await until(async () => (await hidden()) === 0, 3000, '눌러서 보기');
     await page.keyboard.press('KeyH'); // 끔으로
@@ -380,6 +382,7 @@ try {
     const U = await tools(p3);
     const msg = await U.until(() => U.subs(`function(){ const m = this.querySelector('.msg'); return m && !m.hidden ? m.textContent : null }`).catch(() => null), 9000, '안내');
     assert.equal(msg, '이 영상은 자막이 없어요');
+    await U.shot('ui-msg-nocc');
     assert.equal(await p3.evaluate(() => document.documentElement.hasAttribute('data-readgloss-subs')), false);
     await p3.close();
     await page.bringToFront();
@@ -393,6 +396,8 @@ try {
     await page.keyboard.press('Tab');
     assert.equal(await page.evaluate(() => document.activeElement?.localName), 'readgloss-subs', '자막 층으로 들어간다');
     assert.equal(await subs(`function(){ return this.activeElement?.className }`), 'lines', '먼저 두 줄');
+    await page.waitForTimeout(250);
+    await shot('ui-focus-lines');
     await until(async () => (await subs(`function(){ return getComputedStyle(this.querySelector('.bar')).visibility }`)) === 'visible', 2000, '막대가 보인다');
     const labels = [];
     for (let k = 0; k < 7; k++) {
@@ -400,6 +405,7 @@ try {
       labels.push(await subs(`function(){ return this.activeElement?.getAttribute('aria-label') }`));
     }
     assert.deepEqual(labels, ['앞 줄 (A)', '이 줄 다시 (S)', '다음 줄 (D)', '가리기 바꾸기 (H) — 지금 끔', '줄마다 멈춤 (P)', '한국어 줄 보이기', '이 줄 저장 빼기']);
+    await shot('ui-focus-bar');
     await page.keyboard.press('Enter'); // ★ 저장됨 → 빼기
     await until(() => !Object.values(bridge.words.all().phrases).some((x) => x.text.startsWith('Attackers')), 3000, '키보드로 저장 빼기');
   });
@@ -430,6 +436,69 @@ try {
     assert.notEqual(await page.evaluate(() => getComputedStyle(document.getElementById('ytcaps')).display), 'none');
     await setSubs(true);
     await until(() => page.evaluate(() => document.documentElement.hasAttribute('data-readgloss-subs')), 3000, '다시 켜짐');
+  });
+
+  // ---- UI·접근성 재기(ui-ux-pro-max 규칙: 누를 자리 24px 이상, 포커스 표시, 움직임 줄이기, 색만으로 알리지 않기) ----
+  await step('UI-1 자막 막대 단추는 누를 자리가 24×24px 이상', async () => {
+    await page.bringToFront();
+    await seek(3.0);
+    await until(async () => (await enText())?.startsWith('Attackers'), 3000, '줄');
+    const box = await page.locator('#movie_player > readgloss-subs').boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height - 8);
+    await page.waitForTimeout(300);
+    const sizes = await subs(`function(){ return [...this.querySelectorAll('.bar button')].map((b) => { const r = b.getBoundingClientRect(); return [b.getAttribute('aria-label'), Math.round(r.width), Math.round(r.height)] }) }`);
+    const small = sizes.filter(([, w, h]) => w < 24 || h < 24);
+    assert.deepEqual(small, [], JSON.stringify(sizes));
+    await page.mouse.move(5, 880);
+  });
+
+  await step('UI-2 움직임 줄이기 설정이면 막대·줄 전환이 없다', async () => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const d = await subs(`function(){ return [getComputedStyle(this.querySelector('.bar')).transitionDuration, getComputedStyle(this.querySelector('.lines')).transitionDuration] }`);
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    assert.ok(d.every((x) => x.split(',').every((v) => parseFloat(v) === 0)), JSON.stringify(d));
+  });
+
+  await step('UI-3 복습 새 단추(방식·소리·장면)는 24px 이상, 고르기 맞음·틀림은 색 말고 글로도 알린다', async () => {
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('readgloss:open-panel')));
+    await until(() => panel(`function(){ const t = [...this.querySelectorAll('.tab')].find((b) => b.textContent === '내 단어'); if (t) t.click(); return Boolean(t) }`), 3000, '내 단어 탭');
+    await panel(`function(){ this.querySelector('.sub').click() }`);
+    // 고를 카드가 있게 다시 하나 넣는다(앞 단계에서 다 넘겼을 수 있다)
+    bridge.words.apply({ op: 'save', lemma: 'payload', word: 'payload', gloss: '수익 하중', sentence: 'Attackers exploit the bug to deliver a payload.', url: `${WATCH}&t=2s` });
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('readgloss:words', { detail: { known: [], unknown: [] } })));
+    await until(() => panel(`function(){ return Boolean(this.querySelector('.rev-card')) }`), 4000, '복습 카드');
+    await panel(`function(){ [...this.querySelectorAll('.rev-modes button')].find((b) => b.textContent === '뒤집기').click() }`);
+    await shot('ui-review-flip-front');
+    const sizes = await panel(`function(){ return [...this.querySelectorAll('.rev-modes button, .rev-tools button, .rev-btns button')].map((b) => { const r = b.getBoundingClientRect(); return [b.textContent.trim(), Math.round(r.width), Math.round(r.height)] }) }`);
+    const small = sizes.filter(([, w, h]) => w < 24 || h < 24);
+    assert.deepEqual(small, [], JSON.stringify(sizes));
+    await panel(`function(){ [...this.querySelectorAll('.rev-modes button')].find((b) => b.textContent === '듣기').click() }`);
+    await page.waitForTimeout(200);
+    await shot('ui-review-listen-front');
+    await panel(`function(){ [...this.querySelectorAll('.rev-modes button')].find((b) => b.textContent === '고르기').click() }`);
+    const ok = await until(() => panel(`function(){ return this.querySelectorAll('.rev-choices button').length === 4 }`), 4000, '보기');
+    assert.ok(ok);
+    // 일부러 틀린 보기를 고른다
+    await panel(`function(){ const c = [...this.querySelectorAll('.rev-choices button')]; const t = this.querySelector('.rev-card .rev-head')?.textContent; c[c.length - 1].click() }`);
+    await until(() => panel(`function(){ return this.querySelectorAll('.rev-choice.ok').length === 1 }`), 3000, '정답 표시');
+    await shot('ui-review-choice-answered');
+    const marks = await panel(`function(){ return [...this.querySelectorAll('.rev-choice.ok, .rev-choice.bad')].map((b) => b.textContent) }`);
+    assert.ok(marks.every((t) => /정답|고른 답|✓|✗/.test(t)), `색 말고 글로도: ${JSON.stringify(marks)}`);
+  });
+
+  await step('UI-4 어두운 테마·설정 칸·영상 탭 화면(눈으로 보는 용도)', async () => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await until(() => panel(`function(){ const t = [...this.querySelectorAll('.tab')].find((b) => b.textContent === '영상'); if (t) t.click(); return Boolean(t) }`), 3000, '영상 탭');
+    await page.waitForTimeout(200);
+    await shot('ui-dark-panel-video');
+    await panel(`function(){ [...this.querySelectorAll('.tab')].find((b) => b.textContent === '설정').click() }`);
+    await panel(`function(){ const h = [...this.querySelectorAll('h3')].find((x) => x.textContent === '영상 자막'); h.scrollIntoView({ block: 'start' }) }`);
+    await page.waitForTimeout(200);
+    await shot('ui-dark-settings-video');
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.waitForTimeout(100);
+    await shot('ui-light-settings-video');
+    await page.keyboard.press('Escape');
   });
 
   await step('F01-E3 다리가 꺼지면 한국어 줄 자리에 "다리가 꺼져 있어요"', async () => {
