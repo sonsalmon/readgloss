@@ -108,7 +108,7 @@ test('content.js: 카드·확인 메시지는 전체 화면 요소 안에(mountR
 test('설정: video 기본값·범위, reviewMode', async () => {
   await import('../extension/settings-core.js');
   const S = globalThis.readglossSettings;
-  assert.deepEqual(S.DEFAULTS.video, { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false });
+  assert.deepEqual(S.DEFAULTS.video, { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false });
   assert.equal(S.DEFAULTS.reviewMode, 'flip');
   const n = S.normalize({ video: { fontPct: 999, hide: 'nope', ko: 'yes', pauseEach: true }, reviewMode: 'choice' });
   assert.equal(n.video.fontPct, 160);
@@ -126,7 +126,7 @@ test('패널 표: 영상 자막 켜기 6개·자막 크기·가리기, 자막 �
   const C = globalThis.readglossPanelCore;
   for (const p of ['video.subs', 'video.ko', 'video.hard', 'video.hoverPause', 'video.autoCC', 'video.pauseEach']) assert.ok(C.TOGGLES.some((t) => t.path === p), p);
   assert.deepEqual(C.RANGES.find((r) => r.path === 'video.fontPct'), { path: 'video.fontPct', min: 60, max: 160, step: 10 });
-  assert.deepEqual(C.CHOICES.find((c) => c.path === 'video.hide').options.map(([v]) => v), ['off', 'hard', 'all']);
+  assert.deepEqual(C.CHOICES.find((c) => c.path === 'video.hide').options.map(([v]) => v), ['off', 'word', 'line']);
   assert.equal(C.isCardPath([{ localName: 'readgloss-subs' }]), true);
   const src = read('panel.js');
   assert.match(src, /text: '영상 자막'/);

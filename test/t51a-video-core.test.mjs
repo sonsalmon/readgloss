@@ -167,14 +167,19 @@ test('tokenize: 낱말·사이 조각을 나누고, 이어 붙이면 원문 그�
   assert.equal(V.tokenize('it’s').find((t) => t.w).lower, "it's", '굽은 따옴표는 곧은 것으로');
 });
 
-test('maskFlags·nextHide: 끔 → 어려운 단어 → 문장 → 끔', () => {
+test('maskFlags·nextHide: 끔 → 낱말 → 줄 → 끔, 고른 유형만', () => {
   const toks = V.tokenize('the exploit works');
-  assert.deepEqual(V.maskFlags(toks, 'off', () => true), [false, false, false, false, false]);
-  assert.deepEqual(V.maskFlags(toks, 'hard', (w) => w === 'exploit'), [false, false, true, false, false]);
-  assert.deepEqual(V.maskFlags(toks, 'all'), [true, false, true, false, true]);
-  assert.equal(V.nextHide('off'), 'hard');
-  assert.equal(V.nextHide('hard'), 'all');
-  assert.equal(V.nextHide('all'), 'off');
+  const kind = (w) => (w === 'exploit' ? 'hard' : w === 'works' ? 'done' : 'other');
+  const hardOnly = { hard: true, done: false, other: false };
+  assert.deepEqual(V.maskFlags(toks, 'off', kind, hardOnly), [false, false, false, false, false]);
+  assert.deepEqual(V.maskFlags(toks, 'word', kind, hardOnly), [false, false, true, false, false]);
+  assert.deepEqual(V.maskFlags(toks, 'line', kind, hardOnly), [true, false, true, false, true], '고른 유형이 든 줄은 통째로');
+  assert.deepEqual(V.maskFlags(toks, 'word', kind, { hard: false, done: true, other: false }), [false, false, false, false, true]);
+  assert.deepEqual(V.maskFlags(toks, 'word', kind, { hard: false, done: false, other: true }), [true, false, false, false, false]);
+  assert.deepEqual(V.maskFlags(toks, 'line', kind, { hard: false, done: false, other: false }), [false, false, false, false, false]);
+  assert.equal(V.nextHide('off'), 'word');
+  assert.equal(V.nextHide('word'), 'line');
+  assert.equal(V.nextHide('line'), 'off');
   assert.equal(V.nextHide('weird'), 'off');
 });
 

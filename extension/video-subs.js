@@ -32,6 +32,9 @@
     cues: [], ko: [], koFail: new Set(), cur: -1, past: false, revealed: -1, pausedFor: -1, eachPause: false, clip: null, clipPause: false,
     prevT: 0, range: null, mem: { repeatedFor: -1, gapTo: -1 },
     hard: new Map(), asked: new Set(), annotBusy: false, annotErrAt: 0, hardVer: 0,
+    done: new Set(), // 단어장 복습 끝난 낱말(28-8 가리기 'done' 유형)
+    hovering: false, // 자막 위에 마우스가 있는지(가리기 'word'/'line' 을 잠깐 보인다)
+    drill: false, drillReveal: false, drillLastUp: null, drillPress: null, drillNotice: false, drillNoticeSeen: false,
     dictMemo: new Map(), // 낱말별 사전 응답(28-6): 영상이 바뀌면 지운다
     koBusy: false, koAll: false, koErr: '', koErrAt: 0,
     savedForms: new Map(), phrases: {}, savedVer: 0, saving: false,
@@ -157,6 +160,11 @@
       S.clip = null;
       S.clipPause = false;
       S.range = null;
+      S.drill = false; // 드릴은 저장하지 않는다: 영상이 바뀌면 끈다(28-8)
+      S.drillReveal = false;
+      S.drillLastUp = null;
+      S.drillPress = null;
+      S.drillNotice = false;
       if (video) video.playbackRate = 1; // 새 영상은 1배로(28-3)
       clearFocusTimer();
       if (ui?.lines.matches(':focus')) ui.lines.blur();
@@ -268,6 +276,7 @@
       hold.reasons.clear(); // 사용자가 직접 재생했다
       hold.paused = false;
     }
+    render(); // 멈춤 때문에 보이던 가리기가 다시 가려진다(28-8)
     startLoop();
   }
   function onPause() {
@@ -497,6 +506,17 @@
     /* 키보드 저장 모드 안내 알약(28-7): 두 줄 바로 아래. 어두운 바탕 + 흰 글자 */
     .focushint { order: 1; margin-top: 4px; padding: 3px 12px; border-radius: 999px; background: rgba(8, 8, 8, .9); border: 1px solid rgba(255, 255, 255, .45); color: #fff;
       font: max(12px, calc(var(--fs, 22px) * .56))/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+    /* 리스닝 드릴(28-8): 두 줄을 통째로 숨기고 가운데 아래 알약만 남긴다. Space 로 보이는 동안은 두 줄을 다시 그린다 */
+    .lines.drillhide { display: none; }
+    .drillpill { order: 1; pointer-events: auto; display: flex; align-items: center; gap: 4px; margin-top: 4px; padding: 3px 8px; border-radius: 999px;
+      background: rgba(8, 8, 8, .9); border: 1px solid rgba(255, 255, 255, .45); color: #fff;
+      font: max(12px, calc(var(--fs, 22px) * .56))/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+    .drillpill button { border-color: transparent; background: transparent; min-height: 28px; }
+    .drillpill .dc { min-width: 4.6em; text-align: center; }
+    .drillnote { order: -3; pointer-events: auto; box-sizing: border-box; max-width: min(92%, 440px); padding: 10px 12px; border-radius: 10px;
+      background: rgba(8, 8, 8, .94); border: 1px solid rgba(255, 255, 255, .55); color: #fff; text-align: left;
+      font: max(12px, calc(var(--fs, 22px) * .56))/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+    .drillnote .dt { margin-bottom: 8px; }
     /* 안내만 뜰 때(우리 두 줄이 없을 때)는 유튜브 자막이 보일 수 있으니 그 자리 위로 올린다 */
     .box:has(.lines[hidden]) .msg { margin-bottom: max(3.4em, calc(var(--fs, 22px) * 3)); }
     .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -594,6 +614,23 @@
     const hint = el('div', 'focushint');
     hint.hidden = true;
     hint.setAttribute('role', 'status');
+    // 리스닝 드릴(28-8): 처음 한 번 안내 카드(세션 동안만, [가리기]로 접는다)와 가운데 아래 이동 알약
+    const drillNote = el('div', 'drillnote');
+    drillNote.hidden = true;
+    drillNote.setAttribute('role', 'note');
+    drillNote.setAttribute('aria-label', '리스닝 드릴 안내');
+    const drillClose = button('가리기', '드릴 안내 접기', () => {
+      S.drillNotice = false;
+      S.drillNoticeSeen = true;
+      render();
+    });
+    drillNote.append(el('div', 'dt', 'Space 를 누르고 있으면 자막 보기 · 두 번 빠르게 누르면 재생/정지'), drillClose);
+    const drillPill = el('div', 'drillpill');
+    drillPill.hidden = true;
+    drillPill.setAttribute('role', 'group');
+    drillPill.setAttribute('aria-label', '리스닝 드릴 문장 이동');
+    const drillCount = el('span', 'dc');
+    drillPill.append(button('‹ 이전 문장 A ·', '이전 문장 (A)', () => run('prev')), drillCount, button('· 다음 문장 D ›', '다음 문장 (D)', () => run('next')));
     const sr = el('div', 'sr'); // 키보드 낱말 자리를 읽어 주는 곳(화면에는 안 보인다)
     sr.setAttribute('aria-live', 'polite');
     // 낱말 말풍선(28-6): 자막 층 shadow 안에 그린다. 낱말 위(자리가 모자라면 아래)에 붙고 단추는 키보드로도 닿는다.
@@ -604,9 +641,10 @@
     box.prepend(notice);
     box.append(lines, bar, note, msg);
     box.append(hint); // 안내 알약(28-7)은 화면 차례(order)로 두 줄 아래에 놓는다
+    box.append(drillPill, drillNote); // 드릴 알약·안내도 order 로 자리를 잡는다
     box.append(tipEl); // 말풍선은 position: fixed 라 흐름에 끼지 않는다
     shadow.append(style, box, sr);
-    ui = { box, bar, note, notice, lines, en, ko, msg, hint, sr, tip: tipEl, prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, slowBtn, koBtn, saveBtn, explainBtn, lineKey: '', noteKey: '', tokens: [], wcur: -1, wcurFor: '' };
+    ui = { box, bar, note, notice, lines, en, ko, msg, hint, sr, tip: tipEl, drillPill, drillNote, drillCount, prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, slowBtn, koBtn, saveBtn, explainBtn, lineKey: '', noteKey: '', tokens: [], wcur: -1, wcurFor: '' };
 
     en.addEventListener('click', (e) => {
       const sp = e.target?.closest?.('.w');
@@ -686,8 +724,16 @@
     box.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !e.readglossCardClosed) e.target?.blur?.();
     });
-    box.addEventListener('mouseenter', () => vs().hoverPause && holdOn('hover'));
-    box.addEventListener('mouseleave', () => holdOff('hover'));
+    box.addEventListener('mouseenter', () => {
+      S.hovering = true;
+      if (vs().hoverPause) holdOn('hover');
+      renderLine(); // 자막 위에 마우스가 있으면 가린 것을 보인다(28-8)
+    });
+    box.addEventListener('mouseleave', () => {
+      S.hovering = false;
+      holdOff('hover');
+      renderLine();
+    });
   }
 
   // ---- 말풍선(28-6) ----
@@ -940,6 +986,17 @@
     host.style.display = show || showMsg ? 'flex' : 'none';
     ui.lines.hidden = ui.bar.hidden = !show;
     ui.notice.hidden = !(show && !vs().keysNoticeSeen); // 처음 한 번만(알겠어요를 누르면 설정에 남는다)
+    const drillOn = show && S.drill;
+    ui.box.classList.toggle('drill', drillOn);
+    ui.lines.classList.toggle('drillhide', drillOn && !S.drillReveal);
+    ui.drillPill.hidden = !drillOn;
+    ui.drillNote.hidden = !(drillOn && S.drillNotice);
+    if (drillOn) {
+      const total = S.cues.length;
+      const at = S.cur >= 0 ? S.cur + 1 : 0;
+      ui.drillCount.textContent = `${at} / ${total}`;
+      ui.drillCount.setAttribute('aria-label', `${total}줄 중 ${at}번째`);
+    }
     if (!show) {
       ui.note.hidden = true;
       closeTip();
@@ -959,7 +1016,10 @@
     const cue = S.cues[i];
     const v = vs();
     ui.lines.classList.toggle('past', S.past);
-    const key = cue ? [S.mainKey, i, S.revealed === i, v.hide, v.hard, v.ko, S.ko[i] ?? '', S.koErr, S.hardVer, S.savedVer].join('|') : '';
+    // 멈췄거나 자막 위에 마우스가 있거나 드릴 Space 로 보이는 동안에는 가리기를 잠깐 푼다(28-8).
+    const hideOff = S.revealed === i || S.drillReveal || (v.hide !== 'off' && (Boolean(video?.paused) || S.hovering));
+    const mode = hideOff ? 'off' : v.hide;
+    const key = cue ? [S.mainKey, i, mode, v.hard, v.ko, S.ko[i] ?? '', S.koErr, S.hardVer, S.savedVer, v.hideTypes?.hard, v.hideTypes?.done, v.hideTypes?.other].join('|') : '';
     if (key === ui.lineKey) return;
     ui.lineKey = key;
     const cursorFor = `${S.mainKey}|${i}`;
@@ -975,10 +1035,11 @@
       return;
     }
     const toks = V.tokenize(cue.text);
-    const mode = S.revealed === i ? 'off' : v.hide;
-    const hid = V.maskFlags(toks, mode, (w) => S.hard.has(w));
+    const typeOf = (w) => (S.hard.has(w) ? 'hard' : S.done.has(S.savedForms.get(w) ?? w) ? 'done' : 'other');
+    const hid = V.maskFlags(toks, mode, typeOf, v.hideTypes);
+    const lineHid = mode === 'line' && hid.some(Boolean); // 고른 유형이 하나라도 있으면 줄 통째로(사이 글자 포함)
     toks.forEach((tk, k) => {
-      if (!tk.w) return void appendRest(tk.t, mode === 'all');
+      if (!tk.w) return void appendRest(tk.t, lineHid);
       const sp = el('span', 'w', tk.t);
       sp.dataset.k = String(k);
       if (k === ui.wcur) sp.classList.add('cur');
@@ -1008,7 +1069,7 @@
     }
   }
 
-  // 낱말이 아닌 조각. 문장 전체 가리기면 그 안의 글자·숫자(한 글자 a·I, x86, café 등)도 가린다 — 사전 낱말이 아니라 누르면 그 줄을 보이기만 한다
+  // 낱말이 아닌 조각. 줄 통째 가리기면 그 안의 글자·숫자(한 글자 a·I, x86, café 등)도 가린다 — 사전 낱말이 아니라 누르면 그 줄을 보이기만 한다
   const HID_TITLE = '가린 낱말 — 눌러서 보기';
   function appendRest(text, hideAll) {
     if (!hideAll) return void ui.en.append(text);
@@ -1124,8 +1185,19 @@
       render();
       return;
     }
+    // 리스닝 드릴(28-8): 저장하지 않는다. 켜면 두 줄을 숨기고, 처음 한 번 안내 카드를 띄운다(세션 동안만).
+    if (act === 'drill') {
+      S.drill = !S.drill;
+      S.drillReveal = false;
+      S.drillLastUp = null;
+      S.drillPress = null;
+      S.drillNotice = S.drill && !S.drillNoticeSeen;
+      toast(S.drill ? '리스닝 드릴 켜짐' : '리스닝 드릴 꺼짐');
+      render();
+      return;
+    }
     // 자리만 잡은 키(28-2): 동작은 해당 티켓에서 붙인다. 지금은 아무것도 하지 않되 키는 이미 여기서 막혀 유튜브로 넘어가지 않는다.
-    if (act === 'drill' || act === 'panel') return; // T53e 리스닝 드릴 · T53j 패널
+    if (act === 'panel') return; // T53j 패널
     if (act === 'reveal') {
       S.revealed = i;
       renderLine();
@@ -1285,7 +1357,7 @@
   }
   function pumpAnnot() {
     const v = vs();
-    if (!(v.hard || v.hide === 'hard') || !visible() || S.annotBusy || Date.now() - S.annotErrAt < ERR_PAUSE_MS) return; // 층이 보일 때만(대본 전체는 annotateAll)
+    if (!(v.hard || (v.hide !== 'off' && v.hideTypes?.hard === true)) || !visible() || S.annotBusy || Date.now() - S.annotErrAt < ERR_PAUSE_MS) return; // 층이 보일 때만(대본 전체는 annotateAll)
     const { words } = V.annotateBatch(S.cues, Math.max(0, S.cur), S.asked);
     if (words.length) askAnnot(words).then((ok) => ok && pumpAnnot());
   }
@@ -1305,6 +1377,7 @@
     const r = await send({ type: 'words', op: 'get' });
     if (!r?.saved) return;
     S.savedForms = globalThis.readglossSavedMarksCore?.buildFormSet?.(Object.keys(r.saved)) ?? new Map();
+    S.done = new Set(Object.entries(r.saved).filter(([, x]) => x?.review?.done === true).map(([k]) => k)); // 복습 끝난 낱말(28-8)
     S.phrases = r.phrases ?? {};
     S.savedVer++;
     render();
@@ -1364,6 +1437,29 @@
       return;
     }
     if (shiftDown) shiftDown.interrupted = true; // 다른 키가 눌리면 Shift 단독이 아니다
+    // 리스닝 드릴(28-8): Space 누름 = 자막 보이기, 뗀 뒤 0.28초 안의 다시 누름 = 재생/정지(그 누름은 보이지 않는다).
+    // 입력칸 밖·자막 층이 보일 때만 가로채고, 유튜브로 넘기지 않는다. 반복 키는 막기만 하고 다시 처리하지 않는다.
+    if (S.drill && e.code === 'Space') {
+      if (!visible() || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.isComposing || keyBlocked(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat) return;
+      const r = V.drillSpace({ now: Date.now() / 1000, lastUp: S.drillLastUp });
+      S.drillLastUp = r.nextLastUp;
+      S.drillPress = r.action;
+      if (r.action === 'toggle') {
+        if (video) {
+          if (video.paused) video.play()?.catch?.(() => {});
+          else video.pause();
+        }
+        S.drillReveal = false;
+        render();
+        return;
+      }
+      S.drillReveal = true;
+      render();
+      return;
+    }
     const act = V.keyAction(e);
     if (!act || !visible()) return;
     if ((act === 'prev' || act === 'repeat' || act === 'next' || act === 'focusMode') && spherical()) return;
@@ -1373,7 +1469,22 @@
     run(act);
   }, true);
   window.addEventListener('keyup', (e) => {
-    if (!e.isTrusted || e.key !== 'Shift' || !shiftDown) return;
+    if (!e.isTrusted) return;
+    if (S.drill && S.drillPress && e.code === 'Space') {
+      const action = S.drillPress;
+      S.drillPress = null;
+      if (action === 'reveal') {
+        S.drillReveal = false;
+        S.drillLastUp = Date.now() / 1000; // 이 뗀 시각부터 0.28초 안의 다시 누름이 토글
+        render();
+      }
+      if (visible() && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !e.isComposing && !keyBlocked(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      return;
+    }
+    if (e.key !== 'Shift' || !shiftDown) return;
     const tap = V.shiftTapAction({ downAt: shiftDown.at, upAt: Date.now(), interrupted: shiftDown.interrupted });
     shiftDown = null;
     if (tap !== 'saveLine' || !visible() || S.cur < 0) return;

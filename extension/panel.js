@@ -58,11 +58,12 @@
     { path: 'mark', options: [['none', '없음'], ['color', '글자색'], ['underline', '점선 밑줄'], ['background', '옅은 배경']] },
     { path: 'theme', options: [['auto', '자동'], ['light', '밝게'], ['dark', '어둡게']] },
     { path: 'glossary', options: [['auto', '자동'], ['off', '끄기']] },
-    { path: 'video.hide', options: [['off', '끔'], ['hard', '어려운 단어'], ['all', '문장 전체']] },
+    { path: 'video.hide', options: [['off', '끔'], ['word', '낱말'], ['line', '줄']] },
     { path: 'video.slowRate', options: [[0.5, '0.5배'], [0.6, '0.6배'], [0.7, '0.7배'], [0.75, '0.75배'], [0.8, '0.8배'], [0.9, '0.9배']] },
   ];
   const TOGGLES = [{ path: 'enabled' }, { path: 'selectionTranslate' }, { path: 'floatingButton.show' }, { path: 'dimWhileReading' }, { path: 'structureHints' }, { path: 'savedMarks' },
-    { path: 'video.subs' }, { path: 'video.ko' }, { path: 'video.hard' }, { path: 'video.hoverPause' }, { path: 'video.autoCC' }, { path: 'video.pauseEach' }];
+    { path: 'video.subs' }, { path: 'video.ko' }, { path: 'video.hard' }, { path: 'video.hoverPause' }, { path: 'video.autoCC' }, { path: 'video.pauseEach' },
+    { path: 'video.hideTypes.hard' }, { path: 'video.hideTypes.done' }, { path: 'video.hideTypes.other' }];
 
   // 슬라이더가 준 값(문자열 가능) -> 설정 patch. 범위·단계로 고치고, 숫자가 아니면 null.
   function sliderPatch(spec, raw) {
@@ -73,6 +74,15 @@
     return patchFor(spec.path, spec.from ? spec.from(snapped) : snapped);
   }
   const sliderValue = (spec, settings) => (spec.to ? spec.to(getPath(settings, spec.path)) : getPath(settings, spec.path));
+
+  // 켜기 patch(28-8): 줄마다 멈춤과 문장 반복은 함께 켤 수 없다. 켜는 쪽 patch 에 반대쪽 끄기를 같이 넣는다
+  // (설정 정규화가 조용히 무시하지 않게). 그 밖의 켜기는 지금처럼 그 값만 바꾼다.
+  function togglePatch(path, checked) {
+    const on = checked === true;
+    if (path === 'video.pauseEach') return on ? { video: { pauseEach: true, repeatLine: false } } : { video: { pauseEach: false } };
+    if (path === 'video.repeatLine') return on ? { video: { repeatLine: true, pauseEach: false } } : { video: { repeatLine: false } };
+    return patchFor(path, checked);
+  }
 
   // 끌 사이트 입력: 공백·프로토콜·경로·포트를 걷고 소문자로. 도메인 글자(와 * . - _)만 남으면 통과, 아니면 ''.
   function cleanSite(raw) {
@@ -156,7 +166,7 @@
   }
 
   globalThis.readglossPanelCore = {
-    getPath, patchFor, sortTabs, mountPane, levelIndex, levelAt, RANGES, CHOICES, TOGGLES, sliderPatch, sliderValue,
+    getPath, patchFor, sortTabs, mountPane, levelIndex, levelAt, RANGES, CHOICES, TOGGLES, sliderPatch, sliderValue, togglePatch,
     cleanSite, addSite, removeSite, resetPatch, clampTop, dragTop, mergePatch, themeAttr, isCardPath, isToastPath,
     isConceptPath, isMemoPath,
     pageTranslateMenu, pageTranslateAction, studyModeText, studyModeToggle, menuShouldClose, offsetLabel, MAX_SITES,
@@ -691,6 +701,7 @@
     savedMarks: '단어장 단어 칠하기',
     'video.subs': '유튜브 자막 층 켜기', 'video.ko': '한국어 줄 보이기', 'video.hard': '어려운 단어 칠하기', 'video.hoverPause': '자막에 마우스를 올리면 잠깐 멈춤',
     'video.autoCC': '자막이 꺼져 있으면 켜기', 'video.pauseEach': '줄마다 멈춤', 'video.hide': '가리기(듣기 연습)', 'video.fontPct': '자막 크기', 'video.slowRate': '느리게 속도',
+    'video.hideTypes.hard': '어려운 낱말 가리기', 'video.hideTypes.done': '복습 끝난 낱말 가리기', 'video.hideTypes.other': '그 밖의 낱말 가리기',
   };
   const LEVEL_HINT = {
     A2: 'A2 이상: 거의 모든 단어에 뜻이 붙어요',
@@ -737,7 +748,7 @@
 
     const toggle = (path, hint) => {
       const input = h('input', { type: 'checkbox' });
-      input.addEventListener('change', () => ctx.setSettings(C.patchFor(path, input.checked)));
+      input.addEventListener('change', () => ctx.setSettings(C.togglePatch(path, input.checked)));
       refreshers.push((s) => { input.checked = C.getPath(s, path) === true; });
       return h('div', { class: 'row' }, h('label', { class: 'check' }, input, h('span', {}, LABEL[path], hint ? h('p', { class: 'hint', text: hint }) : null)));
     };
@@ -890,7 +901,9 @@
       h('h3', { class: 'sec', text: '단어 표시' }), choice('mark'),
       h('h3', { class: 'sec', text: '영상 자막' }), toggle('video.subs', '유튜브 영상에서 영어·한국어 두 줄 자막. 유튜브 자막(CC) 단추로 켜고 꺼요. 낱말을 누르면 사전 카드.'),
       toggle('video.ko', '맥 번역(무료)이에요. 자막 위 [풀이]는 AI 문맥 번역.'), toggle('video.hard'), toggle('video.hoverPause'), toggle('video.autoCC', '영상마다 한 번 CC 단추를 눌러요.'),
-      toggle('video.pauseEach', 'P 키로도 바꿔요. A 앞 줄 · S 이 줄 다시 · D 다음 줄.'), choice('video.hide', null, 'H 키로도 바꿔요. 가린 낱말을 누르거나 R 로 그 줄을 보여요.'), slider('video.fontPct'), choice('video.slowRate', null, 'Z 키나 자막 막대 [느리게]로 1배와 이 속도를 오가요.'),
+      toggle('video.pauseEach', 'P 키로도 바꿔요. A 앞 줄 · S 이 줄 다시 · D 다음 줄.'), choice('video.hide', null, '막대 [가리기] 단추로 끔 → 낱말 → 줄 순서로 바뀌어요. 가린 낱말을 누르면 그 줄이 보여요.'),
+      toggle('video.hideTypes.hard'), toggle('video.hideTypes.done'), toggle('video.hideTypes.other'),
+      slider('video.fontPct'), choice('video.slowRate', null, 'Z 키나 자막 막대 [느리게]로 1배와 이 속도를 오가요.'),
       h('h3', { class: 'sec', text: '화면' }), slider('opacityInput'), slider('opacityUi'), toggle('dimWhileReading', '메모할 때만 진해지고, 읽을 때는 설정한 투명도로 보여요.'),
       h('h3', { class: 'sec', text: '기타' }), toggle('allowCopy', '체크하지 않으면 복사할 때 주석 글자가 섞이지 않아요.'), toggle('selectionTranslate', '글을 드래그하면 맥 번역 카드가 떠요. 한 단어는 사전 카드로 열려요.'), choice('theme'), toggle('floatingButton.show', '숨겨도 브라우저 툴바의 readgloss 아이콘으로 패널을 열 수 있어요.'),
       h('h3', { class: 'sec', text: '끌 사이트' }), ...blockNodes,

@@ -19,13 +19,14 @@
     // 변경 기록 28-3: 느리게 재생 속도(slowRate, 0.5~0.9)
     // 변경 기록 28-6: 마우스를 올려도 영상은 멈추지 않는다(hoverPause 기본 false). 켜면 지금처럼 멈춘다.
     // 변경 기록 28-7: W 키보드 저장 모드(focusMode 기본 false)
-    video: { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false },
+    // 변경 기록 28-8: 리스닝 연습 가리기(hide: off·word·line, hideTypes: 어려운·복습 끝·나머지)
+    video: { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false },
     reviewMode: 'flip', // 복습 방식(27-4): 뒤집기 · 고르기 · 듣기
   });
   const ENUMS = {
     level: LEVELS, repeat: ['page', 'paragraph', 'always'], mark: ['none', 'color', 'underline', 'background'], theme: ['auto', 'light', 'dark'], glossary: ['auto', 'off'],
     position: ['top', 'none'], color: ['text', 'accent', 'custom'], weight: ['light', 'normal', 'bold'],
-    hide: ['off', 'hard', 'all'], reviewMode: ['flip', 'choice', 'listen'],
+    hide: ['off', 'word', 'line'], reviewMode: ['flip', 'choice', 'listen'],
   };
   const MAX_SITES = 200;
 
@@ -61,6 +62,13 @@
     const D = DEFAULTS, DA = D.annotation, DF = D.floatingButton, DV = D.video;
     const repeatLine = bool(v.repeatLine, DV.repeatLine);
     const pauseEach = repeatLine ? false : bool(v.pauseEach, DV.pauseEach); // 함께 켤 수 없다(28-1): 문장 반복이 이긴다
+    // 옛 가리기(28-8 이전): 'hard' → 낱말+어려운, 'all' → 줄+모든 유형. 새 값은 그대로 쓴다.
+    const oldHide = v.hide;
+    const hide = oldHide === 'hard' ? 'word' : oldHide === 'all' ? 'line' : pickEnum(oldHide, ENUMS.hide, DV.hide);
+    const rawTypes = oldHide === 'hard' ? { hard: true, done: false, other: false }
+      : oldHide === 'all' ? { hard: true, done: true, other: true }
+        : isObj(v.hideTypes) ? v.hideTypes : DV.hideTypes;
+    const hideTypes = { hard: bool(rawTypes.hard, DV.hideTypes.hard), done: bool(rawTypes.done, DV.hideTypes.done), other: bool(rawTypes.other, DV.hideTypes.other) };
     return {
       enabled: bool(r.enabled, D.enabled),
       level: pickEnum(r.level, LEVELS, D.level),
@@ -98,7 +106,8 @@
         hoverPause: bool(v.hoverPause, DV.hoverPause),
         autoCC: bool(v.autoCC, DV.autoCC),
         fontPct: num(v.fontPct, 60, 160, DV.fontPct),
-        hide: pickEnum(v.hide, ENUMS.hide, DV.hide),
+        hide,
+        hideTypes,
         pauseEach,
         repeatLine,
         skipGaps: bool(v.skipGaps, DV.skipGaps),

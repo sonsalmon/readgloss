@@ -315,13 +315,40 @@
     };
   }
 
-  // 가리기: 'off' | 'hard'(isHard 인 낱말) | 'all'(낱말 전부). 조각마다 가릴지.
-  const HIDE_MODES = ['off', 'hard', 'all'];
-  const HIDE_LABEL = { off: '끔', hard: '어려운 단어', all: '문장' };
-  function maskFlags(tokens, mode, isHard = () => false) {
-    return (Array.isArray(tokens) ? tokens : []).map((tk) => Boolean(tk?.w) && (mode === 'all' || (mode === 'hard' && isHard(tk.lower) === true)));
+  // 가리기(28-8): 'off' | 'word'(고른 유형 낱말만) | 'line'(고른 유형 낱말이 든 줄 통째로).
+  // 유형은 hard(어려운 낱말)·done(복습 끝난 낱말)·other(나머지). 조각마다 가릴지 돌려준다.
+  const HIDE_MODES = ['off', 'word', 'line'];
+  const HIDE_LABEL = { off: '끔', word: '낱말', line: '줄' };
+  const HIDE_TYPES = Object.freeze({ hard: true, done: false, other: false });
+  function hideTypes(raw) {
+    const r = isObj(raw) ? raw : {};
+    return {
+      hard: typeof r.hard === 'boolean' ? r.hard : HIDE_TYPES.hard,
+      done: typeof r.done === 'boolean' ? r.done : HIDE_TYPES.done,
+      other: typeof r.other === 'boolean' ? r.other : HIDE_TYPES.other,
+    };
+  }
+  // typeOf(낱말) -> 'hard'|'done'|'other'. 'line' 은 고른 유형이 하나라도 있으면 낱말 조각을 모두 가린다
+  // (사이의 글자·숫자는 그리는 쪽이 줄 전체를 보고 가린다).
+  function maskFlags(tokens, mode, typeOf = () => 'other', types) {
+    const list = Array.isArray(tokens) ? tokens : [];
+    if (mode !== 'word' && mode !== 'line') return list.map(() => false);
+    const pick = hideTypes(types);
+    const kind = typeof typeOf === 'function' ? typeOf : () => 'other';
+    const flags = list.map((tk) => Boolean(tk?.w) && pick[kind(tk.lower)] === true);
+    return mode === 'line' && flags.some(Boolean) ? list.map((tk) => Boolean(tk?.w)) : flags;
   }
   const nextHide = (mode) => HIDE_MODES[(HIDE_MODES.indexOf(mode) + 1) % HIDE_MODES.length] ?? 'off';
+
+  // 리스닝 드릴(28-8): Space 를 뗀 뒤 0.28초 안에 다시 누르면 재생/정지 토글, 그 밖에는 자막 보이기.
+  // now·lastUp 은 초. nextLastUp 은 누르기를 처리한 뒤의 뗀 시각이다(누르는 중이라 아직 없으므로 null).
+  const DRILL_DOUBLE = 0.28;
+  function drillSpace({ now, lastUp } = {}) {
+    const t = num(now);
+    const up = num(lastUp);
+    const quick = t !== null && up !== null && t >= up && t - up <= DRILL_DOUBLE;
+    return { action: quick ? 'toggle' : 'reveal', nextLastUp: null };
+  }
 
   // 느리게 재생(28-3): 0.5~0.9, 0.05 단위. 숫자가 아니면 기본 0.75.
   const SLOW_MIN = 0.5;
@@ -579,9 +606,9 @@
   const titleOf = (docTitle) => cleanText(String(docTitle ?? '').replace(/\s+-\s+YouTube$/, '').replace(/^\(\d+\)\s+/, '')).slice(0, MAX_TITLE);
 
   globalThis.readglossVideo = {
-    ID_RE, ASR, GRACE, MAX_CLIP, HIDE_MODES, HIDE_LABEL, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT,
+    ID_RE, ASR, GRACE, MAX_CLIP, HIDE_MODES, HIDE_LABEL, HIDE_TYPES, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT, DRILL_DOUBLE,
     params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseTrack,
-    langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, tooltipModel, maskFlags, nextHide, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
+    langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, tooltipModel, hideTypes, maskFlags, nextHide, drillSpace, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
     parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf,
   };
 })();
