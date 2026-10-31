@@ -709,10 +709,19 @@
     return Math.min(d, Math.max(0, (px / w) * d));
   }
 
+  // 자막 스타일(28-11): subType 에 따라 두 줄을 보일지, koAbove 면 한국어를 위에 둘지.
+  const SUB_TYPES = ['dual', 'en', 'ko', 'none'];
+  function subLayout({ subType, koAbove } = {}) {
+    const t = SUB_TYPES.includes(subType) ? subType : 'dual';
+    const showEn = t === 'dual' || t === 'en';
+    const showKo = t === 'dual' || t === 'ko';
+    return { showEn, showKo, order: koAbove === true ? ['ko', 'en'] : ['en', 'ko'] };
+  }
+
   globalThis.readglossVideo = {
     ID_RE, ASR, GRACE, MAX_CLIP, HIDE_MODES, HIDE_LABEL, HIDE_TYPES, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT, DRILL_DOUBLE,
     params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseTrack,
     langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, bandOf, minPFor, tokenColor, phraseSpans, tooltipModel, hideTypes, maskFlags, nextHide, drillSpace, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
-    parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf, barModel, xToTime,
+    parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf, barModel, xToTime, subLayout,
   };
 })();

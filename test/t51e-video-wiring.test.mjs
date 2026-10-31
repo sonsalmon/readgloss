@@ -108,28 +108,32 @@ test('content.js: 카드·확인 메시지는 전체 화면 요소 안에(mountR
 test('설정: video 기본값·범위, reviewMode', async () => {
   await import('../extension/settings-core.js');
   const S = globalThis.readglossSettings;
-  assert.deepEqual(S.DEFAULTS.video, { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false, wordBands: { easy: false, medium: true, hard: true }, idioms: true, barOrder: ['prev', 'repeat', 'next', 'repeatLine', 'loop', 'drill', 'pauseEach', 'skipGaps', 'slow', 'focusMode', 'hide', 'ko', 'save', 'explain'], barHidden: [] });
+  assert.deepEqual(S.DEFAULTS.video, { subs: true, subType: 'dual', koAbove: false, enFontPct: 100, koFontPct: 100, bgOpacity: 75, posY: 0, hard: true, hoverPause: false, autoCC: true, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false, wordBands: { easy: false, medium: true, hard: true }, idioms: true, barOrder: ['prev', 'repeat', 'next', 'repeatLine', 'loop', 'drill', 'pauseEach', 'skipGaps', 'slow', 'focusMode', 'hide', 'ko', 'save', 'explain'], barHidden: [] });
   assert.equal(S.DEFAULTS.reviewMode, 'flip');
   const n = S.normalize({ video: { fontPct: 999, hide: 'nope', ko: 'yes', pauseEach: true }, reviewMode: 'choice' });
-  assert.equal(n.video.fontPct, 160);
+  assert.equal(n.video.enFontPct, 160);
+  assert.equal(n.video.koFontPct, 160);
   assert.equal(n.video.hide, 'off');
-  assert.equal(n.video.ko, true);
+  assert.equal(n.video.subType, 'dual');
   assert.equal(n.video.pauseEach, true);
   assert.equal(n.reviewMode, 'choice');
   assert.equal(S.normalize({ reviewMode: 'quiz' }).reviewMode, 'flip');
   assert.equal(S.merge(S.normalize({}), { video: { hide: 'all' } }).video.subs, true, '한 칸만 바꿔도 나머지는 그대로');
 });
 
-test('패널 표: 영상 자막 켜기 6개·자막 크기·가리기, 자막 층을 눌러도 패널은 안 닫힌다', async () => {
+test('패널 표: 영상 자막 켜기 6개·크기 두 값·배경 진하기·가리기, 자막 층을 눌러도 패널은 안 닫힌다', async () => {
   await import('../extension/settings-core.js');
   await import('../extension/panel.js');
   const C = globalThis.readglossPanelCore;
-  for (const p of ['video.subs', 'video.ko', 'video.hard', 'video.hoverPause', 'video.autoCC', 'video.pauseEach']) assert.ok(C.TOGGLES.some((t) => t.path === p), p);
-  assert.deepEqual(C.RANGES.find((r) => r.path === 'video.fontPct'), { path: 'video.fontPct', min: 60, max: 160, step: 10 });
+  for (const p of ['video.subs', 'video.koAbove', 'video.hard', 'video.hoverPause', 'video.autoCC', 'video.pauseEach']) assert.ok(C.TOGGLES.some((t) => t.path === p), p);
+  assert.deepEqual(C.RANGES.find((r) => r.path === 'video.enFontPct'), { path: 'video.enFontPct', min: 60, max: 160, step: 10 });
+  assert.deepEqual(C.RANGES.find((r) => r.path === 'video.koFontPct'), { path: 'video.koFontPct', min: 60, max: 160, step: 10 });
+  assert.deepEqual(C.CHOICES.find((c) => c.path === 'video.bgOpacity').options.map(([v]) => v), [0, 25, 50, 75, 100]);
   assert.deepEqual(C.CHOICES.find((c) => c.path === 'video.hide').options.map(([v]) => v), ['off', 'word', 'line']);
   assert.equal(C.isCardPath([{ localName: 'readgloss-subs' }]), true);
   const src = read('panel.js');
   assert.match(src, /text: '영상 자막'/);
+  assert.match(src, /text: '자막 위치 조정'/);
 });
 
 test('video-subs.js 소스: 글은 textContent 로만, 플레이어 클릭 막기, 광고·CC·유튜브 자막 숨김, 사전 카드·풀이·번역·주석 요청', () => {

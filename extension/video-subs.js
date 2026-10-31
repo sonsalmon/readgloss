@@ -73,6 +73,7 @@
   let tipOpenTimer = 0;
   let tipCloseTimer = 0;
   let focusTimer = 0; // 키보드 저장 모드 자동 포커스 예약(28-7)
+  const adjust = { on: false, posY: 0 }; // 자막 위치 조정(28-11): 켜진 동안 임시 posY
 
   const bandsKey = (v) => `${v?.wordBands?.easy ? 1 : 0}${v?.wordBands?.medium ? 1 : 0}${v?.wordBands?.hard ? 1 : 0}`;
   function apply(s) {
@@ -464,10 +465,10 @@
        (파랑 한 겹은 흰 화면에서 2.6:1, 흰+검정 두 겹은 흰 화면에서 안쪽 검정만 남아 바탕이 굵어진 것처럼 보였다) */
     .lines:focus-visible { outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 2px rgba(8, 8, 8, .92), 0 0 0 6px rgba(8, 8, 8, .92); }
     .note { order: -2; } .msg { order: 1; } /* 화면 차례(풀이 → 두 줄 → 안내). 세로 막대는 position: fixed 라 흐름에 끼지 않는다 */
-    .en, .ko { box-sizing: border-box; max-width: 100%; padding: .08em .45em; border-radius: 4px; background: rgba(8, 8, 8, .74); color: #fff; text-align: center; line-height: 1.38; overflow-wrap: anywhere; }
-    .en { font-size: var(--fs, 22px); user-select: none; }
-    .ko { font-size: calc(var(--fs, 22px) * .82); color: #f1f1f1; }
-    .ko.err { color: #c9c9c9; font-size: calc(var(--fs, 22px) * .62); }
+    .en, .ko { box-sizing: border-box; max-width: 100%; padding: .08em .45em; border-radius: 4px; background: rgba(8, 8, 8, var(--bg, .74)); color: #fff; text-align: center; line-height: 1.38; overflow-wrap: anywhere; }
+    .en { font-size: var(--fs-en, var(--fs, 22px)); user-select: none; }
+    .ko { font-size: var(--fs-ko, var(--fs, 22px)); color: #f1f1f1; }
+    .ko.err { color: #c9c9c9; font-size: calc(var(--fs-ko, var(--fs, 22px)) * .76); }
     /* 지난 줄(다음 줄 전 빈 사이): 바탕은 그대로 두고 글자만 흐리게 — 밝은 화면 위에서도 읽힌다 */
     .lines.past .en, .lines.past .ko { color: rgba(255, 255, 255, .72); }
     .en:empty, .ko:empty { display: none; }
@@ -555,6 +556,11 @@
       background: rgba(8, 8, 8, .94); border: 1px solid rgba(255, 255, 255, .55); color: #fff; text-align: left;
       font: max(12px, calc(var(--fs, 22px) * .56))/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
     .drillnote .dt { margin-bottom: 8px; }
+    /* 자막 위치 조정(28-11): 자막 층 위 띠. 띠를 위아래로 끌면 임시 posY, [적용]으로 저장, [초기화]는 0 */
+    .adjust { order: -1; pointer-events: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 4px; padding: 4px 8px; border-radius: 999px;
+      background: rgba(8, 8, 8, .92); border: 1px solid rgba(255, 255, 255, .55); color: #fff; cursor: ns-resize; touch-action: none;
+      font: max(12px, calc(var(--fs, 22px) * .56))/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+    .adjust .ad-t { padding: 0 4px; }
     /* 안내만 뜰 때(우리 두 줄이 없을 때)는 유튜브 자막이 보일 수 있으니 그 자리 위로 올린다 */
     .box:has(.lines[hidden]) .msg { margin-bottom: max(3.4em, calc(var(--fs, 22px) * 3)); }
     .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -677,6 +683,46 @@
     drillPill.setAttribute('aria-label', '리스닝 드릴 문장 이동');
     const drillCount = el('span', 'dc');
     drillPill.append(button('‹ 이전 문장 A ·', '이전 문장 (A)', () => run('prev')), drillCount, button('· 다음 문장 D ›', '다음 문장 (D)', () => run('next')));
+    // 자막 위치 조정(28-11): 설정 탭 [자막 위치 조정] 이 연다. 띠를 끌면 임시로 올리고 [적용]으로 저장한다.
+    const adjustEl = el('div', 'adjust');
+    adjustEl.hidden = true;
+    adjustEl.setAttribute('role', 'group');
+    adjustEl.setAttribute('aria-label', '자막 위치 조정');
+    const adjustText = el('span', 'ad-t', '위아래로 끌어 옮기세요');
+    adjustEl.append(adjustText, button('적용', '자막 위치 저장', () => {
+      setVideo({ posY: adjust.posY });
+      adjust.on = false;
+      render();
+      layout();
+    }), button('초기화', '자막 위치 0으로', () => {
+      adjust.posY = 0;
+      setVideo({ posY: 0 });
+      adjust.on = false;
+      render();
+      layout();
+    }));
+    adjustEl.addEventListener('pointerdown', (e) => {
+      if (e.target.closest?.('button')) return;
+      if (e.button !== undefined && e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const startY = e.clientY;
+      const startPos = adjust.posY;
+      const height = player?.clientHeight || 360;
+      const move = (ev) => {
+        if (ev.cancelable) ev.preventDefault();
+        adjust.posY = Math.min(0, Math.max(-40, Math.round(startPos + ((ev.clientY - startY) / height) * 100)));
+        layout();
+      };
+      const end = () => {
+        window.removeEventListener('pointermove', move, true);
+        window.removeEventListener('pointerup', end, true);
+        window.removeEventListener('pointercancel', end, true);
+      };
+      window.addEventListener('pointermove', move, true);
+      window.addEventListener('pointerup', end, true);
+      window.addEventListener('pointercancel', end, true);
+    });
     const sr = el('div', 'sr'); // 키보드 낱말 자리를 읽어 주는 곳(화면에는 안 보인다)
     sr.setAttribute('aria-live', 'polite');
     // 낱말 말풍선(28-6): 자막 층 shadow 안에 그린다. 낱말 위(자리가 모자라면 아래)에 붙고 단추는 키보드로도 닿는다.
@@ -703,11 +749,13 @@
     box.append(lines, bar, note, msg);
     box.append(hint); // 안내 알약(28-7)은 화면 차례(order)로 두 줄 아래에 놓는다
     box.append(drillPill, drillNote); // 드릴 알약·안내도 order 로 자리를 잡는다
+    box.append(adjustEl); // 자막 위치 조정 띠(28-11)
     box.append(tipEl); // 말풍선은 position: fixed 라 흐름에 끼지 않는다
     box.append(rangeEl); // 구간 눈금도 fixed 라 흐름에 끼지 않는다
     shadow.append(style, box, sr);
     ui = {
       box, bar, note, notice, lines, en, ko, msg, hint, sr, tip: tipEl, drillPill, drillNote, drillCount,
+      adjust: adjustEl, adjustText,
       prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, slowBtn, drillBtn, focusBtn, koBtn, saveBtn, explainBtn,
       btns, barKey: '', range: rangeEl, rangeA, rangeB,
       lineKey: '', noteKey: '', tokens: [], wcur: -1, wcurFor: '',
@@ -1028,10 +1076,17 @@
   // 세로 막대(28-10)는 플레이어 왼쪽 가장자리 안, 위아래로 유튜브 조작 막대와 여백을 둔다. 전체 화면에서도 플레이어 rect 를 그대로 쓴다.
   function layout() {
     if (!host || !player) return;
-    host.style.setProperty('--fs', `${V.fontPx(player.clientHeight || 360, vs().fontPct)}px`);
+    const v = vs();
+    const height = player.clientHeight || 360;
+    host.style.setProperty('--fs', `${V.fontPx(height, v.enFontPct)}px`);
+    host.style.setProperty('--fs-en', `${V.fontPx(height, v.enFontPct)}px`);
+    host.style.setProperty('--fs-ko', `${V.fontPx(height, v.koFontPct)}px`);
+    const alpha = typeof v.bgOpacity === 'number' && Number.isFinite(v.bgOpacity) ? Math.min(100, Math.max(0, v.bgOpacity)) / 100 : 0.75;
+    host.style.setProperty('--bg', String(alpha));
     const chrome = player.querySelector('.ytp-chrome-bottom');
     const chromeH = chrome?.offsetHeight || 48;
-    host.style.bottom = `${chromeH + 14}px`;
+    const posY = Math.min(0, Math.max(-40, Number(adjust.on ? adjust.posY : v.posY) || 0));
+    host.style.bottom = `${chromeH + 14 + Math.round((Math.abs(posY) / 100) * height)}px`;
     if (ui?.bar) {
       const r = player.getBoundingClientRect();
       const topPad = Math.min(64, Math.max(20, Math.round((r.height || 360) * 0.16)));
@@ -1047,6 +1102,7 @@
   function render() {
     if (!host || !ui) return;
     const show = visible();
+    const lay = V.subLayout({ subType: vs().subType, koAbove: vs().koAbove });
     document.documentElement.toggleAttribute('data-readgloss-subs', show);
     if (show) ensurePageStyle();
     if (show !== S.shown) {
@@ -1063,7 +1119,8 @@
     ui.msg.hidden = !showMsg;
     if (ui.msg.textContent !== msg) ui.msg.textContent = msg;
     host.style.display = show || showMsg ? 'flex' : 'none';
-    ui.lines.hidden = !show;
+    ui.lines.hidden = !show || (!lay.showEn && !lay.showKo);
+    ui.adjust.hidden = !(show && adjust.on);
     renderBarOrder();
     ui.bar.hidden = !show || !ui.bar.childElementCount;
     ui.notice.hidden = !(show && !vs().keysNoticeSeen); // 처음 한 번만(알겠어요를 누르면 설정에 남는다)
@@ -1102,7 +1159,13 @@
     // 멈췄거나 자막 위에 마우스가 있거나 드릴 Space 로 보이는 동안에는 가리기를 잠깐 푼다(28-8).
     const hideOff = S.revealed === i || S.drillReveal || (v.hide !== 'off' && (Boolean(video?.paused) || S.hovering));
     const mode = hideOff ? 'off' : v.hide;
-    const key = cue ? [S.mainKey, i, mode, v.hard, v.ko, S.ko[i] ?? '', S.koErr, S.hardVer, S.savedVer, v.hideTypes?.hard, v.hideTypes?.done, v.hideTypes?.other, v.idioms].join('|') : '';
+    const lay = V.subLayout({ subType: v.subType, koAbove: v.koAbove });
+    ui.en.hidden = !lay.showEn;
+    ui.ko.hidden = !lay.showKo;
+    const orderOf = (k) => String(Math.max(0, lay.order.indexOf(k)));
+    ui.en.style.order = orderOf('en');
+    ui.ko.style.order = orderOf('ko');
+    const key = cue ? [S.mainKey, i, mode, v.hard, v.subType, v.koAbove, S.ko[i] ?? '', S.koErr, S.hardVer, S.savedVer, v.hideTypes?.hard, v.hideTypes?.done, v.hideTypes?.other, v.idioms].join('|') : '';
     if (key === ui.lineKey) return;
     ui.lineKey = key;
     const cursorFor = `${S.mainKey}|${i}`;
@@ -1163,7 +1226,7 @@
     }
     ui.tokens = toks;
     const koText = S.ko[i] || (S.koErr && !S.koFail.has(i) ? S.koErr : '');
-    ui.ko.textContent = v.ko ? koText : '';
+    ui.ko.textContent = lay.showKo ? koText : '';
     ui.ko.classList.toggle('err', !S.ko[i] && Boolean(koText));
     // 말풍선이 열려 있으면 다시 만든 낱말에 붙여 다시 그린다(저장 칠하기·어려운 단어가 바뀌어도 따라간다).
     if (tip.open) {
@@ -1224,7 +1287,7 @@
     ui.slowBtn.setAttribute('aria-pressed', String(Boolean(video && video.playbackRate !== 1))); // 지금 속도가 1 이 아님(28-3)
     ui.drillBtn.setAttribute('aria-pressed', String(S.drill));
     ui.focusBtn.setAttribute('aria-pressed', String(v.focusMode));
-    ui.koBtn.setAttribute('aria-pressed', String(v.ko));
+    ui.koBtn.setAttribute('aria-pressed', String(V.subLayout({ subType: v.subType, koAbove: v.koAbove }).showKo));
     const saved = cue ? Boolean(Sel.findPhrase(S.phrases, cue.text)) : false;
     showLabel(ui.saveBtn, saved ? 'on' : 'off', saved ? '이 줄 저장 빼기 (Shift)' : '이 줄 구·문장에 저장 (Shift)');
     ui.saveBtn.setAttribute('aria-pressed', String(saved));
@@ -1341,7 +1404,12 @@
     if (act === 'repeat') return goLine(Math.max(0, i));
     if (act === 'next') return goLine(Math.min(S.cues.length - 1, i + 1));
     if (act === 'hide') return setVideo({ hide: V.nextHide(vs().hide) });
-    if (act === 'ko') return setVideo({ ko: !vs().ko });
+    // [한]: 한국어 줄만 켜고 끈다. 영어 줄이 같이 보이면 subType dual/en, 한국어만 보이면 ko/none 으로 오간다.
+    if (act === 'ko') {
+      const v = vs();
+      const lay = V.subLayout({ subType: v.subType, koAbove: v.koAbove });
+      return setVideo({ subType: lay.showKo ? (lay.showEn ? 'en' : 'none') : (lay.showEn ? 'dual' : 'ko') });
+    }
     if (act === 'save') return saveLine(S.cur, anchorEl);
     if (act === 'explain') return explain(S.cur);
     if (act === 'pauseEach') return setVideo(vs().pauseEach ? { pauseEach: false } : { pauseEach: true, repeatLine: false });
@@ -1487,7 +1555,7 @@
   // ---- 한국어 줄(맥 번역): 한 번에 하나씩, 지금 줄 근처부터 ----
   // 지금 줄 근처는 한국어 줄이 보일 때만(층이 꺼졌거나 CC 를 껐으면 맥 번역을 부르지 않는다). [한국어 모두 보기]는 한국어 줄 설정과 상관없이 대본 전체를.
   async function pumpKo() {
-    if (S.koBusy || !S.cues.length || !S.id || !(S.koAll || (vs().ko && visible()))) return;
+    if (S.koBusy || !S.cues.length || !S.id || !(S.koAll || (V.subLayout({ subType: vs().subType, koAbove: vs().koAbove }).showKo && visible()))) return;
     if (S.koErr) {
       if (Date.now() - S.koErrAt < ERR_PAUSE_MS) return;
       S.koErr = '';
@@ -1575,6 +1643,14 @@
   window.addEventListener('readgloss:words', () => {
     clearTimeout(savedTimer);
     savedTimer = setTimeout(() => S.id && loadSaved(), 300);
+  });
+  // 설정 탭 [자막 위치 조정](28-11): 자막 층에 끌어 옮기는 띠를 연다.
+  window.addEventListener('readgloss:subs-adjust', () => {
+    if (!ui) return;
+    adjust.on = true;
+    adjust.posY = vs().posY;
+    render();
+    layout();
   });
 
   // ---- 장면 재생(복습 27-4) ----

@@ -48,7 +48,8 @@
     { path: 'annotation.liftEm', min: -10, max: 6, step: 1, to: (v) => Math.round(v / 0.05), from: (n) => Math.round(n * 5) / 100 },
     { path: 'opacityInput', min: 40, max: 100, step: 5 },
     { path: 'opacityUi', min: 40, max: 100, step: 5 },
-    { path: 'video.fontPct', min: 60, max: 160, step: 10 },
+    { path: 'video.enFontPct', min: 60, max: 160, step: 10 },
+    { path: 'video.koFontPct', min: 60, max: 160, step: 10 },
   ];
   const CHOICES = [
     { path: 'repeat', options: [['page', '페이지에서 한 번'], ['paragraph', '문단마다 첫 등장'], ['always', '매번']] },
@@ -58,11 +59,13 @@
     { path: 'mark', options: [['none', '없음'], ['color', '글자색'], ['underline', '점선 밑줄'], ['background', '옅은 배경']] },
     { path: 'theme', options: [['auto', '자동'], ['light', '밝게'], ['dark', '어둡게']] },
     { path: 'glossary', options: [['auto', '자동'], ['off', '끄기']] },
+    { path: 'video.subType', options: [['dual', '둘 다'], ['en', '영어만'], ['ko', '한국어만'], ['none', '안 보이기']] },
+    { path: 'video.bgOpacity', options: [[0, '없음'], [25, '옅게'], [50, '절반'], [75, '진하게'], [100, '가득']] },
     { path: 'video.hide', options: [['off', '끔'], ['word', '낱말'], ['line', '줄']] },
     { path: 'video.slowRate', options: [[0.5, '0.5배'], [0.6, '0.6배'], [0.7, '0.7배'], [0.75, '0.75배'], [0.8, '0.8배'], [0.9, '0.9배']] },
   ];
   const TOGGLES = [{ path: 'enabled' }, { path: 'selectionTranslate' }, { path: 'floatingButton.show' }, { path: 'dimWhileReading' }, { path: 'structureHints' }, { path: 'savedMarks' },
-    { path: 'video.subs' }, { path: 'video.ko' }, { path: 'video.hard' }, { path: 'video.hoverPause' }, { path: 'video.autoCC' }, { path: 'video.pauseEach' },
+    { path: 'video.subs' }, { path: 'video.koAbove' }, { path: 'video.hard' }, { path: 'video.hoverPause' }, { path: 'video.autoCC' }, { path: 'video.pauseEach' },
     { path: 'video.wordBands.easy' }, { path: 'video.wordBands.medium' }, { path: 'video.wordBands.hard' }, { path: 'video.idioms' },
     { path: 'video.hideTypes.hard' }, { path: 'video.hideTypes.done' }, { path: 'video.hideTypes.other' }];
 
@@ -696,7 +699,9 @@
     'annotation.liftEm': (n) => `${(n * 5) / 100}em`,
     opacityInput: (n) => `${n}%`,
     opacityUi: (n) => `${n}%`,
-    'video.fontPct': (n) => `${n}%`,
+    'video.enFontPct': (n) => `${n}%`,
+    'video.koFontPct': (n) => `${n}%`,
+    'video.bgOpacity': (n) => `${n}%`,
   };
   const LABEL = {
     level: '수준', maxPerParagraph: '문단당 최대', repeat: '반복', 'annotation.position': '위치', 'annotation.sizePct': '크기',
@@ -705,8 +710,9 @@
     opacityInput: '입력 칸 투명도', opacityUi: '나머지 투명도', dimWhileReading: '읽는 동안 흐리게',
     structureHints: '문장 구조 표시',
     savedMarks: '단어장 단어 칠하기',
-    'video.subs': '유튜브 자막 층 켜기', 'video.ko': '한국어 줄 보이기', 'video.hard': '어려운 단어 칠하기', 'video.hoverPause': '자막에 마우스를 올리면 잠깐 멈춤',
-    'video.autoCC': '자막이 꺼져 있으면 켜기', 'video.pauseEach': '줄마다 멈춤', 'video.hide': '가리기(듣기 연습)', 'video.fontPct': '자막 크기', 'video.slowRate': '느리게 속도',
+    'video.subs': '유튜브 자막 층 켜기', 'video.subType': '자막 유형', 'video.koAbove': '한국어 위로', 'video.enFontPct': '영어 크기', 'video.koFontPct': '한국어 크기', 'video.bgOpacity': '배경 진하기',
+    'video.hard': '어려운 단어 칠하기', 'video.hoverPause': '자막에 마우스를 올리면 잠깐 멈춤',
+    'video.autoCC': '자막이 꺼져 있으면 켜기', 'video.pauseEach': '줄마다 멈춤', 'video.hide': '가리기(듣기 연습)', 'video.slowRate': '느리게 속도',
     'video.wordBands.easy': '칠하기 — 단어 쉬움', 'video.wordBands.medium': '칠하기 — 단어 보통', 'video.wordBands.hard': '칠하기 — 단어 어려움', 'video.idioms': '칠하기 — 숙어',
     'video.hideTypes.hard': '어려운 낱말 가리기', 'video.hideTypes.done': '복습 끝난 낱말 가리기', 'video.hideTypes.other': '그 밖의 낱말 가리기',
   };
@@ -881,6 +887,15 @@
       target?.focus();
     });
 
+    // 자막 위치 조정(28-11): 자막 층에 끌어 옮기는 띠를 열게 window 이벤트만 보낸다.
+    const adjustRow = h('div', { class: 'row' },
+      h('div', { class: 'rowhead', text: '자막 위치' }),
+      h('button', {
+        class: 'btn', type: 'button', text: '자막 위치 조정',
+        onclick: () => window.dispatchEvent(new CustomEvent('readgloss:subs-adjust')),
+      }),
+      h('p', { class: 'hint', text: '영상 위 자막을 위아래로 끌어 옮긴 뒤 [적용]을 눌러요.' }));
+
     // 기본값 복원: 한 번 더 눌러야 한다. 끌 사이트 목록은 남기고, 용어집을 켤 사이트는 기본 목록으로.
     let armed = 0;
     const resetBtn = h('button', { class: 'btn', type: 'button', text: '기본값 복원' });
@@ -966,10 +981,11 @@
       h('h3', { class: 'sec', text: '내게 맞추기' }), autoRow, offsetRow, statsHint, adaptiveMsg,
       h('h3', { class: 'sec', text: '단어 표시' }), choice('mark'),
       h('h3', { class: 'sec', text: '영상 자막' }), toggle('video.subs', '유튜브 영상에서 영어·한국어 두 줄 자막. 유튜브 자막(CC) 단추로 켜고 꺼요. 낱말을 누르면 사전 카드.'),
-      toggle('video.ko', '맥 번역(무료)이에요. 자막 위 [풀이]는 AI 문맥 번역.'), toggle('video.hard'), toggle('video.hoverPause'), toggle('video.autoCC', '영상마다 한 번 CC 단추를 눌러요.'),
+      choice('video.subType', null, '자막 층에 보일 줄을 골라요. 안 보이기는 자막 줄만 숨기고 막대·키는 남겨요.'),
+      toggle('video.koAbove', '맥 번역(무료)이에요. 자막 위 [풀이]는 AI 문맥 번역. 켜면 한국어 줄이 영어 줄 위로 가요.'), toggle('video.hard'), toggle('video.hoverPause'), toggle('video.autoCC', '영상마다 한 번 CC 단추를 눌러요.'),
       toggle('video.pauseEach', 'P 키로도 바꿔요. A 앞 줄 · S 이 줄 다시 · D 다음 줄.'), choice('video.hide', null, '막대 [가리기] 단추로 끔 → 낱말 → 줄 순서로 바뀌어요. 가린 낱말을 누르면 그 줄이 보여요.'),
       toggle('video.hideTypes.hard'), toggle('video.hideTypes.done'), toggle('video.hideTypes.other'),
-      slider('video.fontPct'), choice('video.slowRate', null, 'Z 키나 자막 막대 [느리게]로 1배와 이 속도를 오가요.'),
+      slider('video.enFontPct'), slider('video.koFontPct'), choice('video.bgOpacity'), adjustRow, choice('video.slowRate', null, 'Z 키나 자막 막대 [느리게]로 1배와 이 속도를 오가요.'),
       toggle('video.wordBands.easy'), toggle('video.wordBands.medium'), toggle('video.wordBands.hard'), toggle('video.idioms', '저장한 짧은 구(8낱말 이하)를 한 덩어리로 칠해요.'),
       barEditor,
       h('h3', { class: 'sec', text: '화면' }), slider('opacityInput'), slider('opacityUi'), toggle('dimWhileReading', '메모할 때만 진해지고, 읽을 때는 설정한 투명도로 보여요.'),

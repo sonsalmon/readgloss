@@ -5,6 +5,8 @@
   const LEVELS = ['A2', 'B1', 'B2', 'C1', 'C2'];
   // 세로 컨트롤 막대(28-10): 기본 순서와 저장값이 받는 이름. video-core.barModel 이 이 순서를 바탕으로 그린다.
   const BAR_NAMES = Object.freeze(['prev', 'repeat', 'next', 'repeatLine', 'loop', 'drill', 'pauseEach', 'skipGaps', 'slow', 'focusMode', 'hide', 'ko', 'save', 'explain']);
+  // 자막 줄 구성(28-11): 둘 다 · 영어만 · 한국어만 · 안 보이기
+  const SUB_TYPES = ['dual', 'en', 'ko', 'none'];
   const DEFAULTS = Object.freeze({
     enabled: true, level: 'C1', maxPerParagraph: 3, repeat: 'page',
     annotation: { position: 'top', sizePct: 55, color: 'text', customColor: '#2f6feb', opacityPct: 70, weight: 'normal', gapEm: 0, liftEm: -0.15 },
@@ -24,7 +26,8 @@
     // 변경 기록 28-8: 리스닝 연습 가리기(hide: off·word·line, hideTypes: 어려운·복습 끝·나머지)
     // 변경 기록 28-9: 칠하기 구간(wordBands: 쉬움·보통·어려움, 기본 보통 이상)과 숙어 덩어리(idioms)
     // 변경 기록 28-10: 세로 막대 단추 순서(barOrder)와 숨긴 단추(barHidden)
-    video: { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false, wordBands: { easy: false, medium: true, hard: true }, idioms: true, barOrder: BAR_NAMES, barHidden: [] },
+    // 변경 기록 28-11: 자막 유형(subType)·한국어 위로(koAbove)·영어/한국어 크기(enFontPct·koFontPct)·배경 진하기(bgOpacity)·위치(posY)
+    video: { subs: true, subType: 'dual', koAbove: false, enFontPct: 100, koFontPct: 100, bgOpacity: 75, posY: 0, hard: true, hoverPause: false, autoCC: true, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false, wordBands: { easy: false, medium: true, hard: true }, idioms: true, barOrder: BAR_NAMES, barHidden: [] },
     reviewMode: 'flip', // 복습 방식(27-4): 뒤집기 · 고르기 · 듣기
   });
   const ENUMS = {
@@ -53,6 +56,12 @@
     if (typeof v !== 'number' || !Number.isFinite(v)) return def;
     const c = Math.min(max, Math.max(min, v));
     return int ? Math.round(c) : Math.round(c * 1000) / 1000;
+  };
+  // 10 단위처럼 정해진 칸으로 맞춘다(범위 밖은 가장 가까운 허용값).
+  const stepNum = (v, min, max, step, def) => {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return def;
+    const c = Math.min(max, Math.max(min, v));
+    return Math.min(max, Math.max(min, Math.round(c / step) * step));
   };
 
   // 사이트 목록 정리: 문자열만, trim·소문자·중복 제거, 최대 200개
@@ -83,6 +92,9 @@
     const hideTypes = { hard: bool(rawTypes.hard, DV.hideTypes.hard), done: bool(rawTypes.done, DV.hideTypes.done), other: bool(rawTypes.other, DV.hideTypes.other) };
     const rawBands = isObj(v.wordBands) ? v.wordBands : DV.wordBands;
     const wordBands = { easy: bool(rawBands.easy, DV.wordBands.easy), medium: bool(rawBands.medium, DV.wordBands.medium), hard: bool(rawBands.hard, DV.wordBands.hard) };
+    // 28-11 옛 값 옮기기: fontPct 는 두 크기로, ko=false 는 subType 'en' 으로. 새 값이 있으면 그쪽이 이긴다.
+    const legacyFont = typeof v.fontPct === 'number' && Number.isFinite(v.fontPct) ? v.fontPct : undefined;
+    const legacySub = v.ko === false ? 'en' : DV.subType;
     return {
       enabled: bool(r.enabled, D.enabled),
       level: pickEnum(r.level, LEVELS, D.level),
@@ -115,11 +127,15 @@
       savedMarks: bool(r.savedMarks, D.savedMarks),
       video: {
         subs: bool(v.subs, DV.subs),
-        ko: bool(v.ko, DV.ko),
+        subType: pickEnum(v.subType, SUB_TYPES, legacySub),
+        koAbove: bool(v.koAbove, DV.koAbove),
+        enFontPct: stepNum(v.enFontPct ?? legacyFont, 60, 160, 10, DV.enFontPct),
+        koFontPct: stepNum(v.koFontPct ?? legacyFont, 60, 160, 10, DV.koFontPct),
+        bgOpacity: typeof v.bgOpacity === 'number' && Number.isFinite(v.bgOpacity) ? Math.min(100, Math.max(0, Math.round(v.bgOpacity / 25) * 25)) : DV.bgOpacity,
+        posY: num(v.posY, -40, 0, DV.posY),
         hard: bool(v.hard, DV.hard),
         hoverPause: bool(v.hoverPause, DV.hoverPause),
         autoCC: bool(v.autoCC, DV.autoCC),
-        fontPct: num(v.fontPct, 60, 160, DV.fontPct),
         hide,
         hideTypes,
         pauseEach,

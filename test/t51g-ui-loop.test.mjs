@@ -165,7 +165,7 @@ test('코드 검토 2·3·5·6·12·13: 저장 값 미리 잡기, 누르는 중 
   assert.match(src, /window\.addEventListener\('pointerdown', \(e\) => \{ if \(e\.isTrusted\) pressing = true; \}, true\);/);
   assert.match(src, /if \(pressing && Date\.now\(\) < until\) return void setTimeout/);
   assert.match(src, /const reached = t < S\.clip\.end \+ 1;[\s\S]{0,140}if \(reached\) video\.pause\(\);/);
-  assert.match(src, /!\(S\.koAll \|\| \(vs\(\)\.ko && visible\(\)\)\)/, '[한국어 모두 보기]는 한국어 줄 설정과 상관없이, 근처 줄은 보일 때만');
+  assert.match(src, /!\(S\.koAll \|\| \(V\.subLayout\(\{[^}]*\}\)\.showKo && visible\(\)\)\)/, '[한국어 모두 보기]는 한국어 줄 설정과 상관없이, 근처 줄은 보일 때만');
   assert.match(src, /!visible\(\) \|\| S\.annotBusy/);
   assert.match(src, /if \(S\.ad && !ad\) S\.waitSince = Date\.now\(\);/);
   assert.match(src, /if \(!e\.isTrusted\) return; \/\/ 페이지 스크립트가 만든 키/);
