@@ -116,6 +116,45 @@
 - 답 아래 [메모장에 인용] 은 글 읽기에서만(지금 인용 흐름).
 - 다리: 문맥 번역과 같은 claude 클라이언트, 시스템 문구 "질문에 한국어로 1~3문장, 질문을 되풀이하지 말 것". 시험은 가짜 AI.
 
+### 28-19. 여러 유형 모두 맞혀야 복습 완료 (T53m)
+- review 상태에 `passed`(맞힌 유형 이름 배열: 'flip'|'choice'|'listen'|'type') 더하기. 결과 'know' 를 보낼 때 확장이 `mode` 를 함께 보내면 다리는 passed 에 더한다. 상자 5 에서 know 일 때, passed 가 그 카드에 쓸 수 있는 유형을 모두 덮었을 때만 done(아니면 상자 5 에 머물고 다음 날 남은 유형으로). 쓸 수 있는 유형: 뒤집기·듣기는 늘, 고르기는 보기를 만들 수 있을 때, 빈칸 타이핑은 예문 문장이 있을 때(낱말) 또는 base 가 있을 때(구).
+- 다리 계약은 더하기만: mode 없이 오면 지금처럼(영어 튜터 호환).
+- 복습 카드에 마지막 학습 배지: "N일 전 학습"(review.last 기준, 오늘이면 "오늘").
+- 복습 끝난 표현은 자막·대본에서 초록(28-9).
+- 순수 함수(bridge/review.mjs): `availableModes(card)`, `applyReview(state, result, today, { mode, modes })`.
+
+### 28-20. 대화 + 빈칸 타이핑 복습 (T53n, R5 합침)
+- 복습 방식에 [빈칸] 추가(reviewMode 'type'). 카드 앞면: 짧은 두 사람 대화 2~3줄(영어 + 한국어, 말풍선) → 한국어 문장(표현 부분 초록) → 영어 새 예문의 빈칸 입력칸 + 뜻 칩 + [힌트](첫 글자) + [장면 듣기].
+- 대화·예문은 다리 `POST /review/drill { key, lemma|text, gloss, sentence }` 가 AI 로 한 번 만들어 `{ dialogue:[{en,ko}], ko, en, answer }` 를 캐시(카드 key 별). 실패하면 그 카드는 저장 문장 빈칸(지금 가리기)로 대신.
+- 판정(R5): 원형·저장 표면형 둘 다 정답, 대소문자·앞뒤 공백 무시 · 네 글자 이상에서 한 글자 차이 = "거의 맞음"(결과 'hold' = 상자·날짜 그대로, 다리 결과 값 더하기) · 틀리면 첫 글자 보이고 한 번 더 · 두 번째도 틀리면 'again'. 맞음 = 'know'(mode:'type').
+- 순수 함수: `judgeTyped(input, answers)` → 'ok'|'almost'|'wrong'.
+- 비용 4줄(정범 승인 10-31): 새 카드마다 AI 1번(구독 한도), 캐시로 다시 안 부름.
+
+### 28-21. 오늘의 복습 입구 (T53o)
+- 패널 맨 위(모든 탭 위) 한 줄 "오늘의 복습 N장 · 완료 M%" — 누르면 [내 단어] 탭 복습으로. 0장이면 "오늘 복습 끝".
+- 툴바 아이콘 배지(R3): background.js 가 페이지 열림·복습 결과 뒤 counts.due 를 읽어 숫자(0 이면 지움, 100 이상 "99+"). 새 권한 없음.
+- "N개만 더" 붙잡기는 넣지 않는다.
+
+### 28-22. 넷플릭스 연결 (T53p)
+- 사이트 어댑터: video-subs.js 의 유튜브 전용 부분(플레이어 찾기, 영상 요소, 광고 표시, 자막 단추, 원래 자막 숨김 CSS, 막대 자리, 페이지 이동 이벤트, 영상 id)을 `adapter` 객체 하나로 모으고(유튜브 어댑터 = 지금 동작 그대로), 넷플릭스 어댑터를 더한다.
+- 넷플릭스 MAIN 월드 스크립트 `nf-hook.js`(document_start, netflix.com/watch/*): ① `JSON.parse` 를 감싸 응답의 `result.timedtexttracks[].ttDownloadables["imsc1.1"].urls[0].url` 과 언어(bcp47)를 모아 `postMessage({source:'readgloss-nf', type:'tracks', tracks})` ② 플레이어 API(`netflix.appContext.state.playerApp.getAPI().videoPlayer`, 세션 id 중 'watch' 든 것)로 seek(ms)·play·pause·getCurrentTime 을 postMessage 로 받는다 — 넷플릭스는 video.currentTime 을 직접 바꾸면 멈추므로 이동은 반드시 이것으로.
+- 자막: 확장이 영어·한국어 IMSC XML 주소를 받아(같은 출처 fetch) `parseImsc(xml)` 순수 함수로 줄(초)로. 시각 단위 tickRate 를 읽는다(기본 1천만).
+- 광고: `[data-uia="ads-info-container"]` 등 세 표시. 영상 id = 주소 /watch/<숫자>. 장면 주소 = `https://www.netflix.com/watch/<id>?t=<초>`.
+- manifest: content_scripts 에 netflix MAIN 월드 스크립트 추가. 권한은 늘리지 않는다(같은 출처 fetch).
+- 실제 넷플릭스 확인은 정범 몫(이 환경 e2e 없음). 시험: parseImsc·어댑터 선택·장면 주소 단위 시험, 가짜 postMessage 로 hook 경로 시험.
+
+### 28-23. 로컬 연습 페이지 (T53q)
+- 다리가 `GET /practice` 로 정적 페이지 하나(자체 HTML·JS, 외부 파일 없음)를 낸다. 토큰 검사 예외는 이 페이지만, 페이지 안 요청은 지금 토큰 규칙.
+- 페이지: 영상·소리 파일(내 컴퓨터에서 고르기, 올리지 않고 브라우저에서 바로 재생) + 자막 파일(SRT·VTT·넷플릭스 IMSC XML) 고르기 → 같은 자막 층·키·패널 동작. 예제 대사 하나(자체 작성, 소리 없이 대본만)로 바로 써 보기.
+- 확장이 이 페이지를 "로컬 어댑터"로 인식(주소 127.0.0.1:47831/practice).
+- 파서: `parseSrt`, `parseVtt`(지금 것 재사용), `parseImsc`(28-22).
+
+### 28-24. 단어장 내보내기 (T53x)
+- `npm run export:anki -- [--out 파일]` 과 패널 [내보내기]: CSV(단어·뜻·문장·장면 링크) / Anki 가져오기용 탭 구분 텍스트(앞면 = 빈칸 문장, 뒷면 = 단어·뜻·장면 링크). 다리 `GET /words/export?format=csv|anki`.
+
+### 28-25. 클론 폴더 정리 (T53s)
+- 코드 아님. 정범 맥 `~/dev/langflix-clone/HANDOFF.md` 인계 기록에 "readgloss 로 합침(커밋 …)" 한 줄. 폴더는 지우지 않는다.
+
 ## 변경 기록 27 (2026-10-26, 정범 요청 "랭플릭스 보고 요구사항 분석해서 구현") — 유튜브 영상 인풋: 이중자막 층 + 복습 방식
 
 정범 정리: 영어 튜터(english-tutor)는 아웃풋(말하기·쓰기)용, readgloss는 인풋(읽기·듣기)용. 랭플릭스에서 **인풋 고리**만 가져온다. 정찰 지도·기능 표는 `replica/recon.md`·`replica/features.csv`, 짜임새는 `replica/architecture.md`. 랭플릭스 코드·내부 주소는 보지 않는다(22절과 같은 원칙).
