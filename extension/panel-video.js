@@ -159,6 +159,13 @@
     .rgv .v-fchip:hover { border-color: var(--v-accent); background: var(--v-soft); }
     .rgv .v-fchip[aria-pressed="true"] { background: var(--v-soft); border-color: var(--v-accent); color: var(--v-ink); font-weight: 600; }
     .rgv .v-hard { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
+    /* 1분 라운드(28-14): 맨 위 라운드 줄과, 라운드가 끝났을 때의 어려운 낱말 칩 줄 */
+    .rgv .v-rounds { margin: 2px 0 10px; }
+    .rgv .v-roundline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 7px; border: 1px solid transparent; }
+    .rgv .v-roundline.v-live { background: var(--v-soft); border-color: var(--v-accent); }
+    .rgv .v-roundtext { font-size: 12.5px; font-variant-numeric: tabular-nums; }
+    .rgv .v-roundline .v-act { min-height: 26px; padding: 2px 9px; }
+    .rgv .v-roundchips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
     .rgv .v-chip { min-height: 26px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--v-border); font-size: 12.5px; text-align: left; }
     .rgv .v-chip:hover { border-color: var(--v-accent); background: var(--v-soft); }
     .rgv .v-chip .v-g { color: var(--v-muted); }
@@ -242,6 +249,23 @@
     const titleEl = el('div', 'v-title');
     const infoEl = el('div', 'v-info'); // 줄마다 바뀌는 번역 진행은 여기 말고 [한국어] 단추에(읽어 주기가 줄마다 울리지 않게)
 
+    // 1분 라운드(28-14): [영상] 탭 맨 위. 지금 재생 위치가 든 라운드를 강조하고 [‹] [보기] [›]로 고른다.
+    const roundBox = el('div', 'v-rounds');
+    roundBox.hidden = true;
+    const roundLine = el('div', 'v-roundline');
+    roundLine.setAttribute('role', 'group');
+    roundLine.setAttribute('aria-label', '1분 라운드');
+    const roundText = el('span', 'v-roundtext');
+    const roundPrev = btn('‹', '이전 라운드', () => stepRound(-1), 'v-act');
+    const roundPlay = btn('보기', '이 라운드 재생', () => playShownRound(), 'v-act');
+    const roundNext = btn('›', '다음 라운드', () => stepRound(1), 'v-act');
+    roundLine.append(roundText, roundPrev, roundPlay, roundNext);
+    const roundChips = el('div', 'v-roundchips');
+    roundChips.hidden = true;
+    roundChips.setAttribute('role', 'group');
+    roundChips.setAttribute('aria-label', '라운드 어려운 단어');
+    roundBox.append(roundLine, roundChips);
+
     // 작은 탭 셋(28-12): 고른 탭은 설정에 남기지 않고 이 그리기(패널을 닫을 때까지) 안에서만 기억한다.
     const subtabs = el('div', 'v-subtabs');
     subtabs.setAttribute('role', 'tablist');
@@ -317,7 +341,7 @@
     explainBody.setAttribute('role', 'status');
     explainPane.append(explainBody);
 
-    root.append(style, titleEl, infoEl, subtabs, scriptPane, exprPane, explainPane);
+    root.append(style, titleEl, infoEl, roundBox, subtabs, scriptPane, exprPane, explainPane);
     container.replaceChildren(root);
 
     let rows = []; // 줄마다 { li, ko, star, flags }
@@ -330,6 +354,9 @@
     let small = 'script'; // 지금 고른 작은 탭
     let scriptFilter = 'all';
     let exprFilter = 'all';
+    let roundChoice = null; // [‹] [›]로 고른 라운드(없으면 지금 재생 위치가 든 라운드)
+    let roundShown = 0;
+    let roundLive = -1; // 앞 그리기의 지금 라운드(재생이 다른 라운드로 넘어가면 고른 것을 놓는다)
     let expanded = new Set(); // 펼친 표현 열쇠(`${type}:${key}`)
     let explain = { i: -1, state: 'idle', data: null, error: '', busy: false };
     const ui = () => globalThis.readglossVideoUi;
@@ -371,6 +398,86 @@
       selectSmall(SMALL_TABS[(to + SMALL_TABS.length) % SMALL_TABS.length].id);
       subtabBtn[small].focus();
     });
+
+    // ---- 1분 라운드(28-14) ----
+    // 지금 재생 위치(줄 번호)가 든 라운드. 없으면 -1.
+    const currentRoundOf = (list, cur) => {
+      if (!Number.isInteger(cur) || cur < 0) return -1;
+      return list.findIndex((r) => cur >= r.from && cur <= r.to);
+    };
+    // 그 라운드 안 어려운 낱말(원형마다 하나). first 는 대본 줄 번호로 옮긴다.
+    const roundWords = (st, r) => {
+      const slice = (st?.cues ?? []).slice(r.from, r.to + 1);
+      return V.previewWords(slice, st?.hard ?? new Map()).map((w) => ({ ...w, first: w.first + r.from }));
+    };
+    function stepRound(d) {
+      const list = ui()?.rounds?.() ?? [];
+      if (!list.length) return;
+      roundChoice = Math.min(list.length - 1, Math.max(0, roundShown + d));
+      paintRounds();
+    }
+    function playShownRound() {
+      if (ui()?.playRound?.(roundShown)) {
+        roundChoice = roundShown;
+        paintRounds();
+      }
+    }
+    function paintRoundChips(st, list) {
+      const state = ui()?.round?.();
+      const r = state?.ended === true ? list[state.index] : null;
+      roundChips.hidden = !r;
+      if (!r) {
+        roundChips.replaceChildren();
+        return;
+      }
+      const words = roundWords(st, r);
+      const kids = [el('span', 'v-status', `라운드 ${state.index + 1} 끝`)];
+      for (const w of words) {
+        const b = btn('', `${w.word} ${w.gloss || ''}, 그 줄로`, () => ui()?.seek(w.first), 'v-chip');
+        b.append(`${w.word} `, el('span', 'v-g', w.gloss || '뜻 없음'));
+        kids.push(b);
+      }
+      if (!words.length) kids.push(el('span', 'v-status', '어려운 단어가 없어요'));
+      if (state.index + 1 < list.length) {
+        kids.push(btn('다음 라운드', '다음 라운드 재생', () => {
+          roundChoice = state.index + 1;
+          if (ui()?.playRound?.(state.index + 1)) paintRoundChips(st, list);
+        }));
+      } else {
+        kids.push(el('span', 'v-status', '마지막 라운드예요'));
+      }
+      roundChips.replaceChildren(...kids);
+    }
+    function paintRounds() {
+      const st = ui()?.state();
+      const list = ui()?.rounds?.() ?? [];
+      if (!st?.id || !list.length) {
+        roundBox.hidden = true;
+        roundChips.hidden = true;
+        roundChips.replaceChildren();
+        return;
+      }
+      roundBox.hidden = false;
+      const live = currentRoundOf(list, st.cur ?? -1);
+      // 재생이 다른 라운드로 넘어가면 [‹] [›]로 고른 것을 놓고 지금 라운드를 따라간다.
+      if (live !== roundLive) {
+        roundLive = live;
+        if (live >= 0) roundChoice = null;
+      }
+      roundShown = Math.min(list.length - 1, Math.max(0, roundChoice ?? (live >= 0 ? live : 0)));
+      const r = list[roundShown];
+      const hard = roundWords(st, r).length;
+      roundText.textContent = `${roundShown + 1} / ${list.length} · ${V.fmtTime(r.start)}–${V.fmtTime(r.end)} · 어려운 단어 ${hard}`;
+      roundPrev.disabled = roundShown <= 0;
+      roundNext.disabled = roundShown >= list.length - 1;
+      const isLive = roundShown === live;
+      roundLine.classList.toggle('v-live', isLive);
+      if (isLive) roundLine.setAttribute('aria-current', 'true');
+      else roundLine.removeAttribute('aria-current');
+      const active = ui()?.round?.();
+      roundPlay.setAttribute('aria-pressed', String(Boolean(active && active.ended !== true && active.index === roundShown)));
+      paintRoundChips(st, list);
+    }
 
     function paintScriptFilters() {
       for (const f of PANEL_FILTERS) scriptFilterBtn[f.id].setAttribute('aria-pressed', String(f.id === scriptFilter));
@@ -690,6 +797,7 @@
       }
       build();
       paintHead();
+      paintRounds();
       paintScriptFilters();
       paintExprFilters();
       if (small === 'expressions') paintExpressions();
@@ -718,17 +826,23 @@
         build();
         applyScriptFilter();
         if (hardOpen) paintHard();
+        paintRounds();
         return;
       }
       if (what === 'cur') {
         follow();
+        paintRounds(); // 지금 재생 위치가 든 라운드를 강조한다(28-14)
         if (small === 'explain') paintExplain(); // 줄이 바뀌면 [이 줄 풀이]로 알린다(자동으로 AI 를 부르지 않는다)
         return;
       }
+      if (what === 'round') return paintRounds();
       if (what === 'koAll' || what === 'message') return paintHead();
       if (what === 'page') {
         explain = { i: -1, state: 'idle', data: null, error: '', busy: false };
         expanded = new Set();
+        roundChoice = null;
+        roundShown = 0;
+        roundLive = -1;
         hardOpen = false; // 새 영상의 어려운 단어 칩을 옛 영상 것으로 두지 않는다
         hardBox.hidden = true;
         hardBtn.setAttribute('aria-pressed', 'false');

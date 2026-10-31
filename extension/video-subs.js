@@ -49,6 +49,7 @@
   const S = {
     tracks: [], id: null, mainKey: '', koKey: '', main: null, others: false,
     cues: [], ko: [], koFail: new Set(), cur: -1, past: false, revealed: -1, pausedFor: -1, eachPause: false, clip: null, clipPause: false,
+    round: null, roundEnd: null, // 1분 라운드(28-14): 재생 중인 라운드와 끝난 라운드
     prevT: 0, range: null, mem: { repeatedFor: -1, gapTo: -1 },
     hard: new Map(), asked: new Set(), annotBusy: false, annotErrAt: 0, hardVer: 0,
     done: new Set(), // 단어장 복습 끝난 낱말(28-8 가리기 'done' 유형)
@@ -182,6 +183,8 @@
       S.ko = [];
       S.clip = null;
       S.clipPause = false;
+      S.round = null;
+      S.roundEnd = null;
       S.range = null;
       S.drill = false; // 드릴은 저장하지 않는다: 영상이 바뀌면 끈다(28-8)
       S.drillReveal = false;
@@ -294,6 +297,11 @@
     clearFocusTimer();
     S.clipPause = false;
     S.eachPause = false;
+    // 라운드 끝 안내를 띄운 채 사용자가 다시 재생하면 안내·칩 줄을 지운다(라운드를 재생 중이면 그대로 둔다).
+    if (!S.round && S.roundEnd) {
+      S.roundEnd = null;
+      notify('round');
+    }
     if (hold.ours) hold.ours = false;
     else {
       hold.reasons.clear(); // 사용자가 직접 재생했다
@@ -355,7 +363,23 @@
         S.clipPause = reached;
         S.clip = null;
         if (reached) video.pause();
-      } else if (t < S.clip.start - 1) S.clip = null; // 사용자가 구간 밖으로 옮겼다
+        // 라운드를 끝까지 재생했으면 상태 줄·패널 칩 줄에 알린다(28-14).
+        if (reached && S.round) {
+          S.roundEnd = { ...S.round, ended: true };
+          S.round = null;
+          notify('round');
+          render();
+        } else if (S.round) {
+          S.round = null;
+          notify('round');
+        }
+      } else if (t < S.clip.start - 1) {
+        S.clip = null; // 사용자가 구간 밖으로 옮겼다
+        if (S.round) {
+          S.round = null;
+          notify('round');
+        }
+      }
     }
     if (!S.cues.length) {
       if (force) render();
@@ -551,6 +575,8 @@
     .notice .nt-ok { margin-top: 8px; }
     .msg { margin-top: 4px; padding: 4px 12px; border-radius: 6px; background: rgba(20, 20, 20, .88); color: #eee;
       font: max(13px, calc(var(--fs, 22px) * .6))/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+    /* 라운드 끝 안내(28-14): 상태 줄 안의 [다음] 단추. 부모(.box)가 pointer-events: none 이라 단추만 받는다 */
+    .msg .nx { margin-left: 8px; pointer-events: auto; }
     /* 키보드 저장 모드 안내 알약(28-7): 두 줄 바로 아래. 어두운 바탕 + 흰 글자 */
     .focushint { order: 1; margin-top: 4px; padding: 3px 12px; border-radius: 999px; background: rgba(8, 8, 8, .9); border: 1px solid rgba(255, 255, 255, .45); color: #fff;
       font: max(12px, calc(var(--fs, 22px) * .56))/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
@@ -767,7 +793,7 @@
       adjust: adjustEl, adjustText,
       prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, slowBtn, drillBtn, focusBtn, koBtn, saveBtn, explainBtn,
       btns, barKey: '', range: rangeEl, rangeA, rangeB,
-      lineKey: '', noteKey: '', tokens: [], wcur: -1, wcurFor: '',
+      lineKey: '', noteKey: '', msgKey: '', tokens: [], wcur: -1, wcurFor: '',
     };
     renderBarOrder();
 
@@ -1118,15 +1144,29 @@
       S.shown = show;
       if (show) setTimeout(() => { pumpKo(); pumpAnnot(); }, 0); // 층이 다시 보이면(CC 켬·광고 끝) 지금 줄 근처를 채운다
     }
-    const msg = waitMessage();
+    const wait = waitMessage();
+    const roundEnd = S.roundEnd;
+    const roundMsg = roundEnd ? roundEndText(roundEnd) : '';
+    const msg = wait || roundMsg;
     if (msg !== S.msg) {
       S.msg = msg;
       S.msgAt = Date.now();
       notify('message');
     }
-    const showMsg = Boolean(msg) && Date.now() - S.msgAt < MSG_MS;
+    // 라운드 끝 안내는 사용자가 다시 재생하거나 다음 라운드를 고를 때까지 남긴다(28-14).
+    const showMsg = Boolean(msg) && (roundEnd ? true : Date.now() - S.msgAt < MSG_MS);
     ui.msg.hidden = !showMsg;
-    if (ui.msg.textContent !== msg) ui.msg.textContent = msg;
+    const msgKey = roundEnd ? `round|${roundEnd.index}|${roundEnd.total}|${roundMsg}` : `wait|${msg}`;
+    if (ui.msgKey !== msgKey) {
+      ui.msgKey = msgKey;
+      if (roundEnd) {
+        const nb = button('다음', '다음 라운드 재생', () => nextRound(roundEnd));
+        nb.classList.add('nx');
+        ui.msg.replaceChildren(el('span', 'mx', roundMsg), nb);
+      } else {
+        ui.msg.textContent = msg;
+      }
+    }
     host.style.display = show || showMsg ? 'flex' : 'none';
     ui.lines.hidden = !show || (!lay.showEn && !lay.showKo);
     ui.adjust.hidden = !(show && adjust.on);
@@ -1401,11 +1441,15 @@
   function goLine(i) {
     const c = S.cues[i];
     if (!c || !video) return;
+    const hadRound = Boolean(S.round || S.roundEnd);
     S.clip = null;
+    S.round = null;
+    S.roundEnd = null;
     S.pausedFor = -1;
     video.currentTime = c.start + 0.01; // 줄 시작보다 앞이면 앞 줄이 잠깐 지금 줄이 된다
     if (video.paused) video.play()?.catch?.(() => {});
     tick(true);
+    if (hadRound) notify('round');
   }
   function run(act, anchorEl) {
     const i = S.cur;
@@ -1687,14 +1731,45 @@
   });
 
   // ---- 장면 재생(복습 27-4) ----
-  function playClip(start, end) {
+  // maxSec 은 구간 길이 상한이다: 일반 장면은 60초(MAX_CLIP), 라운드는 75초(MAX_ROUND)까지(28-14).
+  function playClip(start, end, maxSec = V.MAX_CLIP) {
     if (!video) return false;
-    S.clip = { start, end };
+    const limit = Number(maxSec);
+    const stop = Number.isFinite(limit) && limit > 0 ? Math.min(end, start + limit) : end;
+    S.clip = { start, end: stop };
     S.pausedFor = -1;
+    S.round = null;
+    S.roundEnd = null;
     video.currentTime = start + 0.01;
     video.play()?.catch?.(() => {});
     tick(true);
     return true;
+  }
+
+  // ---- 1분 라운드(28-14) ----
+  const roundList = () => V.rounds(S.cues);
+  // 그 라운드 안의 어려운 낱말(원형마다 하나). first 는 대본 줄 번호다.
+  function roundHardWords(r) {
+    if (!r) return [];
+    const slice = S.cues.slice(r.from, r.to + 1);
+    return V.previewWords(slice, S.hard).map((w) => ({ ...w, first: w.first + r.from }));
+  }
+  const roundEndText = (r) => `라운드 ${r.index + 1} 끝 · 어려운 단어 ${roundHardWords(r).length}`;
+  // [보기]·[다음]: 라운드를 장면 구간처럼 재생하되 길이 상한만 75초로 넓힌다.
+  function playRound(i) {
+    if (!video) return false;
+    const list = roundList();
+    const r = list[i];
+    if (!r) return false;
+    if (!playClip(r.start, r.end, V.MAX_ROUND)) return false;
+    S.round = { index: i, total: list.length, start: r.start, end: r.end, from: r.from, to: r.to };
+    S.roundEnd = null;
+    notify('round');
+    render();
+    return true;
+  }
+  function nextRound(r) {
+    if (!playRound(r.index + 1)) toast('마지막 라운드예요');
   }
   function playScene(scene) {
     if (!scene || scene.id !== S.id || !video) return false;
@@ -1829,6 +1904,10 @@
     },
     annotateAll,
     playScene,
+    // 1분 라운드(28-14): 대본의 라운드 목록과 그 라운드 재생, 지금 라운드 상태(끝났는지 포함).
+    rounds: () => roundList(),
+    playRound: (i) => playRound(i),
+    round: () => (S.roundEnd ? { ...S.roundEnd, ended: true } : S.round ? { ...S.round, ended: false } : null),
     // 패널 대본 칠하기·거르기(28-12): hard·저장 활용형·복습 끝·저장 구를 한 번에 읽는다.
     panelData: () => ({ hard: S.hard, forms: S.savedForms, done: S.done, phrases: S.phrases, version: `${S.hardVer}|${S.savedVer}` }),
     // 패널 '나의 표현'(28-12): background {type:'words', op:'get'} 으로 받아 둔 저장 낱말·구·문장.

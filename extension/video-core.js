@@ -536,6 +536,52 @@
     return none();
   }
 
+  // 1분 라운드(28-14): 대본을 줄 경계에서만 끊어 50~75초 묶음으로 나눈다.
+  // 누적 길이가 min 이상이면 target 에 가장 가까운 줄 끝을 고르고, max 를 넘는 줄 끝은 쓰지 않는다.
+  // 한 줄이 max 보다 길면 그 줄 하나가 한 라운드다(줄을 자르지 않는다). 빈 대본은 [].
+  const ROUND_MIN = 50;
+  const ROUND_TARGET = 60;
+  const ROUND_MAX = 75;
+  function rounds(cues, options = {}) {
+    const list = Array.isArray(cues) ? cues : [];
+    if (!list.length) return [];
+    const o = isObj(options) ? options : {};
+    const min = num(o.min) ?? ROUND_MIN;
+    const target = num(o.target) ?? ROUND_TARGET;
+    const max = num(o.max) ?? ROUND_MAX;
+    const out = [];
+    let from = 0;
+    while (from < list.length) {
+      const start = num(list[from]?.start);
+      if (start === null) break;
+      let best = -1;
+      let bestDiff = Infinity;
+      let to = from;
+      for (; to < list.length; to++) {
+        const end = num(list[to]?.end);
+        if (end === null) break;
+        const len = end - start;
+        if (len > max) {
+          if (to === from) best = from; // 한 줄이 max 보다 길면 그 줄 하나
+          break; // max 를 넘기기 전 줄 끝에서 끊는다
+        }
+        if (len >= min) {
+          const diff = Math.abs(len - target);
+          if (diff < bestDiff) {
+            bestDiff = diff;
+            best = to;
+          }
+        }
+      }
+      if (best < 0) best = Math.max(from, Math.min(to - 1, list.length - 1));
+      const end = num(list[best]?.end);
+      if (end === null) break;
+      out.push({ start, end, from, to: best });
+      from = best + 1;
+    }
+    return out;
+  }
+
   // 장면
   function parseT(v) {
     const s = String(v ?? '').trim();
@@ -719,9 +765,9 @@
   }
 
   globalThis.readglossVideo = {
-    ID_RE, ASR, GRACE, MAX_CLIP, HIDE_MODES, HIDE_LABEL, HIDE_TYPES, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT, DRILL_DOUBLE,
+    ID_RE, ASR, GRACE, MAX_CLIP, MAX_ROUND: ROUND_MAX, ROUND_MIN, ROUND_TARGET, ROUND_MAX, HIDE_MODES, HIDE_LABEL, HIDE_TYPES, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT, DRILL_DOUBLE,
     params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseTrack,
     langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, bandOf, minPFor, tokenColor, phraseSpans, tooltipModel, hideTypes, maskFlags, nextHide, drillSpace, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
-    parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf, barModel, xToTime, subLayout,
+    parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf, barModel, xToTime, subLayout, rounds,
   };
 })();
