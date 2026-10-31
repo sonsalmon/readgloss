@@ -353,6 +353,34 @@
     return held >= 0 && held <= SHIFT_TAP_MS ? 'saveLine' : null;
   }
 
+  // 키보드 저장 모드(28-7): 줄의 첫 어려운 낱말 자리(없으면 첫 낱말). hardSet 은 Set 이나 Map(S.hard).
+  // 자리 번호는 tokenize 결과의 조각 번호다. 낱말이 없으면 -1.
+  function focusStart(tokens, hardSet) {
+    const list = Array.isArray(tokens) ? tokens : [];
+    const has = (w) => typeof hardSet?.has === 'function' && hardSet.has(w);
+    let first = -1;
+    for (let k = 0; k < list.length; k++) {
+      const tk = list[k];
+      if (!tk?.w) continue;
+      if (first < 0) first = k;
+      if (has(tk.lower)) return k;
+    }
+    return first;
+  }
+  // ←·→: 낱말 자리 목록(wordIdxs)에서 앞뒤로 한 칸, 끝에서 처음으로 돈다. 빈 목록이면 -1.
+  function focusStep(wordIdxs, cur, step) {
+    const list = (Array.isArray(wordIdxs) ? wordIdxs : []).filter((k) => Number.isInteger(k));
+    if (!list.length) return -1;
+    const at = list.indexOf(cur);
+    const dir = step < 0 ? -1 : 1;
+    if (at < 0) return dir > 0 ? list[0] : list[list.length - 1];
+    return list[(at + dir + list.length) % list.length];
+  }
+  // 사용자가 멈춘 것만 자동 포커스한다: 줄마다 멈춤·장면 구간 끝·카드·hold 는 제외(28-7).
+  function shouldAutoFocus({ on, pauseReason } = {}) {
+    return on === true && pauseReason === 'user';
+  }
+
   // 줄마다 멈춤: 켜져 있고, 이 줄에서 아직 안 멈췄고, 끝 바로 앞~조금 뒤면 멈춘다(그보다 많이 뒤면 건너뛴 것으로 본다).
   function shouldPauseEach({ on, cur, pausedFor, t, cues }) {
     const c = cues?.[cur];
@@ -553,7 +581,7 @@
   globalThis.readglossVideo = {
     ID_RE, ASR, GRACE, MAX_CLIP, HIDE_MODES, HIDE_LABEL, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT,
     params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseTrack,
-    langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, tooltipModel, maskFlags, nextHide, clampSlowRate, nextRate, keyAction, shiftTapAction, shouldPauseEach, playbackStep,
+    langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, tooltipModel, maskFlags, nextHide, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
     parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf,
   };
 })();

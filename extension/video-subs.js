@@ -15,6 +15,7 @@
   const MAX_ASKED = 20000; // 물어본 낱말 기억 상한(넘으면 비운다)
   const TIP_HOVER_MS = 250; // 마우스를 올린 뒤 말풍선이 뜨기까지(28-6)
   const TIP_CLOSE_MS = 200; // 낱말·말풍선을 떠난 뒤 닫히기까지(28-6)
+  const FOCUS_DELAY_MS = 300; // 사용자가 멈춘 뒤 두 줄로 포커스하기까지(28-7)
   const MAX_DICT_MEMO = 500; // 한 영상에서 뜻을 기억해 둘 낱말 수
   const ERR = {
     'bridge-off': '다리가 꺼져 있어요', 'mt-unavailable': '맥 번역 도우미가 없어요(npm run build:mt)', 'mt-failed': '맥 번역이 실패했어요',
@@ -28,7 +29,7 @@
   const vs = () => settings.video;
   const S = {
     tracks: [], id: null, mainKey: '', koKey: '', main: null, others: false,
-    cues: [], ko: [], koFail: new Set(), cur: -1, past: false, revealed: -1, pausedFor: -1, clip: null,
+    cues: [], ko: [], koFail: new Set(), cur: -1, past: false, revealed: -1, pausedFor: -1, eachPause: false, clip: null, clipPause: false,
     prevT: 0, range: null, mem: { repeatedFor: -1, gapTo: -1 },
     hard: new Map(), asked: new Set(), annotBusy: false, annotErrAt: 0, hardVer: 0,
     dictMemo: new Map(), // 낱말별 사전 응답(28-6): 영상이 바뀌면 지운다
@@ -49,6 +50,7 @@
   const tip = { open: false, k: -1, i: -1, el: null, lower: '', word: '' };
   let tipOpenTimer = 0;
   let tipCloseTimer = 0;
+  let focusTimer = 0; // 키보드 저장 모드 자동 포커스 예약(28-7)
 
   function apply(s) {
     if (s.level !== settings.level) {
@@ -153,8 +155,11 @@
       S.cues = [];
       S.ko = [];
       S.clip = null;
+      S.clipPause = false;
       S.range = null;
       if (video) video.playbackRate = 1; // 새 영상은 1배로(28-3)
+      clearFocusTimer();
+      if (ui?.lines.matches(':focus')) ui.lines.blur();
       S.prevT = 0;
       S.mem = { repeatedFor: -1, gapTo: -1 };
       S.koAll = false;
@@ -255,6 +260,9 @@
 
   // ---- 영상 시각 따라가기 ----
   function onPlay() {
+    clearFocusTimer();
+    S.clipPause = false;
+    S.eachPause = false;
     if (hold.ours) hold.ours = false;
     else {
       hold.reasons.clear(); // 사용자가 직접 재생했다
@@ -265,8 +273,10 @@
   function onPause() {
     if (hold.ours) hold.ours = false;
     tick(true);
+    scheduleFocus(pauseReasonNow());
   }
   function onSeeked() {
+    S.clipPause = false;
     const c = S.cues[S.pausedFor];
     if (c && video.currentTime < c.end - 0.1) S.pausedFor = -1; // 그 줄로 되돌아가면 끝에서 다시 멈춘다
     tick(true);
@@ -310,6 +320,7 @@
     if (S.clip) {
       if (t >= S.clip.end) {
         const reached = t < S.clip.end + 1; // 재생하다 끝에 닿았다(사용자가 끝 너머로 옮겼으면 멈추지 않고 구간만 끝낸다)
+        S.clipPause = reached;
         S.clip = null;
         if (reached) video.pause();
       } else if (t < S.clip.start - 1) S.clip = null; // 사용자가 구간 밖으로 옮겼다
@@ -333,6 +344,7 @@
         S.pausedFor = -1;
       } else if (step.action === 'pause') {
         S.pausedFor = i;
+        S.eachPause = true; // 우리가 줄 끝에서 멈춘 것(사용자 멈춤과 가르는 표시, onPlay 가 지운다)
         video.pause();
       }
     } else S.prevT = t;
@@ -365,6 +377,36 @@
       hold.ours = true;
       video.play()?.catch?.(() => { hold.ours = false; });
     }
+  }
+  // 멈춘 이유(28-7): 사용자 멈춤만 키보드 저장 모드가 두 줄로 포커스한다. 우리가 멈춘 것은 이유별로 가른다.
+  function pauseReasonNow() {
+    if (hold.paused || hold.reasons.size) return hold.reasons.has('card') ? 'card' : 'hold';
+    if (S.clipPause) return 'clip';
+    if (S.eachPause) return 'pauseEach';
+    return 'user';
+  }
+  // Esc 로 재생해도 되는가: 사용자가 멈춘 것이고(카드·hold·줄마다 멈춤·장면 끝이 아님) 영상이 멈춰 있다.
+  const userPaused = () => Boolean(video?.paused && !hold.paused && !hold.reasons.size && !S.clipPause && !S.eachPause);
+  function clearFocusTimer() {
+    clearTimeout(focusTimer);
+    focusTimer = 0;
+  }
+  function scheduleFocus(reason) {
+    clearFocusTimer();
+    if (!V.shouldAutoFocus({ on: vs().focusMode, pauseReason: reason })) return;
+    focusTimer = setTimeout(() => {
+      focusTimer = 0;
+      if (!video?.paused || !vs().focusMode || !visible() || !ui?.lines || document.hidden) return;
+      const root = ui.lines.getRootNode();
+      const inside = root.activeElement;
+      if (inside && inside !== ui.lines) return; // 우리 층 안 다른 자리(막대·풀이)에 있으면 빼앗지 않는다
+      const ae = document.activeElement;
+      if (ae && ae !== document.body && ae !== host && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return; // 입력칸 밖 요청
+      if (inside !== ui.lines) ui.lines.focus({ preventScroll: true });
+      const k = V.focusStart(ui.tokens, S.hard);
+      if (k >= 0) moveCursor(k);
+      renderFocusHint();
+    }, FOCUS_DELAY_MS);
   }
   // 카드가 닫히면 멈춤을 푼다. 다른 낱말을 누르면 카드가 닫혔다 곧 다시 열리니 잠깐 기다리고, 누르는 중(영상 위를 눌러 닫음)이면
   // 손을 뗀 뒤에 정한다: 유튜브는 영상 클릭으로 재생·멈춤을 바꾸니, 먼저 재생하면 그 클릭이 다시 멈춰 버린다(누른 시간에 따라 결과가 갈렸다).
@@ -452,6 +494,9 @@
     .notice .nt-ok { margin-top: 8px; }
     .msg { margin-top: 4px; padding: 4px 12px; border-radius: 6px; background: rgba(20, 20, 20, .88); color: #eee;
       font: max(13px, calc(var(--fs, 22px) * .6))/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+    /* 키보드 저장 모드 안내 알약(28-7): 두 줄 바로 아래. 어두운 바탕 + 흰 글자 */
+    .focushint { order: 1; margin-top: 4px; padding: 3px 12px; border-radius: 999px; background: rgba(8, 8, 8, .9); border: 1px solid rgba(255, 255, 255, .45); color: #fff;
+      font: max(12px, calc(var(--fs, 22px) * .56))/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
     /* 안내만 뜰 때(우리 두 줄이 없을 때)는 유튜브 자막이 보일 수 있으니 그 자리 위로 올린다 */
     .box:has(.lines[hidden]) .msg { margin-bottom: max(3.4em, calc(var(--fs, 22px) * 3)); }
     .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -524,7 +569,7 @@
     // 키보드만 쓸 때: Tab 으로 두 줄에 오면 막대가 보이고 다음 Tab 이 막대 단추로 간다(27-2)
     lines.tabIndex = 0;
     lines.setAttribute('role', 'group');
-    lines.setAttribute('aria-label', 'readgloss 자막 — A 이전 줄 · S 이 줄 처음 · D 다음 줄 · R 문장 반복 · Q 구간 반복 · Z 느리게 · Shift 줄 저장 · ←→ 낱말 · Enter 사전 · Esc 나가기');
+    lines.setAttribute('aria-label', 'readgloss 자막 — A 이전 줄 · S 이 줄 처음 · D 다음 줄 · R 문장 반복 · Q 구간 반복 · Z 느리게 · Shift 줄 저장 · W 키보드 저장 모드 · ←→ 낱말 · Enter 저장 · ↓ 자세히 · Esc 재생');
     // 마우스로 눌러도 포커스는 층으로 옮기지 않는다(화살표·Space 는 유튜브 몫으로 남는다). Tab 으로만 들어온다.
     // 한국어 줄은 끌어서 고르기(복사)가 되게 기본 동작을 두고, 손을 떼면 포커스만 놓는다(고른 글은 남는다).
     let koPress = false;
@@ -545,6 +590,10 @@
     const msg = el('div', 'msg');
     msg.hidden = true;
     msg.setAttribute('role', 'status');
+    // 키보드 저장 모드 안내 알약(28-7): 두 줄에 포커스가 있을 때만 보인다.
+    const hint = el('div', 'focushint');
+    hint.hidden = true;
+    hint.setAttribute('role', 'status');
     const sr = el('div', 'sr'); // 키보드 낱말 자리를 읽어 주는 곳(화면에는 안 보인다)
     sr.setAttribute('aria-live', 'polite');
     // 낱말 말풍선(28-6): 자막 층 shadow 안에 그린다. 낱말 위(자리가 모자라면 아래)에 붙고 단추는 키보드로도 닿는다.
@@ -554,9 +603,10 @@
     tipEl.setAttribute('aria-label', '낱말 뜻과 저장');
     box.prepend(notice);
     box.append(lines, bar, note, msg);
+    box.append(hint); // 안내 알약(28-7)은 화면 차례(order)로 두 줄 아래에 놓는다
     box.append(tipEl); // 말풍선은 position: fixed 라 흐름에 끼지 않는다
     shadow.append(style, box, sr);
-    ui = { box, bar, note, notice, lines, en, ko, msg, sr, tip: tipEl, prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, slowBtn, koBtn, saveBtn, explainBtn, lineKey: '', noteKey: '', tokens: [], wcur: -1, wcurFor: '' };
+    ui = { box, bar, note, notice, lines, en, ko, msg, hint, sr, tip: tipEl, prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, slowBtn, koBtn, saveBtn, explainBtn, lineKey: '', noteKey: '', tokens: [], wcur: -1, wcurFor: '' };
 
     en.addEventListener('click', (e) => {
       const sp = e.target?.closest?.('.w');
@@ -579,26 +629,50 @@
     tipEl.addEventListener('pointerleave', () => { if (tip.open) scheduleTipClose(); });
     tipEl.addEventListener('focusin', cancelTipClose);
     tipEl.addEventListener('focusout', (e) => { if (tip.open && !tipEl.contains(e.relatedTarget)) scheduleTipClose(); });
-    // 두 줄에 포커스가 있을 때: ←·→ 낱말 자리, Enter 그 낱말 사전(가린 낱말이면 그 줄 보이기), Esc 나가기.
+    // 두 줄에 포커스가 있을 때(28-7): ←·→ 낱말 자리(끝에서 처음으로), Enter 저장/해제, ↓ 자세히(사전 카드),
+    // Shift 단독은 전역 keyup 이 줄 저장, Esc 는 포커스를 놓고 사용자가 멈춘 영상을 재생한다.
     // 화살표는 유튜브의 5초 이동으로 새지 않게 여기서 멈춘다(포커스가 우리 층 밖이면 건드리지 않는다).
     lines.addEventListener('keydown', (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        const words = ui.tokens.flatMap((tk, k) => (tk.w ? [k] : []));
+        const words = wordIdxs();
         if (!words.length) return;
         e.preventDefault();
         e.stopPropagation();
-        const at = words.indexOf(ui.wcur);
-        const step = e.key === 'ArrowRight' ? 1 : -1;
-        moveCursor(words[at < 0 ? (step > 0 ? 0 : words.length - 1) : Math.min(words.length - 1, Math.max(0, at + step))]);
-      } else if (e.key === 'Enter' && ui.wcur >= 0) {
+        moveCursor(V.focusStep(words, ui.wcur, e.key === 'ArrowRight' ? 1 : -1));
+      } else if ((e.key === 'Enter' || e.key === 'ArrowDown') && ui.wcur >= 0) {
         const sp = ui.en.querySelector(`.w[data-k="${ui.wcur}"]`);
         if (!sp) return;
         e.preventDefault();
         e.stopPropagation();
-        pickWord(sp);
+        if (e.key === 'ArrowDown' || !vs().focusMode) pickWord(sp); // ↓ = 자세히(사전 카드). 모드가 꺼져 있으면 옛 Enter 동작
+        else toggleWordAt(ui.wcur);
+      } else if (e.key === 'Escape' && vs().focusMode) {
+        if (hold.paused && hold.reasons.size === 1 && hold.reasons.has('keys')) {
+          // Tab 으로 들어올 때 hoverPause 가 영상을 멈췄다: 이유만 지우지 말고 holdOff 로 재생까지 되살린다
+          e.preventDefault();
+          e.stopPropagation();
+          ui.lines.blur();
+          holdOff('keys');
+          return;
+        }
+        hold.reasons.delete('keys'); // 두 줄을 떠나므로 포커스용 키 멈춤은 먼저 푼다
+        if (!userPaused()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        ui.lines.blur();
+        video.play()?.catch?.(() => {});
       }
     });
+    // 두 줄에 포커스가 들어오고 나갈 때 안내 알약(28-7)을 그리고, 모드가 켜져 있으면 첫 낱말 자리로 간다.
+    lines.addEventListener('focus', () => {
+      if (vs().focusMode && ui.wcur < 0) {
+        const k = V.focusStart(ui.tokens, S.hard);
+        if (k >= 0) moveCursor(k);
+      }
+      renderFocusHint();
+    });
+    lines.addEventListener('blur', renderFocusHint);
     // 포커스가 층(두 줄·막대·풀이)을 떠나면 키보드 멈춤을 풀고 낱말 자리를 지운다(다시 들어오면 첫 낱말부터).
     // 층 안에서 옮길 때(두 줄 → 막대 Tab)와 창을 잠깐 떠날 때(돌아오면 그대로 — 그 사이 영상이 저절로 재생되지 않게)는 그대로 둔다.
     box.addEventListener('focusout', (e) => {
@@ -617,7 +691,7 @@
   }
 
   // ---- 말풍선(28-6) ----
-  const dictPending = new Set(); // 사전에 묻는 중인 낱말(같은 낱말을 두 번 묻지 않는다)
+  const dictPending = new Map(); // 사전에 묻는 중인 낱말 → 약속(같은 낱말을 두 번 묻지 않고, 기다리던 쪽도 같은 답을 받는다)
   function cancelTipClose() {
     clearTimeout(tipCloseTimer);
     tipCloseTimer = 0;
@@ -710,16 +784,24 @@
     ui.tip.style.left = `${Math.round(left)}px`;
     ui.tip.style.top = `${Math.round(top)}px`;
   }
+  async function fetchDict(lower, word) {
+    const doing = dictPending.get(lower);
+    if (doing) return doing;
+    const p = (async () => {
+      const id = S.id;
+      const r = await send({ type: 'dict', word });
+      if (id !== S.id) return undefined; // 그 사이 영상이 바뀌었다
+      const data = r && typeof r === 'object' ? (r.error ? { found: false, error: r.error } : r) : { found: false, error: '응답 없음' };
+      S.dictMemo.set(lower, data);
+      if (S.dictMemo.size > MAX_DICT_MEMO) S.dictMemo.delete(S.dictMemo.keys().next().value);
+      return data;
+    })().finally(() => dictPending.delete(lower));
+    dictPending.set(lower, p);
+    return p;
+  }
   async function askTipDict(lower, word) {
-    if (dictPending.has(lower)) return;
-    dictPending.add(lower);
-    const id = S.id;
-    const r = await send({ type: 'dict', word });
-    dictPending.delete(lower);
-    if (id !== S.id) return; // 그 사이 영상이 바뀌었다
-    S.dictMemo.set(lower, r && typeof r === 'object' ? (r.error ? { found: false, error: r.error } : r) : { found: false, error: '응답 없음' });
-    if (S.dictMemo.size > MAX_DICT_MEMO) S.dictMemo.delete(S.dictMemo.keys().next().value);
-    if (tip.open && tip.lower === lower) paintTip();
+    const r = await fetchDict(lower, word);
+    if (r && tip.open && tip.lower === lower) paintTip();
   }
   // 저장 칠하기를 바로 갱신한다(loadSaved 를 다시 부르지 않고 그 낱말의 활용형만).
   function setTipSaved(lower, lemma, on) {
@@ -733,28 +815,51 @@
     }
     S.savedVer++;
   }
-  async function toggleTipSave(m, btn) {
-    const cue = S.cues[tip.i];
-    if (!cue) return;
-    const lower = tip.lower;
-    const word = tip.word;
+  async function toggleWordSave(i, lower, word, m, anchorEl) {
+    const cue = S.cues[i];
+    if (!cue) return false;
     const saved = S.savedForms.has(lower);
     const lemma = saved ? S.savedForms.get(lower) || m.lemma : m.lemma || lower;
     // 지금 카드 저장과 같은 메시지(27-2·28-6): 문장 = 이 줄, 주소 = 이 줄 장면
     const msg = saved
       ? { type: 'words', op: 'unsave', lemma }
       : { type: 'words', op: 'save', lemma, word, gloss: m.gloss, sentence: cue.text, url: V.sceneUrl(S.id, cue.start) };
-    btn.disabled = true;
     const r = await send(msg);
-    if (!tip.open || tip.lower !== lower) return;
-    btn.disabled = false;
     if (r?.saved) {
       setTipSaved(lower, lemma, !saved);
-      toast(saved ? '단어장에서 뺐어요' : '단어장에 저장했어요', ui.tip);
+      toast(saved ? '단어장에서 뺐어요' : '단어장에 저장했어요', anchorEl);
       wordsChanged();
       renderLine(); // .w.saved 칠하기를 바로 다시 그린다
-      paintTip();
-    } else toast(errText(r, '저장하지 못했어요'), btn);
+      return true;
+    }
+    toast(errText(r, '저장하지 못했어요'), anchorEl);
+    return false;
+  }
+  async function toggleTipSave(m, btn) {
+    const i = tip.i;
+    const lower = tip.lower;
+    const word = tip.word;
+    btn.disabled = true;
+    const ok = await toggleWordSave(i, lower, word, m, ui.tip);
+    if (!tip.open || tip.lower !== lower) return;
+    btn.disabled = false;
+    if (ok) paintTip();
+  }
+  // 두 줄 안 Enter(28-7): 그 낱말 저장/해제. 말풍선 저장과 같은 함수·같은 메시지를 쓴다.
+  async function toggleWordAt(k) {
+    const tk = ui?.tokens?.[k];
+    const i = S.cur;
+    const cue = S.cues[i];
+    if (!tk?.w || !cue) return;
+    const lower = tk.lower;
+    let dict = S.dictMemo.get(lower);
+    if (!S.savedForms.has(lower) && !S.hard.get(lower) && !dict) dict = await fetchDict(lower, tk.t);
+    if (S.cues[S.cur] !== cue) return; // 기다리는 사이 줄이 바뀌었다
+    const m = V.tooltipModel({ word: tk.t, hard: S.hard.get(lower), dict, saved: S.savedForms.has(lower) });
+    const sp = ui.en.querySelector(`.w[data-k="${k}"]`);
+    if (!S.savedForms.has(lower) && m.state !== 'found') return toast('사전에 없어요', sp || ui.box);
+    await toggleWordSave(i, lower, tk.t, m, sp || ui.box);
+    if (tip.open && tip.lower === lower) paintTip();
   }
   function openTipDetail() {
     if (!tip.open) return;
@@ -775,6 +880,20 @@
     const tk = ui.tokens[Number(sp.dataset.k)];
     if (tk?.w) lookupWord(tk.t, S.cur, sp.getBoundingClientRect());
   }
+  // 두 줄 안 낱말 자리 목록(tokenize 조각 번호) — ←·→ 가 도는 순서
+  function wordIdxs() {
+    return (ui?.tokens ?? []).flatMap((tk, k) => (tk?.w ? [k] : []));
+  }
+  // 키보드 저장 모드 안내 알약(28-7): 두 줄에 포커스가 있고 모드가 켜져 있을 때만 보인다.
+  function renderFocusHint() {
+    if (!ui?.hint) return;
+    const words = wordIdxs();
+    const show = Boolean(vs().focusMode && ui.lines.matches(':focus') && S.cues[S.cur] && words.length);
+    ui.hint.hidden = !show;
+    if (!show) return;
+    const at = words.indexOf(ui.wcur);
+    ui.hint.textContent = `${at < 0 ? 1 : at + 1}/${words.length} · ←→ 표현 · Enter 저장 · Shift 줄 저장 · ↓ 자세히 · Esc 재생`;
+  }
   // 키보드 낱말 자리 옮기기. 움직이는 동안 줄이 넘어가지 않게 마우스를 올린 것처럼 잠깐 멈춘다(마우스 멈춤 설정을 따른다)
   function moveCursor(k) {
     if (vs().hoverPause) holdOn('keys');
@@ -788,6 +907,7 @@
     ui.sr.textContent = sp.classList.contains('hid') ? '가린 낱말, Enter 로 그 줄 보기' : `${tk.t}${h?.gloss ? `, ${h.gloss}` : ''}`;
     if (sp.classList.contains('hid')) closeTip();
     else showTip(sp); // 키보드 낱말 자리에도 같은 말풍선(28-6)
+    renderFocusHint();
   }
 
   // 글자 크기는 플레이어 높이를 따라가고, 줄은 유튜브 조작 막대 위에 둔다(막대가 숨어도 같은 자리 — 마우스를 올렸을 때 자막이 움직이지 않게)
@@ -823,11 +943,13 @@
     if (!show) {
       ui.note.hidden = true;
       closeTip();
+      renderFocusHint();
       return;
     }
     renderLine();
     renderBar();
     renderNote();
+    renderFocusHint();
   }
 
   // 영어 줄은 바뀐 것이 있을 때만 다시 만든다(누르는 사이에 낱말이 갈리면 클릭이 사라진다)
@@ -987,8 +1109,23 @@
       renderBar();
       return;
     }
+    // 키보드 저장 모드(28-7): 켜고 끄기 + 상태 줄. 켤 때 이미 사용자가 멈춰 있으면 곧 두 줄로 포커스한다.
+    if (act === 'focusMode') {
+      const on = !vs().focusMode;
+      setVideo({ focusMode: on });
+      toast(on ? '키보드 저장 모드 켜짐' : '키보드 저장 모드 꺼짐');
+      if (on) {
+        if (video?.paused) scheduleFocus(pauseReasonNow());
+      } else {
+        clearFocusTimer();
+        if (ui?.lines.matches(':focus')) ui.lines.blur();
+        closeTip();
+      }
+      render();
+      return;
+    }
     // 자리만 잡은 키(28-2): 동작은 해당 티켓에서 붙인다. 지금은 아무것도 하지 않되 키는 이미 여기서 막혀 유튜브로 넘어가지 않는다.
-    if (act === 'focusMode' || act === 'drill' || act === 'panel') return; // T53d 키보드 저장 · T53e 리스닝 드릴 · T53j 패널
+    if (act === 'drill' || act === 'panel') return; // T53e 리스닝 드릴 · T53j 패널
     if (act === 'reveal') {
       S.revealed = i;
       renderLine();

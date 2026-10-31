@@ -18,7 +18,8 @@
     // 변경 기록 28-2: 키 배정 안내를 처음 한 번 보여 주고 [알겠어요] 로 keysNoticeSeen 을 남긴다
     // 변경 기록 28-3: 느리게 재생 속도(slowRate, 0.5~0.9)
     // 변경 기록 28-6: 마우스를 올려도 영상은 멈추지 않는다(hoverPause 기본 false). 켜면 지금처럼 멈춘다.
-    video: { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75 },
+    // 변경 기록 28-7: W 키보드 저장 모드(focusMode 기본 false)
+    video: { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false },
     reviewMode: 'flip', // 복습 방식(27-4): 뒤집기 · 고르기 · 듣기
   });
   const ENUMS = {
@@ -103,6 +104,7 @@
         skipGaps: bool(v.skipGaps, DV.skipGaps),
         keysNoticeSeen: bool(v.keysNoticeSeen, DV.keysNoticeSeen),
         slowRate: clampSlowRate(v.slowRate),
+        focusMode: bool(v.focusMode, DV.focusMode),
       },
       reviewMode: pickEnum(r.reviewMode, ENUMS.reviewMode, D.reviewMode),
     };

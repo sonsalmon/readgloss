@@ -60,7 +60,7 @@ test('자막 층: 처음 한 번 카드·[알겠어요] 저장, Shift 단독은 
   assert.match(src, /if \(e\.key === 'Shift'\)/);
   assert.match(src, /pointerdown', \(\) => \{ if \(shiftDown\) shiftDown\.interrupted = true; \}/);
   assert.match(src, /video\.playbackRate = V\.nextRate\(video\.playbackRate, vs\(\)\.slowRate\)/, 'Z 는 느리게 재생으로 이어진다(T53t)');
-  assert.match(src, /if \(act === 'focusMode' \|\| act === 'drill' \|\| act === 'panel'\) return;/);
+  assert.match(src, /if \(act === 'drill' \|\| act === 'panel'\) return;/);
   assert.match(src, /act === 'focusMode'\) && spherical\(\)/, '360° 영상은 W 도 양보한다');
 });
 

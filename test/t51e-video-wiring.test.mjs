@@ -108,7 +108,7 @@ test('content.js: 카드·확인 메시지는 전체 화면 요소 안에(mountR
 test('설정: video 기본값·범위, reviewMode', async () => {
   await import('../extension/settings-core.js');
   const S = globalThis.readglossSettings;
-  assert.deepEqual(S.DEFAULTS.video, { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75 });
+  assert.deepEqual(S.DEFAULTS.video, { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false });
   assert.equal(S.DEFAULTS.reviewMode, 'flip');
   const n = S.normalize({ video: { fontPct: 999, hide: 'nope', ko: 'yes', pauseEach: true }, reviewMode: 'choice' });
   assert.equal(n.video.fontPct, 160);

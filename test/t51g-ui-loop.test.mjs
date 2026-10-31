@@ -148,7 +148,7 @@ test('자막 층: 마우스는 두 줄·막대·풀이만 받고, 지난 줄은 
   assert.match(src, /\.lines:focus \.w\.cur \{ outline: 2px solid/);
   assert.match(src, /\.w\.hard:hover \.g, \.lines:focus \.w\.hard\.cur \.g \{ display: block; \}/, '키보드 자리 낱말도 뜻 풍선');
   assert.match(src, /if \(e\.key === 'Escape' && !e\.readglossCardClosed\) e\.target\?\.blur\?\.\(\);/);
-  assert.match(src, /←→ 낱말 · Enter 사전 · Esc 나가기'\);/, '두 줄 묶음 이름에 새 키 안내(감사 2회차 7)');
+  assert.match(src, /W 키보드 저장 모드 · ←→ 낱말 · Enter 저장 · ↓ 자세히 · Esc 재생'\);/, '두 줄 묶음 이름에 새 키 안내(감사 2회차 7, T53d)');
   assert.match(src, /if \(e\.target\.closest\?\.\('\.ko'\)\) koPress = true;\s*else e\.preventDefault\(\);/, '마우스로는 포커스를 옮기지 않는다(감사 2회차 1), 한국어 줄은 끌어 고르기가 된다(3회차)');
   assert.match(src, /if \(!koPress\) return;\s*koPress = false;\s*lines\.blur\(\);/, '한국어 줄을 고른 뒤 포커스는 놓는다');
   assert.match(src, /\.lines:focus-visible \{ outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 2px rgba\(8, 8, 8, \.92\), 0 0 0 6px rgba\(8, 8, 8, \.92\); \}/, '포커스 표시 검정·흰·검정 세 겹(3회차)');
