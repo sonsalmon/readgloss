@@ -56,7 +56,7 @@
     drill: false, drillReveal: false, drillLastUp: null, drillPress: null, drillNotice: false, drillNoticeSeen: false,
     dictMemo: new Map(), // 낱말별 사전 응답(28-6): 영상이 바뀌면 지운다
     koBusy: false, koAll: false, koErr: '', koErrAt: 0,
-    savedForms: new Map(), phrases: {}, savedVer: 0, saving: false,
+    savedForms: new Map(), saved: {}, phrases: {}, savedVer: 0, saving: false,
     note: null, waitSince: Date.now(), ccTried: new Set(), msg: '', msgAt: 0, ad: false, shown: false,
   };
   // 잠깐 멈춤(마우스를 올림·사전 카드·풀이): 이유가 하나라도 있으면 멈춰 두고, 우리가 멈춘 것만 다시 재생한다. 사용자가 직접 재생하면 이유를 다 지운다.
@@ -1552,6 +1552,25 @@
     render();
   }
 
+  // 패널 [풀이] 탭(28-12): 지금 줄 앞뒤 두 줄만 문맥으로 같은 다리 길(translate-context)을 부른다.
+  // 카드는 패널이 그리고, 캐시는 다리가 그대로 쓴다. force 면 캐시를 건너뛰고 다시 만든다.
+  async function explainAt(i, force = false) {
+    const cue = S.cues[i];
+    if (!cue) return { error: 'no-cue' };
+    const key = S.mainKey;
+    const from = Math.max(0, i - 2);
+    const near = S.cues.slice(from, Math.min(S.cues.length, i + 3));
+    const ctx = V.contextOf(near, i - from, titleNow());
+    const r = await send({
+      type: 'translate-context',
+      text: cue.text,
+      context: { before: ctx.before, after: ctx.after, title: ctx.title, headings: [] },
+      ...(force === true && { force: true }),
+    });
+    if (key !== S.mainKey || S.cues[i] !== cue) return { error: 'changed' };
+    return r;
+  }
+
   // ---- 한국어 줄(맥 번역): 한 번에 하나씩, 지금 줄 근처부터 ----
   // 지금 줄 근처는 한국어 줄이 보일 때만(층이 꺼졌거나 CC 를 껐으면 맥 번역을 부르지 않는다). [한국어 모두 보기]는 한국어 줄 설정과 상관없이 대본 전체를.
   async function pumpKo() {
@@ -1634,6 +1653,7 @@
     if (!r?.saved) return;
     S.savedForms = globalThis.readglossSavedMarksCore?.buildFormSet?.(Object.keys(r.saved)) ?? new Map();
     S.done = new Set(Object.entries(r.saved).filter(([, x]) => x?.review?.done === true).map(([k]) => k)); // 복습 끝난 낱말(28-8)
+    S.saved = r.saved; // 패널 '나의 표현' 이 이 영상 주소로 저장한 낱말을 고른다(28-12)
     S.phrases = r.phrases ?? {};
     S.savedVer++;
     render();
@@ -1787,5 +1807,10 @@
     },
     annotateAll,
     playScene,
+    // 패널 대본 칠하기·거르기(28-12): hard·저장 활용형·복습 끝·저장 구를 한 번에 읽는다.
+    panelData: () => ({ hard: S.hard, forms: S.savedForms, done: S.done, phrases: S.phrases, version: `${S.hardVer}|${S.savedVer}` }),
+    // 패널 '나의 표현'(28-12): background {type:'words', op:'get'} 으로 받아 둔 저장 낱말·구·문장.
+    library: () => ({ saved: S.saved, phrases: S.phrases, version: S.savedVer }),
+    explainAt: (i, force) => explainAt(i, force),
   };
 })();
