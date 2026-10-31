@@ -17,6 +17,7 @@
   const TIP_CLOSE_MS = 200; // 낱말·말풍선을 떠난 뒤 닫히기까지(28-6)
   const FOCUS_DELAY_MS = 300; // 사용자가 멈춘 뒤 두 줄로 포커스하기까지(28-7)
   const MAX_DICT_MEMO = 500; // 한 영상에서 뜻을 기억해 둘 낱말 수
+  const MAX_POLISH_WORDS = 6000; // 다리 /video/polish 요청 상한(28-17)
   const ERR = {
     'bridge-off': '다리가 꺼져 있어요', 'mt-unavailable': '맥 번역 도우미가 없어요(npm run build:mt)', 'mt-failed': '맥 번역이 실패했어요',
     'ext-reloaded': '확장이 새로 로드됐어요. 이 페이지를 새로고침해 주세요', 'pair-failed': '다리와 연결하지 못했어요(인증)', unauthorized: '다리와 연결하지 못했어요(인증)',
@@ -60,7 +61,8 @@
     // 듣기 = 멈춘 뒤 눌러 두 줄 보기(listenReveal), 조립 = 멈춘 뒤 칩 맞히기(build). modePause 는 듣기·조립이 켠 줄마다 멈춤을 돌려놓을 값.
     koPeek: -1, listenReveal: false, build: null, modePause: null,
     dictMemo: new Map(), // 낱말별 사전 응답(28-6): 영상이 바뀌면 지운다
-    koBusy: false, koAll: false, koErr: '', koErrAt: 0,
+    koBusy: false, koAll: false, koErr: '', koErrAt: 0, koTrack: null,
+    polished: null, polishBusy: false, polishErr: '', polishErrAt: 0, polishDoneAt: 0, polishVer: 0, // 자동 자막 다듬기(28-17)
     savedForms: new Map(), saved: {}, phrases: {}, savedVer: 0, saving: false,
     note: null, waitSince: Date.now(), ccTried: new Set(), msg: '', msgAt: 0, ad: false, shown: false,
     panelOpen: false, // 패널이 열려 있는지(28-13): / 가 열기·닫기를 가르고, 열 때 멈춤 이유를 건다
@@ -163,6 +165,7 @@
       S.cues = main ? main.cues : [];
       S.ko = new Array(S.cues.length).fill('');
       S.koFail = new Set();
+      S.koTrack = null;
       S.cur = -1;
       S.revealed = -1;
       S.pausedFor = -1;
@@ -170,10 +173,17 @@
       S.mem = { repeatedFor: -1, gapTo: -1 };
       S.note = null;
       S.koErr = '';
+      S.polished = null; // 다른 자막이 되면 다듬은 줄도 버린다(28-17)
+      S.polishBusy = false;
+      S.polishErr = '';
+      S.polishErrAt = 0;
+      S.polishDoneAt = 0;
+      S.polishVer++;
     }
     const kk = main && ko ? keyOf(ko) : '';
     if (kk && kk !== S.koKey) {
       S.koKey = kk;
+      S.koTrack = ko;
       V.alignKo(S.cues, ko.cues).forEach((t, i) => { if (t) S.ko[i] = t; }); // 유튜브 한국어 자막을 골라 두었으면 그것을 한국어 줄로
     }
     S.others = mine.length > 0 && !main;
@@ -218,6 +228,12 @@
       S.waitSince = Date.now();
       S.msg = '';
       S.dictMemo = new Map(); // 영상이 바뀌면 낱말별 사전 기억을 지운다(28-6)
+      S.polished = null; // 다듬은 자막도 영상이 바뀌면 지운다(28-17)
+      S.polishBusy = false;
+      S.polishErr = '';
+      S.polishErrAt = 0;
+      S.polishDoneAt = 0;
+      S.polishVer++;
       closeTip();
       hold.reasons.clear();
       hold.paused = false;
@@ -602,6 +618,7 @@
       font: max(13px, calc(var(--fs, 22px) * .6))/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
     /* 라운드 끝 안내(28-14): 상태 줄 안의 [다음] 단추. 부모(.box)가 pointer-events: none 이라 단추만 받는다 */
     .msg .nx { margin-left: 8px; pointer-events: auto; }
+    .msg .px { margin-left: 8px; pointer-events: auto; min-height: 26px; padding: 1px 9px; }
     /* 키보드 저장 모드 안내 알약(28-7): 두 줄 바로 아래. 어두운 바탕 + 흰 글자 */
     .focushint { order: 1; margin-top: 4px; padding: 3px 12px; border-radius: 999px; background: rgba(8, 8, 8, .9); border: 1px solid rgba(255, 255, 255, .45); color: #fff;
       font: max(12px, calc(var(--fs, 22px) * .56))/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
@@ -1216,22 +1233,44 @@
     const wait = waitMessage();
     const roundEnd = S.roundEnd;
     const roundMsg = roundEnd ? roundEndText(roundEnd) : '';
-    const msg = wait || roundMsg;
+    // 자동 자막 다듬기(28-17): 자동 생성(kind=asr) 자막일 때만 상태 줄에 단추를 둔다. 자동으로 부르지 않는다.
+    const canPolish = Boolean(show && S.id && S.main?.kind === 'asr' && S.main.words?.length);
+    let msg = wait || roundMsg;
+    let msgKind = roundEnd ? 'round' : wait ? 'wait' : '';
+    if (!msg && show) {
+      if (S.polishBusy) {
+        msg = '자막을 다듬는 중…';
+        msgKind = 'polish-busy';
+      } else if (S.polishErr && Date.now() - S.polishErrAt < MSG_MS) {
+        msg = '다듬기 실패 — 지금 자막을 써요';
+        msgKind = 'polish-err';
+      } else if (S.polishDoneAt && Date.now() - S.polishDoneAt < MSG_MS) {
+        msg = '자막을 다듬었어요';
+        msgKind = 'polish-done';
+      } else if (canPolish && !S.polished) {
+        msg = '자동 생성 자막';
+        msgKind = 'polish-offer';
+      }
+    }
     if (msg !== S.msg) {
       S.msg = msg;
       S.msgAt = Date.now();
       notify('message');
     }
-    // 라운드 끝 안내는 사용자가 다시 재생하거나 다음 라운드를 고를 때까지 남긴다(28-14).
-    const showMsg = Boolean(msg) && (roundEnd ? true : Date.now() - S.msgAt < MSG_MS);
+    // 라운드 끝 안내·다듬기 단추는 사용자가 누르거나 다음 라운드를 고를 때까지 남긴다(28-14·28-17).
+    const showMsg = Boolean(msg) && (roundEnd || msgKind === 'polish-offer' || msgKind === 'polish-busy' || Date.now() - S.msgAt < MSG_MS);
     ui.msg.hidden = !showMsg;
-    const msgKey = roundEnd ? `round|${roundEnd.index}|${roundEnd.total}|${roundMsg}` : `wait|${msg}`;
+    const msgKey = [msgKind, roundEnd ? `${roundEnd.index}|${roundEnd.total}` : '', S.polishVer, msg].join('|');
     if (ui.msgKey !== msgKey) {
       ui.msgKey = msgKey;
       if (roundEnd) {
         const nb = button('다음', '다음 라운드 재생', () => nextRound(roundEnd));
         nb.classList.add('nx');
         ui.msg.replaceChildren(el('span', 'mx', roundMsg), nb);
+      } else if (msgKind === 'polish-offer') {
+        const pb = button('자막 다듬기(AI)', '자동 생성 자막을 AI 로 문장 단위로 다듬기', () => requestPolish());
+        pb.classList.add('px');
+        ui.msg.replaceChildren(el('span', 'mx', msg), pb);
       } else {
         ui.msg.textContent = msg;
       }
@@ -1293,7 +1332,7 @@
     const orderOf = (k) => String(Math.max(0, lay.order.indexOf(k)));
     ui.en.style.order = orderOf('en');
     ui.ko.style.order = orderOf('ko');
-    const key = cue ? [S.mainKey, i, mode, v.hard, v.subType, v.koAbove, S.ko[i] ?? '', S.koErr, S.hardVer, S.savedVer, v.hideTypes?.hard, v.hideTypes?.done, v.hideTypes?.other, v.idioms, v.mode, S.koPeek === i ? 1 : 0].join('|') : '';
+    const key = cue ? [S.mainKey, i, mode, v.hard, v.subType, v.koAbove, S.ko[i] ?? '', S.koErr, S.hardVer, S.savedVer, v.hideTypes?.hard, v.hideTypes?.done, v.hideTypes?.other, v.idioms, v.mode, S.koPeek === i ? 1 : 0, S.polishVer].join('|') : '';
     if (key === ui.lineKey) return;
     ui.lineKey = key;
     const cursorFor = `${S.mainKey}|${i}`;
@@ -1850,11 +1889,12 @@
     const i = V.koPlan(S.cues.length, S.cur, (k) => Boolean(S.ko[k]) || S.koFail.has(k), S.koAll);
     if (i < 0) return;
     S.koBusy = true;
-    const key = S.mainKey;
+    const key = `${S.mainKey}|${S.polishVer}`;
+    const cue = S.cues[i];
     const text = S.cues[i].text;
     const r = await send({ type: 'mt', text });
     S.koBusy = false;
-    if (key !== S.mainKey) return pumpKo(); // 그 사이 영상·자막이 바뀌었다
+    if (key !== `${S.mainKey}|${S.polishVer}` || S.cues[i] !== cue) return pumpKo(); // 그 사이 영상·자막이 바뀌었다
     if (typeof r?.translation === 'string' && r.translation) {
       S.ko[i] = r.translation;
       if (i === S.cur) renderLine();
@@ -1982,6 +2022,67 @@
   function nextRound(r) {
     if (!playRound(r.index + 1)) toast('마지막 라운드예요');
   }
+
+  // ---- 자동 자막 다듬기(28-17) ----
+  // 다리 /video/polish 에 낱말 시각을 보내고, 돌아온 문장 줄로 지금 자막을 바꾼다. 자동으로 부르지 않는다(구독 한도).
+  function polishFailed() {
+    S.polishBusy = false;
+    S.polishErr = 'bad-polish';
+    S.polishErrAt = Date.now();
+    S.polishDoneAt = 0;
+    S.msg = '';
+    render();
+    notify('track');
+  }
+  function applyPolish(main, words, lines) {
+    const polished = V.polishedCues(words, lines);
+    if (!polished.length) return polishFailed();
+    // 6000낱말을 넘는 긴 자막은 앞부분만 다듬고, 그 뒤 줄은 지금 줄을 그대로 붙인다.
+    const all = Array.isArray(main.words) ? main.words : [];
+    const cues = all.length > words.length
+      ? polished.concat(main.cues.filter((c) => c.start >= polished[polished.length - 1].end))
+      : polished;
+    S.polished = { lines: lines.length, words: words.length };
+    S.polishBusy = false;
+    S.polishErr = '';
+    S.polishErrAt = 0;
+    S.polishDoneAt = Date.now();
+    S.polishVer++;
+    S.cues = cues;
+    S.ko = new Array(cues.length).fill('');
+    S.koFail = new Set();
+    S.koErr = '';
+    if (S.koTrack?.cues?.length) V.alignKo(cues, S.koTrack.cues).forEach((t, i) => { if (t) S.ko[i] = t; });
+    S.cur = -1;
+    S.revealed = -1;
+    S.pausedFor = -1;
+    S.prevT = video?.currentTime ?? 0;
+    S.mem = { repeatedFor: -1, gapTo: -1 };
+    S.msg = '';
+    notify('track');
+    tick(true);
+    pumpKo();
+    pumpAnnot();
+  }
+  async function requestPolish() {
+    if (S.polishBusy || !S.id || !video) return;
+    const main = S.main;
+    const all = Array.isArray(main?.words) ? main.words : [];
+    if (main?.kind !== 'asr' || !all.length) return;
+    const words = all.slice(0, MAX_POLISH_WORDS).map((w) => ({ t: w.t, w: w.w }));
+    const key = `${S.mainKey}|${S.polishVer}`;
+    S.polishBusy = true;
+    S.polishErr = '';
+    S.polishErrAt = 0;
+    S.polishDoneAt = 0;
+    S.msg = '';
+    render();
+    notify('track');
+    const r = await send({ type: 'video-polish', id: S.id, words });
+    if (key !== `${S.mainKey}|${S.polishVer}` || S.main !== main) return; // 그 사이 자막이 바뀌었다
+    if (!r?.lines || !V.validPolish(r.lines, words.length)) return polishFailed();
+    applyPolish(main, words, r.lines);
+  }
   function playScene(scene) {
     if (!scene || scene.id !== S.id || !video) return false;
     const c = scene.clip ?? V.clipAt(S.cues, scene.t);
@@ -2100,7 +2201,7 @@
   checkPage();
 
   globalThis.readglossVideoUi = {
-    state: () => ({ id: S.id, title: titleNow(), cues: S.cues, kind: S.main?.kind ?? null, ko: S.ko, cur: S.cur, hard: S.hard, koAll: S.koAll, message: S.msg }),
+    state: () => ({ id: S.id, title: titleNow(), cues: S.cues, kind: S.main?.kind ?? null, ko: S.ko, cur: S.cur, hard: S.hard, koAll: S.koAll, message: S.msg, polished: Boolean(S.polished), polishBusy: S.polishBusy, polishVer: S.polishVer, canPolish: Boolean(S.main?.kind === 'asr' && S.main.words?.length) }),
     isSaved: (i) => Boolean(S.cues[i] && Sel.findPhrase(S.phrases, S.cues[i].text)),
     onChange(cb) {
       listeners.add(cb);
@@ -2114,6 +2215,7 @@
       pumpKo();
     },
     annotateAll,
+    polish: () => requestPolish(),
     playScene,
     // 1분 라운드(28-14): 대본의 라운드 목록과 그 라운드 재생, 지금 라운드 상태(끝났는지 포함).
     rounds: () => roundList(),

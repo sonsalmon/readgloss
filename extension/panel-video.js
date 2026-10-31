@@ -291,8 +291,10 @@
     scriptPane.setAttribute('role', 'tabpanel');
     const hardBtn = btn('어려운 단어 보기', '이 영상의 어려운 단어 미리 보기', () => showHard());
     const koBtn = btn('한국어 모두 보기', '대본 전체를 맥 번역으로', () => ui()?.setKoAll(!ui().state().koAll));
+    // 자동 자막 다듬기(28-17): 자동 생성(kind=asr)일 때만 보인다. 누를 때만 AI 를 부른다.
+    const polishBtn = btn('자막 다듬기(AI)', '자동 생성 자막을 AI 로 문장 단위로 다듬기', () => ui()?.polish?.());
     const tools = el('div', 'v-tools');
-    tools.append(hardBtn, koBtn);
+    tools.append(hardBtn, koBtn, polishBtn);
     const scriptFilters = el('div', 'v-filters');
     scriptFilters.setAttribute('role', 'group');
     scriptFilters.setAttribute('aria-label', '대본 거르기');
@@ -520,7 +522,7 @@
     function build() {
       const st = ui()?.state();
       const data = panelData();
-      const key = st ? [st.id, st.cues.length, st.cues[0]?.start, st.kind, data.version, st.ko.length].join('|') : '';
+      const key = st ? [st.id, st.cues.length, st.cues[0]?.start, st.kind, st.polishVer, data.version, st.ko.length].join('|') : '';
       if (key === builtKey) {
         // 같은 대본이어도 한국어 줄은 바뀔 수 있다(나중에 온 유튜브 한국어 자막은 'ko' 알림 없이 한꺼번에 채워진다)
         rows.forEach((r, i) => {
@@ -598,11 +600,16 @@
       subtabs.hidden = false;
       paintPanes();
       tools.hidden = !st.cues.length;
+      polishBtn.hidden = !(st.cues.length && st.kind === 'asr' && st.canPolish && !st.polished);
+      polishBtn.disabled = st.polishBusy;
+      polishBtn.textContent = st.polishBusy ? '다듬는 중…' : '자막 다듬기(AI)';
       if (!st.cues.length) {
         infoEl.textContent = st.message || '자막을 기다리는 중… (유튜브 자막(CC)을 켜 주세요)';
         return;
       }
-      infoEl.textContent = `영어 자막 · ${st.cues.length}줄 · ${st.kind === 'asr' ? '자동 생성' : '사람이 씀'}`;
+      infoEl.textContent = st.polished
+        ? `AI 가 다듬은 자막 · 영어 자막 ${st.cues.length}줄`
+        : `영어 자막 · ${st.cues.length}줄 · ${st.kind === 'asr' ? '자동 생성' : '사람이 씀'}`;
       const done = st.ko.filter(Boolean).length;
       koBtn.textContent = st.koAll ? `한국어 받는 중 ${done}/${st.cues.length} · 멈추기` : done >= st.cues.length ? '한국어 모두 받음' : '한국어 모두 보기';
       koBtn.setAttribute('aria-pressed', String(st.koAll));

@@ -111,33 +111,76 @@
     }));
   }
 
+  // 자동 자막 다듬기(28-17): AI 가 낱말 번호로 나눈 줄 {from,to,text} 이 0..n-1 을 빠짐·겹침 없이 덮는지 검사한다.
+  // 번호가 어긋난 결과는 시각이 밀리므로 통째로 버린다(다리와 확장이 같은 규칙을 쓴다).
+  function validPolish(lines, n) {
+    if (!Array.isArray(lines) || !lines.length || !Number.isInteger(n) || n <= 0) return false;
+    let next = 0;
+    for (const l of lines) {
+      if (!isObj(l)) return false;
+      if (!Number.isInteger(l.from) || !Number.isInteger(l.to)) return false;
+      if (l.from !== next || l.to < l.from || l.to >= n) return false;
+      if (typeof l.text !== 'string' || !cleanText(l.text)) return false;
+      next = l.to + 1;
+    }
+    return next === n;
+  }
+
+  // 다듬은 줄 {from,to,text} -> 자막 줄 [{start,end,text}]. 시각은 그 줄 첫 낱말과 다음 줄 첫 낱말(1초 안) 또는 마지막 낱말 + 1초.
+  // words 는 [{t(초), w(낱말)}]. 번호가 틀리면 빈 목록을 돌려 지금 자막을 그대로 두게 한다.
+  function polishedCues(words, lines) {
+    const list = Array.isArray(words) ? words : [];
+    const ws = list.map((w) => ({ t: num(w?.t), w: cleanText(w?.w) }));
+    if (!ws.length || ws.some((w) => w.t === null || w.t < 0 || !w.w)) return [];
+    if (!validPolish(lines, ws.length)) return [];
+    const out = [];
+    for (let j = 0; j < lines.length; j++) {
+      const l = lines[j];
+      const start = ws[l.from].t;
+      const last = ws[l.to].t;
+      const nextStart = j + 1 < lines.length ? ws[lines[j + 1].from].t : null;
+      const end = nextStart !== null && nextStart > last && nextStart - last <= ASR.tail ? nextStart : last + ASR.tail;
+      out.push({ start: round(start), end: round(Math.min(MAX_TIME, Math.max(end, start + 0.5))), text: cleanText(l.text) });
+    }
+    return normalizeCues(out);
+  }
+
   // json3 에 낱말마다 시각(tOffsetMs)이나 자동 인식 점수(acAsrConf)가 있으면 자동 생성 자막이다.
   const json3HasWordTiming = (obj) => (Array.isArray(obj?.events) ? obj.events : []).some((ev) => Array.isArray(ev?.segs) && ev.segs.some((s) => isObj(s) && ('tOffsetMs' in s || 'acAsrConf' in s)));
 
-  function parseJson3(obj, asr) {
+  // json3 자동 생성 자막의 낱말 [{ text, start }]. 줄 묶기와 다듬기 요청이 같은 낱말 시각을 쓴다.
+  function json3Words(obj) {
     const events = Array.isArray(obj?.events) ? obj.events : [];
-    if (asr) {
-      const words = [];
-      for (const ev of events) {
-        const t0 = num(ev?.tStartMs);
-        if (t0 === null || !Array.isArray(ev.segs)) continue;
-        for (const seg of ev.segs) {
-          const text = cleanText(seg?.utf8);
-          if (!text) continue; // aAppend 의 줄바꿈 이벤트 등
-          words.push({ text, start: (t0 + (num(seg.tOffsetMs) ?? 0)) / 1000 });
-        }
+    const words = [];
+    for (const ev of events) {
+      const t0 = num(ev?.tStartMs);
+      if (t0 === null || !Array.isArray(ev.segs)) continue;
+      for (const seg of ev.segs) {
+        const text = cleanText(seg?.utf8);
+        if (!text) continue; // aAppend 의 줄바꿈 이벤트 등
+        words.push({ text, start: (t0 + (num(seg.tOffsetMs) ?? 0)) / 1000 });
       }
-      return groupWords(words);
     }
+    return words.sort((a, b) => a.start - b.start);
+  }
+  function parseJson3All(obj, asr) {
+    if (asr) {
+      const words = json3Words(obj);
+      return { cues: groupWords(words), words };
+    }
+    const events = Array.isArray(obj?.events) ? obj.events : [];
     const cues = [];
     for (const ev of events) {
       const t0 = num(ev?.tStartMs);
       if (t0 === null || !Array.isArray(ev.segs)) continue;
       const text = ev.segs.map((s) => (typeof s?.utf8 === 'string' ? s.utf8 : '')).join('');
-      const dur = num(ev.dDurationMs) ?? 0;
+      const dur = num(ev?.dDurationMs) ?? 0;
       cues.push({ start: t0 / 1000, end: (t0 + dur) / 1000, text });
     }
-    return normalizeCues(cues);
+    return { cues: normalizeCues(cues), words: null };
+  }
+  function parseJson3(obj, asr) {
+    return parseJson3All(obj, asr).cues;
   }
 
   // srv3(<timedtext format="3"><body><p t d>…<s t>낱말</s>…</p>) 와 srv1(<transcript><text start dur>…</text>).
@@ -170,7 +213,8 @@
         cues.push({ start: t / 1000, end: (t + d) / 1000, text: stripTags(decodeEntities(stripTags(inner))) });
       }
     }
-    return words.length ? { cues: groupWords(words), asr: true } : { cues: normalizeCues(cues), asr: false };
+    if (words.length) return { cues: groupWords(words), asr: true, words: words.sort((a, b) => a.start - b.start) };
+    return { cues: normalizeCues(cues), asr: false };
   }
 
   // WebVTT: "00:01.000 --> 00:03.000" 다음 줄들이 글. 낱말 시각 태그(<00:00:01.500>)·<c> 는 걷는다.
@@ -193,31 +237,39 @@
     return normalizeCues(cues);
   }
 
-  // 자막 응답 하나 -> { videoId, lang, tlang, kind:'asr'|'manual', cues } | null(못 읽음·빈 자막)
+  // 자막 응답 하나 -> { videoId, lang, tlang, kind:'asr'|'manual', cues, words? } | null(못 읽음·빈 자막)
   function parseTrack(body, url) {
     if (typeof body !== 'string' || !body.trim()) return null;
     const p = params(url);
     // 유튜브 자동 번역(tlang)은 자동 생성 자막을 옮긴 것이라도 줄 단위로 온다(낱말 시각 없음)
     let asr = !p.tlang && p.kind === 'asr';
     let cues = null;
+    let words = null;
     const s = body.trimStart();
     try {
       if (s[0] === '{') {
         const obj = JSON.parse(s);
         asr = asr || (!p.tlang && json3HasWordTiming(obj));
-        cues = parseJson3(obj, asr);
+        const r = parseJson3All(obj, asr);
+        cues = r.cues;
+        words = r.words;
       } else if (s.startsWith('WEBVTT')) {
         cues = parseVtt(s);
       } else if (s[0] === '<') {
         const r = parseXml(s);
         cues = r.cues;
         asr = asr || r.asr;
+        words = r.words ?? null;
       }
     } catch {
       return null;
     }
     if (!cues?.length) return null;
-    return { videoId: ID_RE.test(p.v) ? p.v : null, lang: p.lang, tlang: p.tlang, kind: asr ? 'asr' : 'manual', cues };
+    // 다듬기 요청·적용은 낱말 시각이 있어야 한다. 응답 모양은 { t(초), w(낱말) }.
+    const wordList = asr && words?.length
+      ? words.map((w) => ({ t: round(w.start), w: w.text })).filter((w) => w.w && Number.isFinite(w.t) && w.t >= 0)
+      : null;
+    return { videoId: ID_RE.test(p.v) ? p.v : null, lang: p.lang, tlang: p.tlang, kind: asr ? 'asr' : 'manual', cues, ...(wordList?.length ? { words: wordList } : {}) };
   }
 
   // 트랙 언어: 유튜브 자동 번역이면 tlang, 아니면 lang. 둘 다 없으면 글자로 짐작한다(영어 글자가 한글보다 많으면 en).
@@ -818,6 +870,7 @@
   globalThis.readglossVideo = {
     ID_RE, ASR, GRACE, MAX_CLIP, MAX_ROUND: ROUND_MAX, ROUND_MIN, ROUND_TARGET, ROUND_MAX, HIDE_MODES, HIDE_LABEL, HIDE_TYPES, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT, DRILL_DOUBLE, MODES, MODE_LABEL,
     params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseTrack,
+    validPolish, polishedCues,
     langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, shuffleTiles, tileCheck, bandOf, minPFor, tokenColor, phraseSpans, tooltipModel, hideTypes, maskFlags, nextHide, drillSpace, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
     parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf, barModel, xToTime, subLayout, rounds,
   };

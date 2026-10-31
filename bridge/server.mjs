@@ -29,6 +29,7 @@ import { createTutorQuote } from './tutor-quote.mjs';
 import { createStudyTime, parseStudyTimeOp, parseStudyTimeRange } from './study-time.mjs';
 import { adjustOffset, createWstat, LEMMA_RE, probability, threshold } from './wstat.mjs';
 import { createStructure } from './structure.mjs';
+import { BadPolishError, createPolish, parsePolishRequest } from './polish.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
@@ -38,6 +39,7 @@ const MAX_MEMOS_BODY = 96 * 1024; // 메모(표 인용 포함)는 명세 상한�
 const MAX_ANNOTATE_STATS_BODY = 64 * 1024;
 const MAX_STUDY_TIME_BODY = 256 * 1024; // /study-time 항목이 많이 쌓였을 때를 위한 본문 상한
 const MAX_WIDE_BODY = 64 * 1024; // /translate-context·/lookup 은 "더 넓은 문맥"을 실을 수 있어 본문 상한이 크다
+const MAX_POLISH_BODY = 1024 * 1024; // /video/polish 는 낱말 6000개(낱말당 100자)까지 실을 수 있다
 const MAX_ACRONYMS = 100;
 const ACRONYM_RE = /^[A-Z]{2,6}$/;
 const MAX_SENTENCE = 1000;
@@ -127,7 +129,7 @@ function sendAiError(res, e, cors) {
 }
 
 // ask({word, sentence, context?}) / askTranslate(문단, 용어 지정 목록) / askContext(프롬프트 문자열) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
-export function createBridge({ ask, askTranslate, askContext, askStructure = askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), structureFile = join(dirname(cacheFile), 'structure-explanations.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), dbFile = join(dirname(cacheFile), 'readgloss.db'), learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career'), tutorSessionsDir = join(homedir(), '.aside', 'u', '0', 'sessions'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
+export function createBridge({ ask, askTranslate, askContext, askStructure = askContext, askPolish = askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), structureFile = join(dirname(cacheFile), 'structure-explanations.json'), polishFile = join(dirname(cacheFile), 'polish.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), dbFile = join(dirname(cacheFile), 'readgloss.db'), learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career'), tutorSessionsDir = join(homedir(), '.aside', 'u', '0', 'sessions'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
   const dataDir = dirname(cacheFile);
   const dbExisted = existsSync(dbFile);
   // db 를 못 열거나 옮기기가 실패하면 JSON 으로 계속 돈다(변경 기록 11-2). 단, db 파일이 이미 있었는데 openDb 가 실패하면 예외를 던진다.
@@ -166,6 +168,7 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
   const translate = createTranslate({ cache: createCache(translationsFile), ask: askTranslate });
   const contextTranslate = createContextTranslate({ cache: createCache(contextFile), ask: askContext });
   const structure = createStructure({ cache: createCache(structureFile), ask: askStructure, db, now });
+  const polish = createPolish({ cache: createCache(polishFile), ask: askPolish });
   const words = db ? createWords({ db, now }) : createWords({ file: wordsFile, now });
   const glossary = createGlossary();
   const mydict = db ? createMydict({ db, now }) : createMydict({ file: mydictFile, now });
@@ -824,6 +827,24 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
     send(res, 200, structure.stats(), cors);
   }
 
+  // 자동 자막 다듬기(28-17): POST /video/polish { id, words:[{t,w}] } -> { lines:[{from,to,text}], cached }
+  // AI 결과가 낱말 번호를 빠짐·겹침 없이 덮지 않으면 그 결과를 버리고 502 bad-polish.
+  async function handlePolish(req, res, cors) {
+    const { value, status } = await readJson(req, MAX_POLISH_BODY);
+    if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+    const parsed = parsePolishRequest(value);
+    if (parsed.error) return send(res, parsed.error === 'too-large' ? 413 : 400, { error: parsed.error }, cors);
+    try {
+      const r = await polish({ id: parsed.id, words: parsed.words });
+      send(res, 200, r, cors);
+    } catch (e) {
+      if (e instanceof BadPolishError) send(res, 502, { error: 'bad-polish' }, cors);
+      else if (e instanceof AiTimeoutError) send(res, 504, { error: 'timeout' }, cors);
+      else if (e instanceof AiError || e instanceof AiParseError) send(res, 502, { error: 'ai-failed' }, cors);
+      else send(res, 500, { error: 'internal' }, cors);
+    }
+  }
+
   async function handle(req, res) {
     // 1. Host 가 고정값이 아니면 거절. 2. Origin 이 있는데 내 확장이 아니면 거절(토큰 유무와 무관).
     if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, { error: 'forbidden' });
@@ -923,6 +944,10 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
       if (req.method !== 'GET') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleExplainStructureStats(req, res, cors);
     }
+    if (path === '/video/polish') {
+      if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handlePolish(req, res, cors);
+    }
     return send(res, 404, { error: 'not-found' }, cors);
   }
 
@@ -978,6 +1003,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
     askTranslate: async (text, terms) => (await client.ask(buildTranslatePrompt(text, terms), { timeoutMs: 60_000 })).text,
     askContext: async (prompt) => (await client.ask(prompt)).text,
     askStructure: async (prompt) => (await client.ask(prompt)).text,
+    askPolish: async (prompt) => (await client.ask(prompt)).text,
     cacheFile: join(dataDir, 'cache.json'),
     tokenFile: join(dataDir, 'token'),
     extensionId,
