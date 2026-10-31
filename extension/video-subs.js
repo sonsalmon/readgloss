@@ -24,6 +24,8 @@
   const FOCUS_DELAY_MS = 300; // 사용자가 멈춘 뒤 두 줄로 포커스하기까지(28-7)
   const MAX_DICT_MEMO = 500; // 한 영상에서 뜻을 기억해 둘 낱말 수
   const MAX_POLISH_WORDS = 6000; // 다리 /video/polish 요청 상한(28-17)
+  const ASK_SELECTION_MAX = 600; // 다리 /ask selection 한도(28-18)
+  const ASK_FAIL = '답을 가져오지 못했어요. 다시 시도해 주세요';
   const ERR = {
     'bridge-off': '다리가 꺼져 있어요', 'mt-unavailable': '맥 번역 도우미가 없어요(npm run build:mt)', 'mt-failed': '맥 번역이 실패했어요',
     'ext-reloaded': '확장이 새로 로드됐어요. 이 페이지를 새로고침해 주세요', 'pair-failed': '다리와 연결하지 못했어요(인증)', unauthorized: '다리와 연결하지 못했어요(인증)',
@@ -31,6 +33,9 @@
   };
   const STOP_KO = new Set(['bridge-off', 'mt-unavailable', 'ext-reloaded', 'pair-failed', 'unauthorized']); // 줄 하나가 아니라 번역 전체가 막힌 오류
   const errText = (r, head) => ERR[r?.error] ?? `${head}(${r?.error ?? '응답 없음'})`;
+  // 묻기(28-18)는 '풀이'가 아니라 '답'을 못 받은 것이므로 실패 문구를 따로 쓴다. 긴 줄은 다리 한도인 앞 600자만 보낸다.
+  const askSelection = (text) => String(text ?? '').slice(0, ASK_SELECTION_MAX);
+  const askErrText = (r) => (r?.error === 'ai-failed' ? ASK_FAIL : errText(r, '답을 가져오지 못했어요'));
 
   // 세로 막대 단추(28-10): 짧은 글자·이름·키. 툴팁(aria-label·title)에 이름과 키를 함께 보여 준다.
   const BAR = {
@@ -51,6 +56,9 @@
     explain: { text: '풀이', name: '이 줄 AI 풀이(문맥 번역)', key: '' },
   };
   const barLabel = (b) => (b.key ? `${b.name} (${b.key})` : b.name);
+  // 두 줄 묶음 낭독(28-7): 키보드 저장 모드가 켜졌을 때만 안쪽 낱말 키(Enter·↓·Esc)를 안내한다.
+  const LINES_LABEL = 'readgloss 자막 — A 이전 줄 · S 이 줄 처음 · D 다음 줄 · R 문장 반복 · Q 구간 반복 · Z 느리게 · Shift 줄 저장 · W 키보드 저장 모드';
+  const LINES_LABEL_FOCUS = `${LINES_LABEL} · ←→ 낱말 · Enter 저장 · ↓ 자세히 · Esc 재생`;
 
   let settings = SET.normalize({});
   const vs = () => settings.video;
@@ -903,7 +911,7 @@
     // 키보드만 쓸 때: Tab 으로 두 줄에 오면 막대가 보이고 다음 Tab 이 막대 단추로 간다(27-2)
     lines.tabIndex = 0;
     lines.setAttribute('role', 'group');
-    lines.setAttribute('aria-label', 'readgloss 자막 — A 이전 줄 · S 이 줄 처음 · D 다음 줄 · R 문장 반복 · Q 구간 반복 · Z 느리게 · Shift 줄 저장 · W 키보드 저장 모드 · ←→ 낱말 · Enter 저장 · ↓ 자세히 · Esc 재생');
+    lines.setAttribute('aria-label', LINES_LABEL);
     // 마우스로 눌러도 포커스는 층으로 옮기지 않는다(화살표·Space 는 유튜브 몫으로 남는다). Tab 으로만 들어온다.
     // 한국어 줄은 끌어서 고르기(복사)가 되게 기본 동작을 두고, 손을 떼면 포커스만 놓는다(고른 글은 남는다).
     let koPress = false;
@@ -1087,10 +1095,12 @@
         e.preventDefault();
         e.stopPropagation();
         if (e.key === 'ArrowDown' || !vs().focusMode) pickWord(sp); // ↓ = 자세히(사전 카드). 모드가 꺼져 있으면 옛 Enter 동작
-        else toggleWordAt(ui.wcur);
+        // 모드가 켜져 있고 가린 낱말이면 Enter 는 저장이 아니라 그 줄 보기다(낭독 문구와 같은 동작).
+        else if (sp.classList.contains('hid')) pickWord(sp);
+        else if (!e.repeat) toggleWordAt(ui.wcur); // Enter 를 누르고 있어도 저장은 한 번만
       } else if (e.key === 'Escape' && vs().focusMode) {
         if (hold.paused && hold.reasons.size === 1 && hold.reasons.has('keys')) {
-          // Tab 으로 들어올 때 hoverPause 가 영상을 멈췄다: 이유만 지우지 말고 holdOff 로 재생까지 되살린다
+          // 낱말을 옮기며 'keys' 로 멈춘 영상이다: 이유만 지우지 말고 holdOff 로 재생까지 되살린다
           e.preventDefault();
           e.stopPropagation();
           ui.lines.blur();
@@ -1235,8 +1245,22 @@
     acts.append(button('자세히', '자세히 — 사전 카드 열기', openTipDetail));
     kids.push(acts);
     if (tip.askOpen) kids.push(buildTipAsk());
+    // replaceChildren 으로 다시 그려도 [묻기] 입력칸의 포커스·커서를 잃지 않게 값과 자리를 기억했다가 되돌린다.
+    const root = ui.tip.getRootNode();
+    const beforeQ = ui.tip.querySelector('.tp-q');
+    const qFocused = Boolean(beforeQ && root.activeElement === beforeQ);
+    const qStart = beforeQ?.selectionStart ?? null;
+    const qEnd = beforeQ?.selectionEnd ?? null;
     ui.tip.hidden = false;
     ui.tip.replaceChildren(...kids);
+    const afterQ = ui.tip.querySelector('.tp-q');
+    if (afterQ) {
+      afterQ.value = tip.askText;
+      if (qFocused) {
+        afterQ.focus({ preventScroll: true });
+        if (Number.isInteger(qStart) && Number.isInteger(qEnd)) afterQ.setSelectionRange(qStart, qEnd);
+      }
+    }
     placeTip();
     if (!hard && !dict) askTipDict(tip.lower, tip.word);
   }
@@ -1293,11 +1317,11 @@
     const my = ++tip.askSeq;
     paintTip();
     const ctx = V.contextOf(S.cues, i, titleNow());
-    const r = await send({ type: 'ask', selection: cue.text, question, context: ctx });
+    const r = await send({ type: 'ask', selection: askSelection(cue.text), question, context: ctx });
     if (!tip.open || tip.askSeq !== my) return; // 그 사이 닫았거나 다른 낱말로 옮겼다
     tip.askBusy = false;
     if (typeof r?.answer === 'string' && r.answer) tip.askAnswer = r.answer;
-    else tip.askError = errText(r, '답을 가져오지 못했어요');
+    else tip.askError = askErrText(r);
     paintTip();
   }
   // 낱말 위에 붙인다. 위가 모자라면(플레이어 위 끝) 낱말 아래에 둔다.
@@ -1374,20 +1398,28 @@
     if (ok) paintTip();
   }
   // 두 줄 안 Enter(28-7): 그 낱말 저장/해제. 말풍선 저장과 같은 함수·같은 메시지를 쓴다.
+  // 저장이 끝나기 전에 Enter 가 다시 와도(사전을 기다리는 동안) 한 번만 보낸다 — 말풍선 저장 단추의 disabled 와 같은 뜻.
+  let wordSaving = false;
   async function toggleWordAt(k) {
+    if (wordSaving) return;
     const tk = ui?.tokens?.[k];
+    const cue = S.cues[S.cur];
     const i = S.cur;
-    const cue = S.cues[i];
     if (!tk?.w || !cue) return;
-    const lower = tk.lower;
-    let dict = S.dictMemo.get(lower);
-    if (!S.savedForms.has(lower) && !S.hard.get(lower) && !dict) dict = await fetchDict(lower, tk.t);
-    if (S.cues[S.cur] !== cue) return; // 기다리는 사이 줄이 바뀌었다
-    const m = V.tooltipModel({ word: tk.t, hard: S.hard.get(lower), dict, saved: S.savedForms.has(lower) });
-    const sp = ui.en.querySelector(`.w[data-k="${k}"]`);
-    if (!S.savedForms.has(lower) && m.state !== 'found') return toast('사전에 없어요', sp || ui.box);
-    await toggleWordSave(i, lower, tk.t, m, sp || ui.box);
-    if (tip.open && tip.lower === lower) paintTip();
+    wordSaving = true;
+    try {
+      const lower = tk.lower;
+      let dict = S.dictMemo.get(lower);
+      if (!S.savedForms.has(lower) && !S.hard.get(lower) && !dict) dict = await fetchDict(lower, tk.t);
+      if (S.cues[S.cur] !== cue) return; // 기다리는 사이 줄이 바뀌었다
+      const m = V.tooltipModel({ word: tk.t, hard: S.hard.get(lower), dict, saved: S.savedForms.has(lower) });
+      const sp = ui.en.querySelector(`.w[data-k="${k}"]`);
+      if (!S.savedForms.has(lower) && m.state !== 'found') return toast('사전에 없어요', sp || ui.box);
+      await toggleWordSave(i, lower, tk.t, m, sp || ui.box);
+      if (tip.open && tip.lower === lower) paintTip();
+    } finally {
+      wordSaving = false;
+    }
   }
   function openTipDetail() {
     if (!tip.open) return;
@@ -1422,9 +1454,10 @@
     const at = words.indexOf(ui.wcur);
     ui.hint.textContent = `${at < 0 ? 1 : at + 1}/${words.length} · ←→ 표현 · Enter 저장 · Shift 줄 저장 · ↓ 자세히 · Esc 재생`;
   }
-  // 키보드 낱말 자리 옮기기. 움직이는 동안 줄이 넘어가지 않게 마우스를 올린 것처럼 잠깐 멈춘다(마우스 멈춤 설정을 따른다)
+  // 키보드 낱말 자리 옮기기. 움직이는 동안 줄이 넘어가지 않게 'keys' 이유로 멈춘다(마우스 멈춤 설정과 따로).
+  // 키보드 저장 모드는 이미 멈춘 뒤라 그대로이고, 층을 떠나면 focusout 이 이 멈춤을 푼다.
   function moveCursor(k) {
-    if (vs().hoverPause) holdOn('keys');
+    holdOn('keys');
     ui.en.querySelector('.w.cur')?.classList.remove('cur');
     ui.wcur = k;
     const sp = ui.en.querySelector(`.w[data-k="${k}"]`);
@@ -1715,6 +1748,8 @@
     ui.slowBtn.setAttribute('aria-pressed', String(Boolean(video && video.playbackRate !== 1))); // 지금 속도가 1 이 아님(28-3)
     ui.drillBtn.setAttribute('aria-pressed', String(S.drill));
     ui.focusBtn.setAttribute('aria-pressed', String(v.focusMode));
+    // 두 줄 묶음 안내는 모드가 켜졌을 때만 낱말 키까지 읽는다(28-7). 꺼져 있으면 옛 안내 그대로.
+    ui.lines.setAttribute('aria-label', v.focusMode ? LINES_LABEL_FOCUS : LINES_LABEL);
     ui.koBtn.setAttribute('aria-pressed', String(V.subLayout({ subType: v.subType, koAbove: v.koAbove }).showKo));
     const saved = cue ? Boolean(Sel.findPhrase(S.phrases, cue.text)) : false;
     showLabel(ui.saveBtn, saved ? 'on' : 'off', saved ? '이 줄 저장 빼기 (Shift)' : '이 줄 구·문장에 저장 (Shift)');
@@ -1970,10 +2005,6 @@
       else window.dispatchEvent(new CustomEvent('readgloss:open-panel', { detail: { tab: 'video' } }));
       return;
     }
-    if (act === 'reveal') {
-      S.revealed = i;
-      renderLine();
-    }
     if (act === 'mode') return cycleMode();
   }
 
@@ -2130,7 +2161,7 @@
     if (!q) return { error: 'bad-request' };
     const key = S.mainKey;
     const ctx = V.contextOf(S.cues, i, titleNow());
-    const r = await send({ type: 'ask', selection: cue.text, question: q, context: ctx });
+    const r = await send({ type: 'ask', selection: askSelection(cue.text), question: q, context: ctx });
     if (key !== S.mainKey || S.cues[i] !== cue) return { error: 'changed' };
     return r;
   }

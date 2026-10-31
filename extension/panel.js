@@ -1048,7 +1048,7 @@
       h('h3', { class: 'sec', text: '영상 자막' }), toggle('video.subs', '유튜브 영상에서 영어·한국어 두 줄 자막. 유튜브 자막(CC) 단추로 켜고 꺼요. 낱말을 누르면 사전 카드.'),
       choice('video.subType', null, '자막 층에 보일 줄을 골라요. 안 보이기는 자막 줄만 숨기고 막대·키는 남겨요.'),
       toggle('video.koAbove', '맥 번역(무료)이에요. 자막 위 [풀이]는 AI 문맥 번역. 켜면 한국어 줄이 영어 줄 위로 가요.'), toggle('video.hard'), toggle('video.hoverPause'), toggle('video.autoCC', '영상마다 한 번 CC 단추를 눌러요.'),
-      toggle('video.pauseEach', 'P 키로도 바꿔요. A 앞 줄 · S 이 줄 다시 · D 다음 줄.'), choice('video.hide', null, '막대 [가리기] 단추로 끔 → 낱말 → 줄 순서로 바뀌어요. 가린 낱말을 누르면 그 줄이 보여요.'),
+      toggle('video.pauseEach', 'A 앞 줄 · S 이 줄 다시 · D 다음 줄.'), choice('video.hide', null, '막대 [가리기] 단추로 끔 → 낱말 → 줄 순서로 바뀌어요. 가린 낱말을 누르면 그 줄이 보여요.'),
       toggle('video.hideTypes.hard'), toggle('video.hideTypes.done'), toggle('video.hideTypes.other'),
       slider('video.enFontPct'), slider('video.koFontPct'), choice('video.bgOpacity'), adjustRow, choice('video.slowRate', null, 'Z 키나 자막 막대 [느리게]로 1배와 이 속도를 오가요.'),
       toggle('video.wordBands.easy'), toggle('video.wordBands.medium'), toggle('video.wordBands.hard'), toggle('video.idioms', '저장한 짧은 구(8낱말 이하)를 한 덩어리로 칠해요.'),

@@ -164,7 +164,7 @@ test('확장 연결: background 중계, 자막 말풍선·패널 풀이·드래�
   const selection = readFileSync(new URL('../extension/selection.js', import.meta.url), 'utf8');
 
   assert.match(bg, /ask: \(\{ selection, question, context \}\) => relay\('\/ask'/);
-  assert.match(subs, /type: 'ask', selection: cue\.text, question/);
+  assert.match(subs, /type: 'ask', selection: askSelection\(cue\.text\), question/);
   assert.match(subs, /V\.contextOf\(S\.cues, i, titleNow\(\)\)/);
   assert.match(subs, /maxLength = 200/);
   assert.match(subs, /askAt: \(i, question\) => askAt\(i, question\)/);

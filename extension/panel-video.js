@@ -251,7 +251,9 @@
     return null;
   }
   // 오류 코드를 한국어 한 줄로. 다리 오류 표는 자막 층과 같은 말을 쓴다.
-  function errorText(r, head) {
+  // aiHead 는 묻기(28-18)처럼 '풀이'가 아닌 요청에만 넘긴다: 다리 ai-failed 를 그 요청의 말로 바꾼다.
+  function errorText(r, head, aiHead) {
+    if (r?.error === 'ai-failed' && aiHead) return aiHead;
     const known = {
       'bridge-off': '다리가 꺼져 있어요', 'mt-unavailable': '맥 번역 도우미가 없어요', 'ext-reloaded': '확장이 새로 로드됐어요. 페이지를 새로고침해 주세요',
       'pair-failed': '다리와 연결하지 못했어요(인증)', unauthorized: '다리와 연결하지 못했어요(인증)', timeout: '시간이 오래 걸려요. 잠시 뒤 다시 눌러 주세요',
@@ -870,7 +872,7 @@
       const r = await ui().askAt(i, question);
       if (!root.isConnected) return;
       if (typeof r?.answer === 'string' && r.answer) ask = { i, busy: false, answer: r.answer, error: '' };
-      else ask = { i, busy: false, answer: '', error: errorText(r, '답을 가져오지 못했어요') };
+      else ask = { i, busy: false, answer: '', error: errorText(r, '답을 가져오지 못했어요', '답을 가져오지 못했어요. 다시 시도해 주세요') };
       paintAsk();
     }
 
