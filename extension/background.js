@@ -109,6 +109,8 @@ const RELAYS = {
   'video-polish': ({ id, words }) => relay('/video/polish', { id, words }),
   // 지금 줄에 묻기(28-18): 고른 글·자막 줄과 질문, 있으면 문맥을 그대로 넘긴다.
   ask: ({ selection, question, context }) => relay('/ask', { selection, question, ...(context && { context }) }),
+  // 대화 + 빈칸 타이핑 복습(28-20): 카드 정보를 그대로 넘긴다.
+  'review-drill': ({ key, lemma, text, gloss, sentence }) => relay('/review/drill', { key, ...(lemma !== undefined && { lemma }), ...(text !== undefined && { text }), gloss, ...(sentence && { sentence }) }),
 };
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

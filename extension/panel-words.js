@@ -236,6 +236,68 @@
     return s.replace(re, '____');
   }
 
+  // ---- 대화 + 빈칸 타이핑 복습(변경 기록 28-20) 순수 함수 ----
+  // 대소문자·앞뒤 공백 무시(28-20). 안쪽 공백은 그대로 둔다.
+  const typedNorm = (s) => (typeof s === 'string' ? s.trim().toLowerCase() : '');
+
+  // 한 글자 바꿈·넣음·뺌만 다른가. 길이가 같으면 바꿈, 1 차이면 넣음/뺌.
+  function oneEditApart(a, b) {
+    if (a === b) return false;
+    let i = 0;
+    while (i < a.length && i < b.length && a[i] === b[i]) i++;
+    if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1); // 바꿈
+    const [short, long] = a.length < b.length ? [a, b] : [b, a];
+    if (long.length - short.length !== 1) return false;
+    return short.slice(i) === long.slice(i + 1); // 넣음·뺌
+  }
+
+  // 입력 판정(28-20): 'ok' | 'almost' | 'wrong'. 여러 정답 중 하나와 같으면 맞음,
+  // 네 글자 이상 정답과 한 글자만 다르면 거의 맞음. 짧은 낱말(cat/car)은 거의 맞음으로 치지 않는다.
+  function judgeTyped(input, answers) {
+    const value = typedNorm(input);
+    if (!value) return 'wrong';
+    const list = (Array.isArray(answers) ? answers : []).map(typedNorm).filter(Boolean);
+    if (list.includes(value)) return 'ok';
+    if (list.some((a) => a.length >= 4 && oneEditApart(value, a))) return 'almost';
+    return 'wrong';
+  }
+
+  // 정답 후보: 다리 answer + 카드 기본형(낱말은 lemma, 구는 base) + 저장 표면형.
+  function typedAnswers(card, drill, phraseBase = '') {
+    if (!card) return [];
+    const isWord = card.type === 'word';
+    const base = isWord ? card.lemma || card.key : phraseBase || card.base || '';
+    const surface = isWord ? card.word || card.key : card.text;
+    return [...new Set([drill?.answer, base, surface].filter((v) => typeof v === 'string' && v.trim()))];
+  }
+
+  // 예문에서 정답 자리를 찾아 앞뒤로 가른다(입력칸 자리). 낱말 경계를 지키고(maskWord 와 같은 기준),
+  // 첫 출현만 입력칸이 되고 나머지 출현은 ____로 가려서 정답이 화면에 드러나지 않게 한다.
+  // 정답이 없으면 문장 뒤에 입력칸을 둔다.
+  function blankParts(text, answer) {
+    const s = String(text ?? '');
+    const w = String(answer ?? '').trim();
+    if (!w) return { before: s, after: '', found: false };
+    const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+    const re = new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'giu');
+    const m = re.exec(s);
+    if (!m) return { before: s, after: '', found: false };
+    const at = m.index;
+    return { before: s.slice(0, at), after: s.slice(at + m[0].length).replace(re, '____'), found: true };
+  }
+
+  // 한국어 문장에서 표현(뜻) 부분을 초록으로 표시할 자리를 찾는다. 뜻 전체가 없으면 앞 2글자 이상으로 찾는다.
+  function koParts(ko, gloss) {
+    const text = String(ko ?? '');
+    const g = String(gloss ?? '').trim();
+    if (!g) return { before: text, expr: '', after: '' };
+    for (let n = g.length; n >= 2; n--) {
+      const at = text.toLowerCase().indexOf(g.slice(0, n).toLowerCase());
+      if (at >= 0) return { before: text.slice(0, at), expr: text.slice(at, at + n), after: text.slice(at + n) };
+    }
+    return { before: text, expr: '', after: '' };
+  }
+
   // 카드 상태 전이: front → back(flip), back → 다음(next / know / again).
   function nextCardState(state, action) {
     const act = typeof action === 'string' ? action : action?.type;
@@ -251,8 +313,8 @@
   }
 
   // ---- 복습 방식(T51d, 변경 기록 27-4) ----
-  const REVIEW_MODES = [{ id: 'flip', title: '뒤집기' }, { id: 'choice', title: '고르기' }, { id: 'listen', title: '듣기' }];
-  // 유형 이름(안내 줄용). 빈칸은 아직 화면이 없어도 이름은 둔다.
+  const REVIEW_MODES = [{ id: 'flip', title: '뒤집기' }, { id: 'choice', title: '고르기' }, { id: 'listen', title: '듣기' }, { id: 'type', title: '빈칸' }];
+  // 유형 이름(안내 줄용). 빈칸은 28-20 에서 화면이 붙었다.
   const MODE_TITLES = { flip: '뒤집기', choice: '고르기', listen: '듣기', type: '빈칸' };
   const MODE_ORDER = ['flip', 'choice', 'listen', 'type'];
   // 상자 5 카드에서 아직 못 맞힌 유형(순서: 뒤집기·고르기·듣기·빈칸). modes 에 있는 것만.
@@ -334,6 +396,7 @@
     memoKey, memoOk, memoErrorText,
     maskWord, nextCardState,
     REVIEW_MODES, MODE_TITLES, remainingModes, cardMode, quizChoices, listenText, pickVoice, speak,
+    judgeTyped, typedAnswers, blankParts, koParts,
   };
 
   // ---- 그리기 ----
@@ -422,6 +485,19 @@
     .rgw .rev-tool .kbd { margin-left: 1px; }
     .rgw .rev-hint { color: var(--w-muted); font-size: 12.5px; }
     .rgw .rev-listen { color: var(--w-muted); font-size: 14px; }
+    .rgw .rev-dialogue { display: grid; gap: 6px; }
+    .rgw .rev-bubble { max-width: 92%; padding: 6px 10px; border-radius: 10px; background: var(--w-soft); }
+    .rgw .rev-bubble:nth-child(even) { margin-left: auto; }
+    .rgw .rev-bubble-en { font-size: 13.5px; line-height: 1.5; color: var(--w-fg); }
+    .rgw .rev-bubble-ko { margin-top: 2px; font-size: 12.5px; line-height: 1.5; color: var(--w-muted); }
+    .rgw .rev-ko { font-size: 14px; line-height: 1.6; color: var(--w-fg); }
+    .rgw .rev-expr { color: var(--w-ok); font-weight: 700; }
+    .rgw .rev-typed-sent { font-size: 14px; line-height: 1.9; color: var(--w-fg); overflow-wrap: anywhere; }
+    .rgw .rev-type-input { min-width: 7em; max-width: 100%; padding: 1px 6px; border: 0; border-bottom: 2px solid var(--w-accent); background: var(--w-soft); color: var(--w-fg); font: inherit; }
+    .rgw .rev-type-input:focus-visible { outline: 2px solid var(--w-accent); outline-offset: 2px; }
+    .rgw .rev-chip { display: inline-block; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--w-border); background: var(--w-soft); font-size: 12.5px; color: var(--w-fg); }
+    .rgw .rev-note { color: var(--w-muted); font-size: 12.5px; }
+    .rgw .rev-reveal { color: var(--w-ok); font-size: 14px; font-weight: 700; }
     .rgw .rev-choices { display: grid; gap: 6px; }
     .rgw .rev-choices:focus { outline: none; }
     .rgw .rev-choices:focus-visible { outline: 2px solid var(--w-accent); outline-offset: 3px; border-radius: 8px; }
@@ -488,6 +564,9 @@
     let reviewErr = '';
     let reviewedCount = 0;
     let quiz = null; // 고르기: { key, choices(null = 보기 모자람), picked }
+    let typing = null; // 빈칸(28-20): { key, value, hint, wrongs, result, held, focus }
+    const drillCache = new Map(); // 빈칸: 'word:apple' -> { ok, data }
+    const drillPending = new Set();
     let heardFor = ''; // 듣기: 이 카드는 이미 한 번 들려줬다
     let adding = false;
     let editing = null; // 고치는 중인 key
@@ -570,6 +649,8 @@
 
       const due = reviewData?.due || [];
       if (cardState.index >= due.length) return;
+      // 빈칸(28-20)은 입력칸과 [확인]·[힌트] 단추가 직접 처리한다. Space 뒤집기·1/2 단축키를 쓰지 않는다.
+      if (shownMode(due[cardState.index]) === 'type') return;
       const stop = () => {
         e.preventDefault();
         e.stopPropagation();
@@ -1037,6 +1118,122 @@
       W.speak(W.listenText(card));
     }
 
+    // ---- 빈칸 타이핑 복습(28-20) ----
+    const drillKeyOf = (card) => `${card?.type ?? ''}:${card?.key ?? ''}`;
+    const phraseBaseOf = (card) => (card?.type === 'phrase' ? state?.phrases?.[card.key]?.base ?? card?.base ?? '' : '');
+    const drillData = (card) => {
+      const hit = drillCache.get(drillKeyOf(card));
+      return hit?.ok ? hit.data : null;
+    };
+    // 다리 요청: 낱말은 lemma·저장 문장, 구는 text·기본형. 뜻이 없으면 대화를 만들 수 없어 저장 문장 빈칸으로 간다.
+    function drillRequestFor(card) {
+      if (!card) return null;
+      const isWord = card.type === 'word';
+      const gloss = String((isWord ? card.gloss : card.translation) ?? '').trim();
+      if (!gloss) return null;
+      const sentence = isWord ? card.sentence : phraseBaseOf(card);
+      return {
+        type: 'review-drill',
+        key: String(card.key),
+        ...(isWord ? { lemma: String(card.lemma || card.key) } : { text: String(card.text || '') }),
+        gloss,
+        ...(sentence && { sentence: String(sentence) }),
+      };
+    }
+    // 카드마다 한 번만 다리에 묻는다. 실패해도 그 카드는 저장 문장 빈칸으로 계속 쓸 수 있다.
+    function ensureDrill(card) {
+      const key = drillKeyOf(card);
+      if (!card || drillCache.has(key) || drillPending.has(key)) return;
+      const req = drillRequestFor(card);
+      if (!req) {
+        drillCache.set(key, { ok: false });
+        return;
+      }
+      drillPending.add(key);
+      ctx.send(req).then(
+        (r) => drillCache.set(key, { ok: Boolean(r && Array.isArray(r.dialogue) && typeof r.en === 'string' && typeof r.answer === 'string' && r.answer), data: r }),
+        () => drillCache.set(key, { ok: false }),
+      ).finally(() => {
+        drillPending.delete(key);
+        if (root.isConnected) draw();
+      });
+    }
+    // 다리가 실패했을 때 쓰는 저장 문장 빈칸: 낱말은 저장 표면형, 구는 기본형(없으면 저장 글)을 가린다.
+    function fallbackTyped(card) {
+      const isWord = card?.type === 'word';
+      const text = isWord ? String(card?.sentence ?? '') : String(card?.text ?? '');
+      const base = isWord ? String(card?.word || card?.lemma || card?.key || '') : phraseBaseOf(card);
+      const answer = base && (isWord || text.includes(base)) ? base : text;
+      return { text, answer };
+    }
+    function typedSentence(card, parts, placeholder = '빈칸에 들어갈 표현') {
+      const line = el('div', 'rev-typed-sent');
+      if (parts.before) line.append(el('span', '', parts.before));
+      const input = el('input', 'rev-type-input');
+      input.type = 'text';
+      input.value = typing?.value ?? '';
+      input.maxLength = 120;
+      input.placeholder = placeholder;
+      input.setAttribute('aria-label', '빈칸에 들어갈 표현');
+      input.addEventListener('input', () => {
+        if (typing) typing.value = input.value;
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.isComposing || e.key !== 'Enter') return;
+        e.stopPropagation();
+        if (typing?.result === 'almost') nextCard();
+        else submitTyped(card);
+      });
+      line.append(input);
+      if (parts.after) line.append(el('span', '', parts.after));
+      if (typing?.focus) {
+        typing.focus = false;
+        requestAnimationFrame(() => {
+          input.focus();
+          const end = input.value.length;
+          input.setSelectionRange?.(end, end);
+        });
+      }
+      return line;
+    }
+    // 판정 흐름(28-20): 맞음 = 알아요(type) · 거의 맞음 = 정답 보이고 hold · 첫 번째 틀림 = 첫 글자 보이고 다시 · 두 번째 = 아직.
+    async function submitTyped(card) {
+      if (busy || !typing || typing.result === 'almost') return;
+      const value = String(typing.value ?? '').trim();
+      if (!value) {
+        typing.focus = true;
+        return draw();
+      }
+      const drill = drillData(card);
+      const verdict = W.judgeTyped(value, W.typedAnswers(card, drill, phraseBaseOf(card)));
+      if (verdict === 'ok') {
+        if (await sendResult(card, 'know')) nextCard();
+        else draw();
+        return;
+      }
+      if (verdict === 'almost') {
+        typing.result = 'almost';
+        if (!typing.held) {
+          typing.held = true;
+          if (!(await sendResult(card, 'hold'))) {
+            typing.result = '';
+            typing.held = false;
+          }
+        }
+        return draw();
+      }
+      typing.wrongs += 1;
+      if (typing.wrongs >= 2) {
+        if (await sendResult(card, 'again')) nextCard();
+        else draw();
+        return;
+      }
+      typing.hint = true;
+      typing.focus = true;
+      typing.value = '';
+      draw();
+    }
+
     // 복습 화면 그리기
     function drawReview() {
       // 자동 포커스는 "그 직전에 포커스가 이미 이 복습 보기(패널 shadow) 안에 있었을 때"만 한다.
@@ -1063,6 +1260,7 @@
           reviewErr = '';
           if (answered) return nextCard();
           quiz = null;
+          typing = null;
           cardState = { ...cardState, side: 'front' };
           draw();
         }, 'rev-mode', `복습 방식: ${m.title}`);
@@ -1100,6 +1298,13 @@
       } else quiz = null;
       const choosing = Boolean(quiz?.choices);
       const listening = shown === 'listen';
+      const isTyping = shown === 'type';
+      if (isTyping && typing?.key !== cardKey) typing = { key: cardKey, value: '', hint: false, wrongs: 0, result: '', held: false, focus: false };
+      if (!isTyping && typing?.key !== cardKey) typing = null;
+      if (isTyping) {
+        ensureDrill(card);
+        if (hadFocus) typing.focus = true;
+      }
       const scene = globalThis.readglossVideo?.sceneOf?.(card) ?? null;
       const remaining = due.length - curIndex;
       revPane.append(el('div', 'rev-remain', `남은 ${remaining}`));
@@ -1115,7 +1320,38 @@
       const lastLabel = W.reviewAgeLabel(reviewOf(card)?.last);
       if (lastLabel) cardBox.append(el('div', 'rev-last', lastLabel));
 
-      if (listening && !isBack) {
+      if (isTyping) {
+        // 앞면 = 대화 말풍선 → 한국어 문장(표현 부분 초록) → 영어 예문 빈칸. 다리가 실패하면 저장 문장 빈칸으로.
+        const drill = drillData(card);
+        const fallback = fallbackTyped(card);
+        const answer = String(drill?.answer || fallback.answer || '').trim();
+        if (drill) {
+          const dialogue = el('div', 'rev-dialogue');
+          for (const line of drill.dialogue) {
+            const bubble = el('div', 'rev-bubble');
+            bubble.append(el('div', 'rev-bubble-en', line.en), el('div', 'rev-bubble-ko', line.ko));
+            dialogue.append(bubble);
+          }
+          cardBox.append(dialogue);
+          const parts = W.koParts(drill.ko, isWord ? card.gloss : card.translation);
+          const koLine = el('div', 'rev-ko');
+          if (parts.before) koLine.append(el('span', '', parts.before));
+          if (parts.expr) koLine.append(el('span', 'rev-expr', parts.expr));
+          if (parts.after) koLine.append(el('span', '', parts.after));
+          cardBox.append(koLine);
+        } else if (drillPending.has(drillKeyOf(card))) {
+          cardBox.append(el('div', 'rev-note', '대화를 준비하는 중…'));
+        }
+        cardBox.append(typedSentence(card, W.blankParts(drill?.en || fallback.text, answer)));
+        const gloss = isWord ? card.gloss : card.translation;
+        if (gloss) {
+          const chipLine = el('div');
+          chipLine.append(el('span', 'rev-chip', gloss));
+          cardBox.append(chipLine);
+        }
+        if (typing.result === 'almost') cardBox.append(el('div', 'rev-reveal', `거의 맞음 — 정답: ${answer}`));
+        else if (typing.hint) cardBox.append(el('div', 'rev-note', `힌트: ${answer.slice(0, 1)}… 한 번 더 입력해 보세요`));
+      } else if (listening && !isBack) {
         cardBox.append(el('div', 'rev-listen', '들은 말을 떠올려 보세요'));
         // 처음 보일 때 한 번 들려준다(복습 보기가 화면에 보일 때만 — 패널을 열면 모든 탭이 그려진다)
         if (heardFor !== cardKey && list === 'review' && root.isConnected && root.offsetParent !== null && getComputedStyle(root).visibility !== 'hidden') {
@@ -1154,8 +1390,18 @@
         }
       }
       // 소리: [소리](브라우저 음성, 듣기에서는 장면 먼저) · [장면](영상 장면이 있는 카드). 아이콘은 Lucide(ISC) volume-2 · play
+      // 빈칸 타이핑(28-20)에서는 정답을 읽어 주지 않도록 [소리]를 두지 않고 [힌트]를 둔다.
       const tools = el('div', 'rev-tools');
-      if (W.speak && globalThis.speechSynthesis) {
+      if (isTyping) {
+        const b = btn('힌트', () => {
+          typing.hint = true;
+          typing.focus = true;
+          draw();
+        }, 'act rev-tool', '힌트: 첫 글자 보기');
+        b.title = '힌트: 첫 글자 보기';
+        tools.append(b);
+      }
+      if (!isTyping && W.speak && globalThis.speechSynthesis) {
         const b = btn('', () => (listening ? playCard(card) : W.speak(W.listenText(card))), 'act rev-tool', listening ? '다시 듣기 (R)' : '소리 내어 읽기');
         b.title = listening ? '다시 듣기 (R)' : '소리 내어 읽기';
         b.append(icon(['M11 5 6 9H2v6h4l5 4V5z', 'M15.54 8.46a5 5 0 0 1 0 7.07', 'M19.07 4.93a10 10 0 0 1 0 14.14']));
@@ -1165,14 +1411,23 @@
       if (scene) {
         // 새 탭을 여는 단추라 페이지 스크립트의 .click() 은 무시한다(패널 shadow 는 open, panel.js 의 AI 단추와 같은 방식)
         const b = btn('', (e) => e.isTrusted !== false && openScene(scene), 'act rev-tool', '원래 영상 장면 듣기');
-        b.append(icon(['M6 3l14 9-14 9V3z']), '장면');
+        b.append(icon(['M6 3l14 9-14 9V3z']), isTyping ? '장면 듣기' : '장면');
         tools.append(b);
       }
       if (tools.childElementCount) cardBox.append(tools);
       revPane.append(cardBox);
 
       const btnBar = el('div', 'rev-btns');
-      if (choosing) {
+      if (isTyping) {
+        // 빈칸: 확인(Enter) · 거의 맞음이면 정답을 보인 뒤 다음. 포커스는 입력칸에 둔다.
+        const b = el('button', 'act primary rev-btn');
+        b.type = 'button';
+        const next = typing.result === 'almost';
+        b.append(next ? '다음' : '확인', el('span', 'kbd', 'Enter'));
+        b.setAttribute('aria-label', next ? '다음 (Enter)' : '확인 (Enter)');
+        b.addEventListener('click', () => (next ? nextCard() : submitTyped(card)));
+        btnBar.append(b);
+      } else if (choosing) {
         // 고르기: 보기 4개(1~4). 고른 뒤에는 맞음·틀림을 색과 표시(✓ 정답 · ✕ 내 답)로 보이고 [다음]
         const box = el('div', 'rev-choices');
         box.setAttribute('role', 'group');

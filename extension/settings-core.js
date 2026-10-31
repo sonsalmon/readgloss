@@ -31,12 +31,12 @@
     // 변경 기록 28-11: 자막 유형(subType)·한국어 위로(koAbove)·영어/한국어 크기(enFontPct·koFontPct)·배경 진하기(bgOpacity)·위치(posY)
     // 변경 기록 28-16: 학습 모드(mode: 보기·이해·듣기·조립)
     video: { subs: true, subType: 'dual', koAbove: false, enFontPct: 100, koFontPct: 100, bgOpacity: 75, posY: 0, hard: true, hoverPause: false, autoCC: true, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false, wordBands: { easy: false, medium: true, hard: true }, idioms: true, mode: 'watch', barOrder: BAR_NAMES, barHidden: [] },
-    reviewMode: 'flip', // 복습 방식(27-4): 뒤집기 · 고르기 · 듣기
+    reviewMode: 'flip', // 복습 방식(27-4·28-20): 뒤집기 · 고르기 · 듣기 · 빈칸
   });
   const ENUMS = {
     level: LEVELS, repeat: ['page', 'paragraph', 'always'], mark: ['none', 'color', 'underline', 'background'], theme: ['auto', 'light', 'dark'], glossary: ['auto', 'off'],
     position: ['top', 'none'], color: ['text', 'accent', 'custom'], weight: ['light', 'normal', 'bold'],
-    hide: ['off', 'word', 'line'], reviewMode: ['flip', 'choice', 'listen'],
+    hide: ['off', 'word', 'line'], reviewMode: ['flip', 'choice', 'listen', 'type'],
   };
   const MAX_SITES = 200;
 

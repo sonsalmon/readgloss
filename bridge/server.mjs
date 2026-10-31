@@ -31,6 +31,7 @@ import { adjustOffset, createWstat, LEMMA_RE, probability, threshold } from './w
 import { createStructure } from './structure.mjs';
 import { BadPolishError, createPolish, parsePolishRequest } from './polish.mjs';
 import { createAsk, parseAskRequest } from './ask.mjs';
+import { BadDrillError, createDrill, parseDrillRequest } from './drill.mjs';
 
 const PORT = 47831;
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]); // DNS 리바인딩 차단
@@ -130,7 +131,7 @@ function sendAiError(res, e, cors) {
 }
 
 // ask({word, sentence, context?}) / askTranslate(문단, 용어 지정 목록) / askContext(프롬프트 문자열) -> AI 원문. 테스트는 가짜를, 실제 실행은 claude 클라이언트를 넘긴다. dict 는 맥 사전 도우미.
-export function createBridge({ ask, askTranslate, askContext, askStructure = askContext, askPolish = askContext, askAsk = askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), structureFile = join(dirname(cacheFile), 'structure-explanations.json'), polishFile = join(dirname(cacheFile), 'polish.json'), askFile = join(dirname(cacheFile), 'asks.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), dbFile = join(dirname(cacheFile), 'readgloss.db'), learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career'), tutorSessionsDir = join(homedir(), '.aside', 'u', '0', 'sessions'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
+export function createBridge({ ask, askTranslate, askContext, askStructure = askContext, askPolish = askContext, askAsk = askContext, askDrill = askContext, cacheFile, translationsFile = join(dirname(cacheFile), 'translations.json'), contextFile = join(dirname(cacheFile), 'context-translations.json'), structureFile = join(dirname(cacheFile), 'structure-explanations.json'), polishFile = join(dirname(cacheFile), 'polish.json'), askFile = join(dirname(cacheFile), 'asks.json'), drillFile = join(dirname(cacheFile), 'drills.json'), wordsFile = join(dirname(cacheFile), 'words.json'), mydictFile = join(dirname(cacheFile), 'mydict.json'), studyFile = join(dirname(cacheFile), 'study-log.jsonl'), scrapsFile = join(dirname(cacheFile), 'scraps.json'), dbFile = join(dirname(cacheFile), 'readgloss.db'), learningDir = process.env.READGLOSS_LEARNING_DIR || join(homedir(), 'dev', 'learning', 'security-career'), tutorSessionsDir = join(homedir(), '.aside', 'u', '0', 'sessions'), now = Date.now, tokenFile, extensionId, dict = createDict(), mt = createMt() }) {
   const dataDir = dirname(cacheFile);
   const dbExisted = existsSync(dbFile);
   // db 를 못 열거나 옮기기가 실패하면 JSON 으로 계속 돈다(변경 기록 11-2). 단, db 파일이 이미 있었는데 openDb 가 실패하면 예외를 던진다.
@@ -171,6 +172,7 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
   const structure = createStructure({ cache: createCache(structureFile), ask: askStructure, db, now });
   const polish = createPolish({ cache: createCache(polishFile), ask: askPolish });
   const askQuestion = createAsk({ cache: createCache(askFile), ask: askAsk });
+  const drill = createDrill({ cache: createCache(drillFile), ask: askDrill });
   const words = db ? createWords({ db, now }) : createWords({ file: wordsFile, now });
   const glossary = createGlossary();
   const mydict = db ? createMydict({ db, now }) : createMydict({ file: mydictFile, now });
@@ -862,6 +864,22 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
     }
   }
 
+  // 대화 + 빈칸 타이핑 복습(28-20): POST /review/drill { key, lemma|text, gloss, sentence? }
+  // -> { dialogue:[{en,ko}], ko, en, answer, cached }. 카드 key 별 캐시. 검사 실패는 400, 모양·answer 누락은 502 bad-drill.
+  async function handleDrill(req, res, cors) {
+    const { value, status } = await readJson(req, MAX_WIDE_BODY);
+    if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
+    const parsed = parseDrillRequest(value);
+    if (parsed.error) return send(res, 400, { error: parsed.error }, cors);
+    try {
+      const r = await drill(parsed);
+      send(res, 200, r, cors);
+    } catch (e) {
+      if (e instanceof BadDrillError) send(res, 502, { error: 'bad-drill' }, cors);
+      else sendAiError(res, e, cors);
+    }
+  }
+
   async function handle(req, res) {
     // 1. Host 가 고정값이 아니면 거절. 2. Origin 이 있는데 내 확장이 아니면 거절(토큰 유무와 무관).
     if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, { error: 'forbidden' });
@@ -969,6 +987,10 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleAsk(req, res, cors);
     }
+    if (path === '/review/drill') {
+      if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleDrill(req, res, cors);
+    }
     return send(res, 404, { error: 'not-found' }, cors);
   }
 
@@ -1026,6 +1048,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
     askStructure: async (prompt) => (await client.ask(prompt)).text,
     askPolish: async (prompt) => (await client.ask(prompt)).text,
     askAsk: async (prompt) => (await client.ask(prompt)).text,
+    askDrill: async (prompt) => (await client.ask(prompt)).text,
     cacheFile: join(dataDir, 'cache.json'),
     tokenFile: join(dataDir, 'token'),
     extensionId,

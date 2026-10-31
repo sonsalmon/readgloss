@@ -31,8 +31,8 @@ const state = {
   },
 };
 
-test('REVIEW_MODES: 뒤집기·고르기·듣기', () => {
-  assert.deepEqual(W.REVIEW_MODES.map((m) => [m.id, m.title]), [['flip', '뒤집기'], ['choice', '고르기'], ['listen', '듣기']]);
+test('REVIEW_MODES: 뒤집기·고르기·듣기·빈칸(28-20)', () => {
+  assert.deepEqual(W.REVIEW_MODES.map((m) => [m.id, m.title]), [['flip', '뒤집기'], ['choice', '고르기'], ['listen', '듣기'], ['type', '빈칸']]);
 });
 
 test('quizChoices 낱말: 정답 하나 + 다른 낱말 뜻 셋(같은 뜻·빈 뜻·자기 자신 빼고), 섞임', () => {
