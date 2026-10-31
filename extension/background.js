@@ -172,6 +172,24 @@ async function words(msg, retried = false) {
     if (isReview) applyBadge(0);
     return { error: 'pair-failed' };
   }
+  // 단어장 내보내기(28-24): 다리 본문이 JSON 이 아니라 파일 글자라 따로 받는다.
+  if (msg?.op === 'export') {
+    const format = msg.format === 'anki' ? 'anki' : msg.format === 'csv' ? 'csv' : '';
+    if (!format) return { error: 'bad-request' };
+    const res = await bridgeFetch(`/words/export?format=${format}`, { headers: { 'X-Bridge-Token': token } });
+    if (res.status === 401 && !retried) return words(msg, true);
+    const text = await res.text().catch(() => '');
+    if (!res.ok) {
+      let data = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        // JSON 이 아니면 형식 오류로 본다
+      }
+      return { error: data.error || `http-${res.status}` };
+    }
+    return { format, text };
+  }
   const { op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page, headings, result, clip, base, mode, modes } = msg; // 구·문장(save-phrase·unsave-phrase) 필드는 T14, kind('expression'|'sentence')는 T17, memo 는 T19, headings 는 T33a, review 는 T44, clip(영상 장면 구간)은 T51c, base(구 원형)는 T53l, mode·modes(복습 유형)는 T53m
   const path = op === 'review-queue' ? '/words/review' : '/words';
   const init = op === 'get' || op === 'review-queue' ? { headers: { 'X-Bridge-Token': token } } : { method: 'POST', headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page, headings, result, clip, base, mode, modes }) };

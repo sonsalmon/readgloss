@@ -10,6 +10,7 @@
     "build:native": "npm run build:dict && npm run build:mt",
     "bench": "node scripts/bench.mjs",
     "export:day": "node scripts/export-day.mjs",
+    "export:anki": "node scripts/export-anki.mjs",
     "export:pending": "node scripts/export-pending.mjs",
     "export:mark": "node scripts/export-mark.mjs",
     "export:scraps": "node scripts/export-scraps.mjs",

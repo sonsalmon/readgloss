@@ -27,6 +27,19 @@
 
   const counts = (s) => ({ saved: Object.keys(s.saved).length, known: Object.keys(s.known).length, history: s.history.length });
 
+  // 단어장 내보내기(28-24): 형식별 파일 이름·미디어 타입과 다리에 보낼 요청.
+  const EXPORT_FORMATS = [
+    { id: 'csv', title: 'CSV', ext: 'csv', mime: 'text/csv;charset=utf-8' },
+    { id: 'anki', title: 'Anki', ext: 'txt', mime: 'text/tab-separated-values;charset=utf-8' },
+  ];
+  function exportFilename(format, now = Date.now()) {
+    const d = new Date(now);
+    const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const meta = EXPORT_FORMATS.find((f) => f.id === format) ?? EXPORT_FORMATS[0];
+    return `readgloss-words-${date}.${meta.ext}`;
+  }
+  const exportRequest = (format) => ({ type: 'words', op: 'export', format });
+
   // 줄마다 동작 버튼. 단어장: 빼기·알아요 / 아는 단어: 알아요 취소 / 최근: 단어장에 추가·알아요(이미 했으면 되돌리기)
   function actionsFor(list, isSaved, isKnown) {
     const known = isKnown ? { op: 'unknown', label: '알아요 취소' } : { op: 'known', label: '알아요' };
@@ -392,6 +405,7 @@
 
   globalThis.readglossWords = {
     LISTS, SUBS, formatDate, reviewAgeLabel, counts, countsAll, actionsFor, rowsFor, buttonModel, eventDetail, wordEventDetail, messageFor,
+    EXPORT_FORMATS, exportFilename, exportRequest,
     clip, PHRASE_FILTERS, phraseCounts, phrasePrimary, phraseRows, groupByBase, pickWord, lookupDetail, mydictRows, checkMydict, mydictMessage, mydictEventDetail, unsavePhraseMessage, memoMessage,
     memoKey, memoOk, memoErrorText,
     maskWord, nextCardState,
@@ -422,6 +436,8 @@
     .rgw .n { margin-left: 4px; font-variant-numeric: tabular-nums; opacity: .8; }
     .rgw .q { box-sizing: border-box; width: 100%; margin: 10px 0 6px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--w-border); background: none; color: inherit; font: inherit; }
     .rgw .w-status { color: var(--w-muted); font-size: 13px; padding: 6px 0; word-break: keep-all; overflow-wrap: anywhere; }
+    .rgw .exportbar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 4px 0 2px; }
+    .rgw .exportbar .export-hint { color: var(--w-muted); font-size: 12.5px; }
     .rgw ul { list-style: none; margin: 0; padding: 0; }
     .rgw li { padding: 9px 0; border-top: 1px solid var(--w-border); }
     .rgw .top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
@@ -548,6 +564,20 @@
     return { label, input };
   }
 
+  // 내보낸 글자를 파일로 내려받는다(Blob + 임시 링크). 패널은 페이지 위에 떠 있어도 문서에 붙여 눌러야 브라우저가 받는다.
+  function downloadText(filename, text, mime) {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
   function render(container, ctx) {
     const W = globalThis.readglossWords;
     let state = null; // GET /words 응답(단어장·아는 단어·최근 찾은 단어·phrases)
@@ -580,6 +610,8 @@
     let formErr = { where: '', text: '' };
     let selfEvent = false;
     let selfWords = false;
+    let exporting = false; // 내보내기 형식 고르는 중
+    let exportStatus = ''; // 내보내기 안내(보내는 중·실패)
 
     const root = el('div', 'rgw');
     const style = el('style');
@@ -624,7 +656,10 @@
 
     const revPane = el('div', 'rev-pane');
     const ul = el('ul');
-    root.append(style, subs, kinds, search, status, addBar, revPane, ul);
+    const exportBar = el('div', 'exportbar');
+    exportBar.setAttribute('role', 'group');
+    exportBar.setAttribute('aria-label', '단어장 내보내기');
+    root.append(style, subs, kinds, search, exportBar, status, addBar, revPane, ul);
     container.replaceChildren(root);
 
     const subBtns = W.SUBS.map((l) => {
@@ -1508,11 +1543,51 @@
       }
     }
 
+    async function doExport(format) {
+      const meta = W.EXPORT_FORMATS.find((f) => f.id === format) ?? W.EXPORT_FORMATS[0];
+      exportStatus = '내보내는 중…';
+      draw();
+      const r = await ctx.send(W.exportRequest(meta.id));
+      if (typeof r?.text !== 'string') {
+        exporting = false;
+        exportStatus = '';
+        message = errText(r, '내보내지 못했어요');
+        draw();
+        return;
+      }
+      downloadText(W.exportFilename(meta.id), r.text, meta.mime);
+      exporting = false;
+      exportStatus = '';
+      message = `${meta.title} 파일을 내려받았어요`;
+      draw();
+    }
+
+    function drawExport(isReview) {
+      const have = !isReview && Boolean(state);
+      exportBar.hidden = !have;
+      if (!have) {
+        exportBar.replaceChildren();
+        return;
+      }
+      if (!exporting) {
+        exportBar.replaceChildren(btn('내보내기', () => { exporting = true; exportStatus = ''; draw(); }, 'act', '단어장 내보내기: CSV 또는 Anki 형식 고르기'));
+        return;
+      }
+      const parts = [el('span', 'export-hint', '형식:')];
+      for (const f of W.EXPORT_FORMATS) {
+        parts.push(btn(f.title, () => doExport(f.id), f.id === 'csv' ? 'act primary' : 'act', `${f.title} 형식으로 내려받기`));
+      }
+      parts.push(btn('취소', () => { exporting = false; exportStatus = ''; draw(); }, 'act', '내보내기 취소'));
+      if (exportStatus) parts.push(el('span', 'export-hint', exportStatus));
+      exportBar.replaceChildren(...parts);
+    }
+
     function draw() {
       const isReview = list === 'review';
       const isMine = list === 'mydict';
       const dueCount = reviewData?.counts?.due ?? reviewData?.due?.length ?? 0;
       const c = state || mine ? W.countsAll(state ?? { saved: {}, known: {}, history: [] }, mine) : null;
+      drawExport(isReview);
       W.SUBS.forEach((l, i) => {
         if (l.id === 'review') {
           subBtns[i].replaceChildren(l.title, ...(dueCount > 0 ? [el('span', 'n', String(dueCount))] : []));

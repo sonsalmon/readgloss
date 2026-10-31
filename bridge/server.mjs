@@ -22,6 +22,7 @@ import { createStudy, parseDays } from './study.mjs';
 import { createScraps, normalizeUrl, parseScrapOp, scrapId } from './scraps.mjs';
 import { guessTask, lastTaskToday, loadHtbModules, loadLearning, rememberedTask } from './task-guess.mjs';
 import { dateOf } from '../scripts/export-day.mjs';
+import { exportWords } from '../scripts/export-anki.mjs';
 import { openDb, migrateJson } from './db.mjs';
 import { createConcepts, parseConceptOp } from './concepts.mjs';
 import { createMemos, parseMemoOp } from './memos.mjs';
@@ -100,6 +101,12 @@ export function createScoreOf(signals, wstat = null) {
 function send(res, status, body, headers = {}) {
   const text = body === undefined ? '' : JSON.stringify(body);
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
+  res.end(text);
+}
+
+// 내보내기 파일처럼 JSON 이 아닌 본문을 그대로 보낸다.
+function sendText(res, status, text, headers = {}) {
+  res.writeHead(status, { 'Cache-Control': 'no-store', ...headers });
   res.end(text);
 }
 
@@ -645,6 +652,16 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
     send(res, 200, words.reviewQueue(today), cors);
   }
 
+  // 단어장 내보내기(28-24): GET /words/export?format=csv|anki -> CSV 또는 Anki 탭 구분 텍스트
+  function handleWordsExport(req, res, cors) {
+    const format = new URL(req.url, 'http://x').searchParams.get('format') ?? 'csv';
+    if (format !== 'csv' && format !== 'anki') return send(res, 400, { error: 'bad-request' }, cors);
+    const text = exportWords(format, words.all());
+    const type = format === 'csv' ? 'text/csv; charset=utf-8' : 'text/tab-separated-values; charset=utf-8';
+    const filename = `readgloss-words.${format === 'csv' ? 'csv' : 'txt'}`;
+    sendText(res, 200, text, { ...cors, 'Content-Type': type, 'Content-Disposition': `attachment; filename="${filename}"` });
+  }
+
   // 내 사전: GET -> { entries }, POST { op:'set'|'delete', key, ... } -> 바뀐 { entries }
   async function handleMydict(req, res, cors) {
     if (req.method === 'GET') return send(res, 200, mydict.all(), cors);
@@ -930,6 +947,10 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
     if (path === '/annotate-stats') {
       if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return handleAnnotateStats(req, res, cors);
+    }
+    if (path === '/words/export') {
+      if (req.method !== 'GET') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return handleWordsExport(req, res, cors);
     }
     if (path === '/words/review') {
       if (req.method !== 'GET') return send(res, 405, { error: 'method-not-allowed' }, cors);
