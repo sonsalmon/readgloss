@@ -2,13 +2,18 @@
 // 자막 글은 yt-hook.js(MAIN world)가 플레이어 응답을 엿들어 postMessage 로 넘겨 준다.
 // 패널 [영상] 탭(panel-video.js)·복습(panel-words.js)은 globalThis.readglossVideoUi 로 부른다.
 (() => {
-  if (typeof document === 'undefined' || !/(^|\.)youtube\.com$/.test(location.hostname) || globalThis.readglossVideoUi) return;
+  // 로컬 연습 페이지(28-23): 다리가 내는 http://127.0.0.1:47831/practice 에서도 같은 자막 층·키·패널을 쓴다.
+  const PRACTICE_ORIGIN = 'http://127.0.0.1:47831';
+  const PRACTICE_PATH = '/practice';
+  const isPractice = () => typeof location !== 'undefined' && location.origin === PRACTICE_ORIGIN && location.pathname === PRACTICE_PATH;
+  if (typeof document === 'undefined' || (!/(^|\.)youtube\.com$/.test(location.hostname) && !isPractice()) || globalThis.readglossVideoUi) return;
   const V = globalThis.readglossVideo;
   const Sel = globalThis.readglossSelection;
   const SET = globalThis.readglossSettings;
   if (!V || !Sel || !SET) return;
 
   const SOURCE = 'readgloss-yt';
+  const PRACTICE_SOURCE = 'readgloss-practice';
   const WAIT_MS = 5000; // 이만큼 지나도 영어 줄이 없으면 안내
   const MSG_MS = 8000; // 안내가 떠 있는 시간
   const ERR_PAUSE_MS = 15000; // 번역·주석이 다리 문제로 실패하면 이만큼 쉬었다 다시
@@ -67,6 +72,8 @@
     note: null, waitSince: Date.now(), ccTried: new Set(), msg: '', msgAt: 0, ad: false, shown: false,
     panelOpen: false, // 패널이 열려 있는지(28-13): / 가 열기·닫기를 가르고, 열 때 멈춤 이유를 건다
   };
+  // 로컬 연습 페이지가 postMessage 로 넘긴 자막(28-23). id 는 페이지가 고른 자막 파일을 가리키는 열쇠다.
+  const practice = { id: '', cues: [] };
   // 잠깐 멈춤(마우스를 올림·사전 카드·풀이): 이유가 하나라도 있으면 멈춰 두고, 우리가 멈춘 것만 다시 재생한다. 사용자가 직접 재생하면 이유를 다 지운다.
   const hold = { reasons: new Set(), paused: false, ours: false };
   const listeners = new Set();
@@ -154,6 +161,21 @@
     S.tracks = [...S.tracks.filter((x) => !(x.videoId === tr.videoId && x.lang === tr.lang && x.tlang === tr.tlang && x.kind === tr.kind)), tr].slice(-20);
     if (tr.videoId === S.id) chooseTracks();
   });
+  // 로컬 연습 페이지(28-23): 페이지가 고른 SRT·VTT·IMSC 자막을 줄로 만들어 넘겨 준다.
+  // 영상 id 자리에 자막 파일 열쇠를 넣어, 파일을 바꾸면 자막 층이 새 자막으로 다시 시작하게 한다.
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || !isPractice()) return;
+    const d = e.data;
+    if (!d || d.source !== PRACTICE_SOURCE || d.type !== 'cues' || !Array.isArray(d.cues)) return;
+    const key = typeof d.id === 'string' && d.id.trim() ? d.id.trim().slice(0, 160) : 'practice';
+    // 연습 페이지를 장면 주소로 쓸 수 있게 영상 id 자리에 페이지 주소+자막 열쇠를 넣는다.
+    const id = `${PRACTICE_ORIGIN}${PRACTICE_PATH}?sub=${encodeURIComponent(key)}`;
+    const cues = V.normalizeCues(d.cues);
+    practice.id = id;
+    practice.cues = cues;
+    S.tracks = [...S.tracks.filter((track) => !(track.videoId === id && track.lang === 'en' && !track.tlang)), { videoId: id, lang: 'en', tlang: '', kind: 'manual', cues, ts: Date.now() }].slice(-20);
+    checkPage();
+  });
 
   function chooseTracks() {
     const mine = S.tracks.filter((t) => t.videoId === S.id);
@@ -200,7 +222,7 @@
     const ad = adShowing();
     if (S.ad && !ad) S.waitSince = Date.now(); // 광고가 끝났다: 자막 켜기·안내까지 기다리는 시간은 이제부터 잰다
     S.ad = ad;
-    const id = location.pathname === '/watch' ? V.videoIdOf(location.href) : null;
+    const id = isPractice() ? (practice.cues.length ? practice.id : null) : location.pathname === '/watch' ? V.videoIdOf(location.href) : null;
     if (id !== S.id) {
       S.id = id;
       S.mainKey = '';
@@ -251,7 +273,8 @@
   }
 
   function attach() {
-    const p = document.getElementById('movie_player');
+    // 연습 페이지는 페이지가 내놓은 재생 상자(#readgloss-practice-player)에 자막 층을 붙인다(28-23).
+    const p = isPractice() ? document.getElementById('readgloss-practice-player') : document.getElementById('movie_player');
     if (p !== player) {
       player = p;
       sizeObs?.disconnect();

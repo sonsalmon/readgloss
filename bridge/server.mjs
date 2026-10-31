@@ -47,6 +47,8 @@ const MAX_ACRONYMS = 100;
 const ACRONYM_RE = /^[A-Z]{2,6}$/;
 const MAX_SENTENCE = 1000;
 const MAX_ANNOTATE_WORDS = 300;
+// 로컬 연습 페이지(28-23): 다리와 함께 두는 정적 HTML 하나. 외부 파일·CDN 없이 스스로 동작한다.
+const PRACTICE_PAGE = readFileSync(new URL('./practice.html', import.meta.url), 'utf8');
 
 function loadOrCreateToken(file) {
   try {
@@ -918,6 +920,11 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
       if (origin !== mine) return send(res, 403, { error: 'forbidden' });
       if (req.method !== 'POST') return send(res, 405, { error: 'method-not-allowed' }, cors);
       return send(res, 200, { token }, cors);
+    }
+    // 연습 페이지 하나만 토큰 검사에서 뺀다(28-23). Host 검사는 위에서 그대로 했고, 페이지 안의 요청은 지금 토큰 규칙을 따른다.
+    if (path === '/practice') {
+      if (req.method !== 'GET') return send(res, 405, { error: 'method-not-allowed' }, cors);
+      return sendText(res, 200, PRACTICE_PAGE, { 'Content-Type': 'text/html; charset=utf-8' });
     }
     if (!tokenOk(req.headers['x-bridge-token'])) return send(res, 401, { error: 'unauthorized' }, cors);
     if (path === '/ping') {

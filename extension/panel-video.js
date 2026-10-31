@@ -127,8 +127,11 @@
     PANEL_BANDS, PANEL_FILTERS, EXPR_FILTERS, wordColor, panelLineFlags, passesFilter, stageOf, stageText, videoExpressions, expressionLines,
   };
 
-  if (typeof document === 'undefined' || typeof location === 'undefined' || !/(^|\.)youtube\.com$/.test(location.hostname)) return;
+  // 유튜브 영상 페이지와 로컬 연습 페이지(28-23)에서 [영상] 탭을 붙인다.
+  const isPractice = typeof location !== 'undefined' && location.origin === 'http://127.0.0.1:47831' && location.pathname === '/practice';
+  if (typeof document === 'undefined' || typeof location === 'undefined' || (!/(^|\.)youtube\.com$/.test(location.hostname) && !isPractice)) return;
   if (!V || !Sel) return;
+  const PAGE_HINT = isPractice ? '연습 페이지에서 자막 파일을 골라 주세요' : '유튜브 영상 페이지에서 보여요';
 
   const FOLLOW_MS = 3000; // 사용자가 대본을 스크롤하면 이만큼은 지금 줄을 따라가지 않는다
   const SMALL_TABS = Object.freeze([
@@ -612,7 +615,7 @@
       const st = ui()?.state();
       if (!st?.id) {
         titleEl.textContent = '';
-        infoEl.textContent = '유튜브 영상 페이지에서 보여요';
+        infoEl.textContent = PAGE_HINT;
         tools.hidden = true;
         subtabs.hidden = true;
         scriptPane.hidden = true;
@@ -695,7 +698,7 @@
       const all = videoExpressions(library(), id);
       const shown = all.filter((x) => exprFilter === 'all' || x.stage === exprFilter);
       if (!id) {
-        exprStatus.textContent = '유튜브 영상 페이지에서 보여요';
+        exprStatus.textContent = PAGE_HINT;
         exprList.replaceChildren();
         return;
       }
@@ -753,7 +756,7 @@
       const cue = st?.cues?.[i];
       const cur = el('div', 'v-curline');
       if (!st?.id) {
-        explainBody.replaceChildren(el('div', 'v-status', '유튜브 영상 페이지에서 보여요'));
+        explainBody.replaceChildren(el('div', 'v-status', PAGE_HINT));
         return;
       }
       if (!cue) {

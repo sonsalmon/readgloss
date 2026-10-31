@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>readgloss 로컬 연습</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1f2328; --muted: #656d76; --bg: #ffffff; --panel: #f6f8fa; --line: #d0d7de; --accent: #2f6feb; --danger: #b42318; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e6e8eb; --muted: #9aa3ad; --bg: #0d1117; --panel: #161b22; --line: #30363d; --accent: #6b9bff; --danger: #ffb4a8; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 18px 60px; }
+  h1 { font-size: 24px; margin: 0 0 6px; }
+  .lead { color: var(--muted); margin: 0 0 18px; }
+  .pickers { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-bottom: 14px; }
+  .pick { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  .pick span { font-weight: 600; }
+  .pick small { color: var(--muted); }
+  .pick input { margin-top: 2px; max-width: 100%; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+  button { min-height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font: inherit; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .stage { position: relative; overflow: hidden; border-radius: 12px; background: #0b0d10; min-height: 240px; aspect-ratio: 16 / 9; }
+  .stage video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+  .stage.audio video { position: absolute; inset: 0; opacity: 0; }
+  .art { position: absolute; inset: 0; display: grid; place-content: center; gap: 6px; padding: 24px; text-align: center; color: #c9d1d9; background:
+    radial-gradient(circle at 30% 30%, rgba(47, 111, 235, .25), transparent 55%),
+    radial-gradient(circle at 70% 70%, rgba(163, 113, 247, .22), transparent 55%), #0b0d10; }
+  .stage:not(.audio) .art { display: none; }
+  .art strong { font-size: 18px; color: #fff; }
+  .art span { font-size: 13px; color: #9aa3ad; }
+  .controls { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: linear-gradient(transparent, rgba(0, 0, 0, .82)); }
+  .controls button { min-height: 32px; background: rgba(28, 28, 28, .92); color: #fff; border-color: rgba(255, 255, 255, .25); }
+  .controls input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .clock { color: #fff; font-variant-numeric: tabular-nums; font-size: 13px; white-space: nowrap; }
+  .status { min-height: 1.6em; margin: 10px 0 0; color: var(--muted); }
+  .status.err { color: var(--danger); }
+  .note { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>readgloss 로컬 연습</h1>
+  <p class="lead">내 컴퓨터의 영상·소리와 자막 파일을 골라 이 브라우저에서 바로 재생해요. 파일은 어디에도 올라가지 않고, readgloss 확장이 같은 자막 층·키·패널을 붙여요.</p>
+  <div class="pickers">
+    <label class="pick">
+      <span>영상·소리 파일</span>
+      <small>mp4·webm·mp3 등 — 올리지 않고 브라우저에서 바로 재생</small>
+      <input id="media-file" type="file" accept="video/*,audio/*">
+    </label>
+    <label class="pick">
+      <span>자막 파일</span>
+      <small>SRT · VTT · IMSC XML</small>
+      <input id="sub-file" type="file" accept=".srt,.vtt,.xml,.imsc,.ttml,.dfxp,text/vtt,application/xml,text/xml">
+    </label>
+  </div>
+  <div class="row">
+    <button id="example" class="primary" type="button">예제로 써 보기</button>
+    <span class="note">예제는 소리 없이 10줄 대본만 30초 동안 보여 줘요.</span>
+  </div>
+  <section class="stage" id="readgloss-practice-player" aria-label="연습 재생 화면">
+    <video id="practice-video" playsinline preload="metadata"></video>
+    <div class="art" id="art">
+      <strong id="art-title">영상·소리 파일을 골라 주세요</strong>
+      <span id="art-note">“예제로 써 보기”를 누르면 바로 시작해요</span>
+    </div>
+    <div class="controls">
+      <button id="play" type="button" disabled>재생</button>
+      <input id="seek" type="range" min="0" max="1000" step="1" value="0" disabled aria-label="재생 위치">
+      <span class="clock" id="clock">0:00 / 0:00</span>
+    </div>
+  </section>
+  <p class="status" id="status" role="status" aria-live="polite"></p>
+</main>
+<script>
+(() => {
+  const MAX_TIME = 86400;
+  const MAX_CUES = 5000;
+  const EXAMPLE_SECONDS = 30;
+  const EXAMPLE_CUES = [
+    { start: 0, end: 2.8, text: 'Mina, the train leaves at nine.' },
+    { start: 3, end: 5.8, text: 'Then we should hurry.' },
+    { start: 6, end: 8.8, text: 'I packed the tickets in my blue bag.' },
+    { start: 9, end: 11.8, text: 'Did you bring the umbrella?' },
+    { start: 12, end: 14.8, text: 'Yes, it is folded by the door.' },
+    { start: 15, end: 17.8, text: 'The sky looks heavy this morning.' },
+    { start: 18, end: 20.8, text: 'We can wait inside the station.' },
+    { start: 21, end: 23.8, text: 'Good idea, the cafe opens early.' },
+    { start: 24, end: 26.8, text: "Let's grab two coffees before we go." },
+    { start: 27, end: 29.8, text: 'And maybe a warm bun as well.' },
+  ];
+
+  const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+  const cleanText = (s) => String(s ?? '').replace(/[\u200B\u200E\u200F\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
+  const stripTags = (s) => String(s ?? '').replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '');
+  function decodeEntities(s) {
+    return String(s ?? '').replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, entity) => {
+      if (entity[0] === '#') {
+        const n = entity[1] === 'x' || entity[1] === 'X' ? parseInt(entity.slice(2), 16) : parseInt(entity.slice(1), 10);
+        return Number.isFinite(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : whole;
+      }
+      return NAMED[entity.toLowerCase()] ?? whole;
+    });
+  }
+  const round = (n) => Math.round(n * 1000) / 1000;
+
+  // 줄 목록 다듬기: 시각이 이상하거나 글이 빈 줄은 버리고, 시작 순으로, 같은 시각 줄은 합친다.
+  function normalizeCues(list) {
+    const cues = (Array.isArray(list) ? list : [])
+      .map((cue) => ({
+        start: cue?.start === null || cue?.start === undefined || cue.start === '' ? null : Number(cue.start),
+        end: cue?.end === null || cue?.end === undefined || cue.end === '' ? null : Number(cue.end),
+        text: cleanText(cue?.text),
+      }))
+      .filter((cue) => cue.start !== null && Number.isFinite(cue.start) && cue.start >= 0 && cue.start <= MAX_TIME && cue.text)
+      .sort((a, b) => a.start - b.start);
+    const out = [];
+    for (const cue of cues) {
+      const last = out[out.length - 1];
+      if (last && Math.abs(last.start - cue.start) < 0.01) {
+        last.text = cleanText(`${last.text} ${cue.text}`);
+        last.end = Math.max(last.end ?? 0, cue.end ?? 0);
+        continue;
+      }
+      out.push({ ...cue });
+      if (out.length >= MAX_CUES) break;
+    }
+    for (let i = 0; i < out.length; i++) {
+      const cue = out[i];
+      const next = out[i + 1];
+      if (cue.end === null || !Number.isFinite(cue.end) || cue.end <= cue.start) cue.end = next ? Math.max(next.start, cue.start + 0.5) : cue.start + 2;
+      cue.start = round(cue.start);
+      cue.end = round(Math.min(cue.end, MAX_TIME));
+    }
+    return out;
+  }
+
+  const timeValue = (value) => {
+    const m = /^(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{1,3})$/.exec(String(value).trim());
+    return m ? Number(m[1] ?? 0) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(m[4].padEnd(3, '0')) / 1000 : null;
+  };
+  function parseBlockCues(body) {
+    const cues = [];
+    const lines = String(body).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const m = /^\s*(\S+)\s+-->\s+(\S+)/.exec(lines[i]);
+      if (!m) continue;
+      const start = timeValue(m[1]);
+      const end = timeValue(m[2]);
+      const text = [];
+      for (i++; i < lines.length && lines[i].trim() !== ''; i++) text.push(lines[i]);
+      if (start !== null) cues.push({ start, end, text: stripTags(decodeEntities(text.join(' '))) });
+    }
+    return normalizeCues(cues);
+  }
+  const parseSrt = (body) => parseBlockCues(body);
+  const parseVtt = (body) => parseBlockCues(body);
+
+  function imscTime(value, tickRate, frameRate) {
+    const s = String(value ?? '').trim();
+    if (!s) return null;
+    let m;
+    if ((m = /^(-?\d+(?:\.\d+)?)t$/.exec(s))) return Number(m[1]) / tickRate;
+    if ((m = /^(-?\d+(?:\.\d+)?)ms$/.exec(s))) return Number(m[1]) / 1000;
+    if ((m = /^(-?\d+(?:\.\d+)?)(?:s)?$/.exec(s))) return Number(m[1]);
+    if ((m = /^(\d+):(\d{2}):(\d{2}):(\d+)(?:\.(\d+))?$/.exec(s))) return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + (Number(m[4]) + Number(`0.${m[5] ?? 0}`)) / frameRate;
+    if ((m = /^(\d+):(\d{2}):(\d{2})(?:\.(\d+))?$/.exec(s))) return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(`0.${m[4] ?? 0}`);
+    if ((m = /^(\d+):(\d{2})(?:\.(\d+))?$/.exec(s))) return Number(m[1]) * 60 + Number(m[2]) + Number(`0.${m[3] ?? 0}`);
+    return null;
+  }
+  function imscText(node) {
+    let out = '';
+    for (const child of node.childNodes) {
+      if (child.nodeType === 3) out += child.nodeValue;
+      else if (child.nodeType === 1) {
+        const name = String(child.localName || child.nodeName || '').toLowerCase();
+        if (name === 'br') out += ' ';
+        else if (name === 'metadata' || name === 'style' || name === 'region') continue;
+        else out += imscText(child);
+      }
+    }
+    return out;
+  }
+  function parseImsc(body) {
+    let doc;
+    try {
+      doc = new DOMParser().parseFromString(String(body), 'application/xml');
+    } catch {
+      return [];
+    }
+    if (!doc || doc.getElementsByTagName('parsererror').length) return [];
+    const root = doc.documentElement;
+    if (!root) return [];
+    const readAttr = (...names) => {
+      for (const name of names) {
+        const value = root.getAttribute?.(name);
+        if (value !== null && value !== undefined && value !== '') return value;
+      }
+      return '';
+    };
+    const tickRate = Number(readAttr('ttp:tickRate', 'tickRate')) || 10000000;
+    const frameRate = Number(readAttr('ttp:frameRate', 'frameRate')) || 30;
+    const paragraphs = doc.getElementsByTagNameNS ? doc.getElementsByTagNameNS('*', 'p') : doc.getElementsByTagName('p');
+    const raw = [];
+    for (const node of Array.from(paragraphs || [])) {
+      const begin = imscTime(node.getAttribute('begin'), tickRate, frameRate);
+      let end = imscTime(node.getAttribute('end'), tickRate, frameRate);
+      const dur = imscTime(node.getAttribute('dur'), tickRate, frameRate);
+      if (begin === null) continue;
+      if (end === null && dur !== null) end = begin + dur;
+      raw.push({ start: begin, end, text: imscText(node) });
+    }
+    raw.sort((a, b) => a.start - b.start);
+    for (let i = 0; i < raw.length; i++) {
+      if (raw[i].end === null || !Number.isFinite(raw[i].end)) raw[i].end = raw[i + 1] ? raw[i + 1].start : raw[i].start + 2;
+    }
+    return normalizeCues(raw);
+  }
+
+  function subFormatOf(name, text) {
+    const base = String(name ?? '').toLowerCase().split(/[?#]/)[0].trim();
+    if (/\.srt$/.test(base)) return 'srt';
+    if (/\.(vtt|webvtt)$/.test(base)) return 'vtt';
+    if (/\.(xml|imsc|ttml|dfxp)$/.test(base)) return 'imsc';
+    const head = String(text ?? '').replace(/^\uFEFF/, '').trimStart();
+    if (/^WEBVTT\b/i.test(head)) return 'vtt';
+    if (head.startsWith('<') && /<tt\b/i.test(head)) return 'imsc';
+    return 'srt';
+  }
+  const FORMAT_LABEL = { srt: 'SRT', vtt: 'VTT', imsc: 'IMSC XML' };
+
+  // 무음 WAV 를 만들어 재생 시계로 쓴다: 예제는 소리 없이 화면의 줄만 30초 동안 흐른다.
+  function silentWavUrl(seconds) {
+    const rate = 8000;
+    const length = Math.round(seconds * rate);
+    const buffer = new ArrayBuffer(44 + length);
+    const view = new DataView(buffer);
+    const write = (offset, text) => { for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i)); };
+    write(0, 'RIFF');
+    view.setUint32(4, 36 + length, true);
+    write(8, 'WAVE');
+    write(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, rate, true);
+    view.setUint32(28, rate, true);
+    view.setUint16(32, 1, true);
+    view.setUint16(34, 8, true);
+    write(36, 'data');
+    view.setUint32(40, length, true);
+    new Uint8Array(buffer, 44).fill(128);
+    return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+  }
+
+  const video = document.getElementById('practice-video');
+  const stage = document.getElementById('readgloss-practice-player');
+  const mediaInput = document.getElementById('media-file');
+  const subInput = document.getElementById('sub-file');
+  const exampleButton = document.getElementById('example');
+  const playButton = document.getElementById('play');
+  const seek = document.getElementById('seek');
+  const clock = document.getElementById('clock');
+  const statusEl = document.getElementById('status');
+  const artTitle = document.getElementById('art-title');
+  const artNote = document.getElementById('art-note');
+
+  let mediaUrl = '';
+  let exampleUrl = '';
+  const formatClock = (value) => {
+    const total = Math.max(0, Math.floor(Number(value) || 0));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  };
+  function updateClock() {
+    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+    clock.textContent = `${formatClock(video.currentTime)} / ${formatClock(duration)}`;
+    if (duration > 0) seek.value = String(Math.round((video.currentTime / duration) * 1000));
+  }
+  function setStatus(text, isError = false) {
+    statusEl.textContent = text;
+    statusEl.classList.toggle('err', isError);
+  }
+  function folderName(file) {
+    return file.name || '내 파일';
+  }
+  function useSource(url, name, audio) {
+    if (mediaUrl && mediaUrl !== url) URL.revokeObjectURL(mediaUrl);
+    mediaUrl = url;
+    video.src = url;
+    video.load();
+    stage.classList.toggle('audio', Boolean(audio));
+    artTitle.textContent = name;
+    artNote.textContent = audio ? '소리 파일 — 자막 층은 영상 위와 같아요' : '';
+    playButton.disabled = false;
+    seek.disabled = false;
+    document.title = `${name} — readgloss 로컬 연습`;
+    setStatus(`재생 준비: ${name}`);
+    updateClock();
+  }
+  function postCues(cues, id) {
+    window.postMessage({ source: 'readgloss-practice', type: 'cues', cues, id }, location.origin);
+  }
+
+  mediaInput.addEventListener('change', () => {
+    const file = mediaInput.files?.[0];
+    if (!file) return;
+    const audio = file.type ? file.type.startsWith('audio/') : /\.(mp3|m4a|aac|wav|ogg|oga|flac|opus)$/i.test(file.name);
+    useSource(URL.createObjectURL(file), folderName(file), audio);
+    video.play().catch(() => {});
+  });
+
+  subInput.addEventListener('change', async () => {
+    const file = subInput.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const format = subFormatOf(file.name, text);
+      const cues = format === 'vtt' ? parseVtt(text) : format === 'imsc' ? parseImsc(text) : parseSrt(text);
+      if (!cues.length) {
+        setStatus(`자막 줄을 읽지 못했어요: ${file.name}`, true);
+        return;
+      }
+      const id = `practice|${file.name}|${file.size}|${file.lastModified}`;
+      postCues(cues, id);
+      setStatus(`자막: ${file.name} · ${FORMAT_LABEL[format] ?? format} · ${cues.length}줄`);
+    } catch {
+      setStatus(`자막 파일을 읽지 못했어요: ${file.name}`, true);
+    }
+  });
+
+  exampleButton.addEventListener('click', () => {
+    if (!exampleUrl) exampleUrl = silentWavUrl(EXAMPLE_SECONDS);
+    useSource(exampleUrl, '예제 대사', true);
+    postCues(EXAMPLE_CUES, 'practice-example');
+    video.play().catch(() => {});
+    setStatus('예제 대사 10줄을 보여 줘요. 키 A·S·D·R·Q·Z·Shift 를 눌러 보세요.');
+  });
+
+  playButton.addEventListener('click', () => {
+    if (!mediaUrl) return;
+    if (video.paused) video.play().catch(() => {});
+    else video.pause();
+  });
+  seek.addEventListener('input', () => {
+    const duration = Number(video.duration);
+    if (Number.isFinite(duration) && duration > 0) video.currentTime = (Number(seek.value) / 1000) * duration;
+  });
+  video.addEventListener('play', () => { playButton.textContent = '일시정지'; });
+  video.addEventListener('pause', () => { playButton.textContent = '재생'; });
+  video.addEventListener('ended', () => { playButton.textContent = '재생'; updateClock(); });
+  video.addEventListener('timeupdate', updateClock);
+  video.addEventListener('loadedmetadata', updateClock);
+  video.addEventListener('seeked', updateClock);
+  (function keepClock() {
+    updateClock();
+    requestAnimationFrame(keepClock);
+  })();
+})();
+</script>
+</body>
+</html>

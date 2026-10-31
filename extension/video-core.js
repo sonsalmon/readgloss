@@ -237,6 +237,35 @@
     return normalizeCues(cues);
   }
 
+  // SRT: "00:00:01,000 --> 00:00:03,000" 다음 줄들이 글. 쉼표 밀리초를 쓰고, 번호 줄은 있어도 없어도 되며,
+  // 한 자막의 여러 줄은 공백으로 합친다(VTT 와 같은 스캔, 시각 표기만 쉼표를 더 받는다).
+  function parseSrt(body) {
+    const cues = [];
+    const lines = String(body).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const m = /^\s*(\S+)\s+-->\s+(\S+)/.exec(lines[i]);
+      if (!m) continue;
+      const start = vttTime(m[1]);
+      const end = vttTime(m[2]);
+      const text = [];
+      for (i++; i < lines.length && lines[i].trim() !== ''; i++) text.push(lines[i]);
+      if (start !== null) cues.push({ start, end, text: stripTags(decodeEntities(text.join(' '))) });
+    }
+    return normalizeCues(cues);
+  }
+
+  // 자막 파일 이름으로 형식 고르기(28-23): 확장자가 먼저, 이름이 없거나 모르는 확장자면 내용으로 짐작한다.
+  function subFormatOf(name, text) {
+    const base = String(name ?? '').toLowerCase().split(/[?#]/)[0].trim();
+    if (/\.srt$/.test(base)) return 'srt';
+    if (/\.(vtt|webvtt)$/.test(base)) return 'vtt';
+    if (/\.(xml|imsc|ttml|dfxp)$/.test(base)) return 'imsc';
+    const head = String(text ?? '').replace(/^\uFEFF/, '').trimStart();
+    if (/^WEBVTT\b/i.test(head)) return 'vtt';
+    if (head.startsWith('<') && /<tt\b/i.test(head)) return 'imsc';
+    return 'srt';
+  }
+
   // 자막 응답 하나 -> { videoId, lang, tlang, kind:'asr'|'manual', cues, words? } | null(못 읽음·빈 자막)
   function parseTrack(body, url) {
     if (typeof body !== 'string' || !body.trim()) return null;
@@ -698,6 +727,12 @@
     try {
       const u = new URL(url);
       if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+      // 로컬 연습 페이지(28-23): http://127.0.0.1:47831/practice?sub=<열쇠>#t=<초>. id 는 연습 페이지가 쓰는 주소+열쇠 그대로.
+      if (u.origin === 'http://127.0.0.1:47831' && u.pathname === '/practice') {
+        const key = u.searchParams.get('sub') ?? '';
+        if (!key || key.length > 160) return null;
+        return { id: `${u.origin}${u.pathname}?sub=${encodeURIComponent(key)}`, t: parseT(new URLSearchParams(u.hash.replace(/^#/, '')).get('t')) };
+      }
       const host = u.hostname.replace(/^(www|m)\./, '');
       let id = '';
       if (host === 'youtube.com' && u.pathname === '/watch') id = u.searchParams.get('v') ?? '';
@@ -709,7 +744,12 @@
     }
   }
   const videoIdOf = (href) => parseScene(href)?.id ?? null;
-  const sceneUrl = (id, sec) => `https://www.youtube.com/watch?v=${id}&t=${Math.max(0, Math.floor(Number(sec) || 0))}s`;
+  // id 가 페이지 주소면 그 페이지 안 시각(#t=초)을 쓴다(로컬 연습 페이지, 28-23). 영상 id 면 지금처럼 유튜브 장면 주소.
+  const sceneUrl = (id, sec) => {
+    const t = Math.max(0, Math.floor(Number(sec) || 0));
+    const base = String(id ?? '');
+    return /^https?:\/\//i.test(base) ? `${base.split('#')[0]}#t=${t}` : `https://www.youtube.com/watch?v=${base}&t=${t}s`;
+  };
 
   // 장면 구간 { start, end }: 다리 words.mjs 와 같은 규칙(0 ≤ start < end ≤ 86400, 길이 ≤ 60)
   // 길이는 1/100초 정수로 잰다: 소수로 빼면 60.14 - 0.14 가 60.00000000000001 이 되어 60초 구간이 거절된다
@@ -869,7 +909,7 @@
 
   globalThis.readglossVideo = {
     ID_RE, ASR, GRACE, MAX_CLIP, MAX_ROUND: ROUND_MAX, ROUND_MIN, ROUND_TARGET, ROUND_MAX, HIDE_MODES, HIDE_LABEL, HIDE_TYPES, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT, DRILL_DOUBLE, MODES, MODE_LABEL,
-    params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseTrack,
+    params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseSrt, subFormatOf, parseTrack,
     validPolish, polishedCues,
     langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, shuffleTiles, tileCheck, bandOf, minPFor, tokenColor, phraseSpans, tooltipModel, hideTypes, maskFlags, nextHide, drillSpace, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
     parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf, barModel, xToTime, subLayout, rounds,
