@@ -142,9 +142,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function words(msg, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
-  const { op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page, headings, result, clip, base } = msg; // 구·문장(save-phrase·unsave-phrase) 필드는 T14, kind('expression'|'sentence')는 T17, memo 는 T19, headings 는 T33a, review 는 T44, clip(영상 장면 구간)은 T51c, base(구 원형)는 T53l
+  const { op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page, headings, result, clip, base, mode, modes } = msg; // 구·문장(save-phrase·unsave-phrase) 필드는 T14, kind('expression'|'sentence')는 T17, memo 는 T19, headings 는 T33a, review 는 T44, clip(영상 장면 구간)은 T51c, base(구 원형)는 T53l, mode·modes(복습 유형)는 T53m
   const path = op === 'review-queue' ? '/words/review' : '/words';
-  const init = op === 'get' || op === 'review-queue' ? { headers: { 'X-Bridge-Token': token } } : { method: 'POST', headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page, headings, result, clip, base }) };
+  const init = op === 'get' || op === 'review-queue' ? { headers: { 'X-Bridge-Token': token } } : { method: 'POST', headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page, headings, result, clip, base, mode, modes }) };
   const res = await bridgeFetch(path, init);
   if (res.status === 401 && !retried) return words(msg, true);
   const data = await res.json().catch(() => ({}));

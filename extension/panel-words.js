@@ -14,6 +14,16 @@
     const d = new Date(ts);
     return Number.isFinite(d.getTime()) ? `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}` : '';
   }
+  // 마지막 학습 배지(28-19): 오늘이면 "오늘", 지난 날이면 "N일 전 학습", 기록이 없으면 안 보인다.
+  function reviewAgeLabel(last, now = Date.now()) {
+    if (typeof last !== 'number' || !Number.isFinite(last) || last <= 0) return '';
+    const then = new Date(last);
+    const today = new Date(now);
+    const dayNumber = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000;
+    const days = Math.round(dayNumber(today) - dayNumber(then));
+    if (days <= 0) return '오늘';
+    return `${days}일 전 학습`;
+  }
 
   const counts = (s) => ({ saved: Object.keys(s.saved).length, known: Object.keys(s.known).length, history: s.history.length });
 
@@ -242,6 +252,21 @@
 
   // ---- 복습 방식(T51d, 변경 기록 27-4) ----
   const REVIEW_MODES = [{ id: 'flip', title: '뒤집기' }, { id: 'choice', title: '고르기' }, { id: 'listen', title: '듣기' }];
+  // 유형 이름(안내 줄용). 빈칸은 아직 화면이 없어도 이름은 둔다.
+  const MODE_TITLES = { flip: '뒤집기', choice: '고르기', listen: '듣기', type: '빈칸' };
+  const MODE_ORDER = ['flip', 'choice', 'listen', 'type'];
+  // 상자 5 카드에서 아직 못 맞힌 유형(순서: 뒤집기·고르기·듣기·빈칸). modes 에 있는 것만.
+  const remainingModes = (modes, passed) => MODE_ORDER.filter((m) => (modes ?? []).includes(m) && !(passed ?? []).includes(m));
+  // 이 카드를 실제로 보여 줄 방식(28-19). 상자 5 에서 고른 방식을 이미 맞혔거나 이 카드에 없으면 남은 첫 유형으로 바꾼다.
+  // 남은 게 없으면 고른 방식 그대로. 그 밖에는 고른 방식(이 카드에 없으면 뒤집기).
+  function cardMode({ chosen, modes, passed, box } = {}) {
+    const usable = (modes ?? []).includes(chosen);
+    if (box >= 5 && (!usable || (passed ?? []).includes(chosen))) {
+      const rest = remainingModes(modes, passed);
+      if (rest.length) return rest[0];
+    }
+    return usable ? chosen : 'flip';
+  }
   const CHOICE_MAX = 80; // 보기 글 상한(구 번역은 길어서 자른다)
   const shortChoice = (s) => {
     const t = String(s ?? '').replace(/\s+/g, ' ').trim();
@@ -304,11 +329,11 @@
   }
 
   globalThis.readglossWords = {
-    LISTS, SUBS, formatDate, counts, countsAll, actionsFor, rowsFor, buttonModel, eventDetail, wordEventDetail, messageFor,
+    LISTS, SUBS, formatDate, reviewAgeLabel, counts, countsAll, actionsFor, rowsFor, buttonModel, eventDetail, wordEventDetail, messageFor,
     clip, PHRASE_FILTERS, phraseCounts, phrasePrimary, phraseRows, groupByBase, pickWord, lookupDetail, mydictRows, checkMydict, mydictMessage, mydictEventDetail, unsavePhraseMessage, memoMessage,
     memoKey, memoOk, memoErrorText,
     maskWord, nextCardState,
-    REVIEW_MODES, quizChoices, listenText, pickVoice, speak,
+    REVIEW_MODES, MODE_TITLES, remainingModes, cardMode, quizChoices, listenText, pickVoice, speak,
   };
 
   // ---- 그리기 ----
@@ -377,6 +402,7 @@
     .rgw .rev-remain { color: var(--w-muted); font-size: 13px; font-weight: 600; }
     .rgw .rev-card { border: 1px solid var(--w-border); border-radius: 10px; padding: 16px; background: none; display: grid; gap: 10px; }
     .rgw .rev-head { font-size: 20px; font-weight: 700; color: var(--w-fg); line-height: 1.3; }
+    .rgw .rev-last { color: var(--w-muted); font-size: 12.5px; }
     .rgw .rev-phrase-text { font-size: 16px; }
     .rgw .rev-sent { color: var(--w-fg); font-size: 14px; line-height: 1.6; word-break: keep-all; overflow-wrap: anywhere; }
     .rgw .rev-gloss { font-size: 16px; font-weight: 600; color: var(--w-accent); }
@@ -548,7 +574,7 @@
         e.preventDefault();
         e.stopPropagation();
       };
-      if (e.code === 'KeyR' && !e.shiftKey && reviewMode() === 'listen') {
+      if (e.code === 'KeyR' && !e.shiftKey && shownMode((reviewData?.due || [])[cardState.index]) === 'listen') {
         stop();
         playCard(due[cardState.index]);
         return;
@@ -911,6 +937,23 @@
       return li;
     }
 
+    // 이 카드의 복습 상태(마지막 학습 배지용). 복습 목록 카드에는 없어서 단어장 상태에서 찾는다.
+    function reviewOf(card) {
+      if (!card) return null;
+      if (card.review) return card.review;
+      return (card.type === 'phrase' ? state?.phrases?.[card.key]?.review : state?.saved?.[card.key]?.review) ?? null;
+    }
+    // 이 카드에서 지금 화면으로 낼 수 있는 복습 유형(28-19). 고르기는 보기 3개를 만들 수 있을 때만.
+    function reviewModesFor(card) {
+      return W.REVIEW_MODES.map((m) => m.id).filter((id) => {
+        if (id === 'choice') return Boolean(W.quizChoices(card, state));
+        if (id === 'type') {
+          const base = card?.base ?? state?.phrases?.[card?.key]?.base;
+          return card?.type === 'word' ? Boolean(card?.sentence) : Boolean(base);
+        }
+        return true;
+      });
+    }
     // 복습 결과(know: 알아요, again: 아직)를 다리 op 'review' 로 보낸다. 저장되면 true.
     async function sendResult(card, result) {
       busy = true;
@@ -920,6 +963,8 @@
         op: 'review',
         ...(isPhrase ? { id: card.key } : { lemma: card.key }),
         result,
+        mode: shownMode(card),
+        modes: reviewModesFor(card),
       };
       const r = await ctx.send(msg);
       busy = false;
@@ -968,6 +1013,11 @@
       draw();
     }
     const nextAfterChoice = () => !busy && nextCard();
+    // 이 카드를 지금 보여 주는 방식(고르기 보기 모자람·상자 5 남은 유형 반영). 결과에도 이 값을 보낸다.
+    function shownMode(card) {
+      const m = W.cardMode({ chosen: reviewMode(), modes: reviewModesFor(card), passed: card?.passed, box: card?.box });
+      return m;
+    }
     const reviewMode = () => (W.REVIEW_MODES.some((m) => m.id === ctx.settings?.reviewMode) ? ctx.settings.reviewMode : 'flip');
     // 장면(영상 주소 + t 또는 clip): 지금 그 영상 페이지면 그 자리에서, 아니면 새 탭에서 그 구간만(27-4)
     async function openScene(scene) {
@@ -1039,12 +1089,17 @@
 
       const card = due[curIndex];
       const cardKey = `${card.type}:${card.key}:${curIndex}`;
-      if (mode === 'choice') {
+      const shown = shownMode(card);
+      // 고르기를 골랐지만 이 카드에서 보기를 못 만들어(또는 아직 단어장이 안 와서) 뒤집기로 바꾼 경우.
+      // 상자 5 에서 남은 유형이 뒤집기라 바꾼 경우는 여기 들지 않는다(그때는 진짜 뒤집기 화면).
+      const choiceFellBack = mode === 'choice' && shown === 'flip' && !reviewModesFor(card).includes('choice');
+      if (shown === 'choice' || choiceFellBack) {
         // 보기는 단어장(GET /words)이 와야 만든다. 아직이면 기다렸다가 다시 만든다.
-        if (quiz?.key !== cardKey || (quiz.waiting && state)) quiz = { key: cardKey, choices: state ? W.quizChoices(card, state) : null, picked: -1, waiting: !state };
+        // 답하기 전 단어장이 바뀌어 화면 방식이 달라지면 다시 만든다(화면 = 기록).
+        if (quiz?.key !== cardKey || (quiz.waiting && state) || (!quiz.waiting && quiz.picked < 0 && Boolean(quiz.choices) !== (shown === 'choice'))) quiz = { key: cardKey, choices: state ? W.quizChoices(card, state) : null, picked: -1, waiting: !state };
       } else quiz = null;
       const choosing = Boolean(quiz?.choices);
-      const listening = mode === 'listen';
+      const listening = shown === 'listen';
       const scene = globalThis.readglossVideo?.sceneOf?.(card) ?? null;
       const remaining = due.length - curIndex;
       revPane.append(el('div', 'rev-remain', `남은 ${remaining}`));
@@ -1052,6 +1107,13 @@
       const cardBox = el('div', 'rev-card');
       const isWord = card.type === 'word';
       const isBack = cardState.side === 'back';
+      // 상자 5 에서 고른 방식을 이미 맞혀 다른 유형으로 바뀌었으면 남은 유형을 알린다(28-19)
+      if (shown !== mode && card.box >= 5) {
+        const rest = W.remainingModes(reviewModesFor(card), card.passed);
+        if (rest.length) cardBox.append(el('div', 'rev-last', `남은 유형: ${rest.map((m) => W.MODE_TITLES[m]).join('·')}`));
+      }
+      const lastLabel = W.reviewAgeLabel(reviewOf(card)?.last);
+      if (lastLabel) cardBox.append(el('div', 'rev-last', lastLabel));
 
       if (listening && !isBack) {
         cardBox.append(el('div', 'rev-listen', '들은 말을 떠올려 보세요'));
@@ -1148,7 +1210,7 @@
           if (hadFocus) requestAnimationFrame(() => nextBtn.focus());
         } else if (hadFocus) requestAnimationFrame(() => box.focus());
       } else if (!isBack) {
-        if (mode === 'choice') revPane.append(el('div', 'rev-hint', quiz?.waiting ? '보기를 준비하는 중…' : '보기를 만들 단어가 모자라서 뒤집기로 볼게요'));
+        if (choiceFellBack) revPane.append(el('div', 'rev-hint', quiz?.waiting ? '보기를 준비하는 중…' : '보기를 만들 단어가 모자라서 뒤집기로 볼게요'));
         const flipBtn = el('button', 'act primary rev-btn');
         flipBtn.type = 'button';
         flipBtn.append('뒤집기', el('span', 'kbd', 'Space'));

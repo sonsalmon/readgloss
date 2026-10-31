@@ -4,7 +4,7 @@ import { copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from
 import { dirname } from 'node:path';
 import { WORD_RE } from './lookup.mjs';
 import { normalizeText } from './translate.mjs';
-import { addDays, applyReview, initialReview, isDue, isValidReview } from './review.mjs';
+import { addDays, applyReview, initialReview, isDue, isValidReview, REVIEW_MODE_IDS } from './review.mjs';
 import { dateOf } from '../scripts/export-day.mjs';
 
 export const MAX_HISTORY = 200;
@@ -94,14 +94,23 @@ function parseMemoOp(v) {
   return typeof v.id === 'string' && PHRASE_ID.test(v.id) ? { op: 'memo', id: v.id, memo: v.memo } : null;
 }
 
-// review: {op:'review', lemma, result:'know'|'again'} 또는 {op:'review', id, result:'know'|'again'} 중 정확히 하나
+// review: {op:'review', lemma, result:'know'|'again'|'hold'} 또는 {op:'review', id, result} 중 정확히 하나.
+// 선택으로 mode(맞힌 유형 하나)와 modes(이 카드에서 쓸 수 있는 유형들)를 받는다(28-19).
 function parseReviewOp(v) {
   const hasLemma = v.lemma !== undefined && v.lemma !== null;
   const hasId = v.id !== undefined && v.id !== null;
   if (hasLemma === hasId) return null; // 둘 다이거나 둘 다 아니다
-  if (v.result !== 'know' && v.result !== 'again') return null;
-  if (hasLemma) return typeof v.lemma === 'string' && WORD_RE.test(v.lemma) ? { op: 'review', lemma: v.lemma.toLowerCase(), result: v.result } : null;
-  return typeof v.id === 'string' && PHRASE_ID.test(v.id) ? { op: 'review', id: v.id, result: v.result } : null;
+  if (v.result !== 'know' && v.result !== 'again' && v.result !== 'hold') return null;
+  const mode = v.mode === undefined || v.mode === null ? undefined : (REVIEW_MODE_IDS.includes(v.mode) ? v.mode : null);
+  if (mode === null) return null;
+  let modes;
+  if (v.modes !== undefined && v.modes !== null) {
+    if (!Array.isArray(v.modes) || !v.modes.every((m) => REVIEW_MODE_IDS.includes(m))) return null;
+    modes = [...new Set(v.modes)];
+  }
+  const extra = { ...(mode !== undefined && { mode }), ...(modes !== undefined && { modes }) };
+  if (hasLemma) return typeof v.lemma === 'string' && WORD_RE.test(v.lemma) ? { op: 'review', lemma: v.lemma.toLowerCase(), result: v.result, ...extra } : null;
+  return typeof v.id === 'string' && PHRASE_ID.test(v.id) ? { op: 'review', id: v.id, result: v.result, ...extra } : null;
 }
 
 // 요청 본문 -> 정규화된 { op, lemma[, word, gloss, sentence, url, headings] }. 틀리면 null. 문장·주소는 상한에서 자른다.
@@ -363,6 +372,8 @@ export function createWords({ file, db, now = Date.now }) {
             gloss: item.gloss,
             sentence: item.sentence,
             ...(item.memo && { memo: item.memo }),
+            ...(rev?.box >= 5 && { box: rev.box }), // 상자 5 에서 남은 유형을 고르려고 확장에 알린다(28-19). 낮은 상자는 필요 없어 옛 모양 그대로
+            ...(rev?.box >= 5 && Array.isArray(rev?.passed) && { passed: rev.passed }),
             ...(item.url && { url: item.url }), // 장면(영상 주소 + t)이면 복습에서 다시 듣는다(27-4)
           },
         });
@@ -382,6 +393,8 @@ export function createWords({ file, db, now = Date.now }) {
             text: item.text,
             translation: item.translation,
             ...(item.kind && { kind: item.kind }),
+            ...(rev?.box >= 5 && { box: rev.box }),
+            ...(rev?.box >= 5 && Array.isArray(rev?.passed) && { passed: rev.passed }),
             ...(item.url && { url: item.url }),
             ...(item.clip && { clip: item.clip }),
           },
@@ -423,7 +436,7 @@ export function createWords({ file, db, now = Date.now }) {
     reviewQueue,
     // parseWordsOp 를 통과한 요청만 받는다. 바뀐 전체 상태를 돌려준다. memo/review 대상이 없으면 null(404).
     // ponytail: 메모리를 먼저 바꾸고 쓴다. 디스크 쓰기가 실패하면 이 실행 동안만 메모리와 파일이 어긋난다(파일 자체는 rename 으로 안 깨진다).
-    apply({ op, lemma, word, gloss, sentence, url, id, text, translation, context, title, kind, memo, headings, result, clip, base }) {
+    apply({ op, lemma, word, gloss, sentence, url, id, text, translation, context, title, kind, memo, headings, result, clip, base, mode, modes }) {
       if (op === 'review') {
         const target = lemma !== undefined ? saved : phrases;
         const key = lemma !== undefined ? lemma : id;
@@ -431,7 +444,7 @@ export function createWords({ file, db, now = Date.now }) {
         if (!cur) return null; // 대상이 없으면 404
         const today = dateOf(now());
         const curReview = cur.review ?? initialReview(today);
-        const nextReview = applyReview(curReview, result, today, now());
+        const nextReview = applyReview(curReview, result, today, now(), { mode, modes });
         target.set(key, { ...cur, review: nextReview });
         if (db) {
           if (lemma !== undefined) persistWord(lemma);
