@@ -71,6 +71,22 @@ test('background video-open: 유튜브 영상 주소만, 구간이 있으면 pen
   assert.equal(b.tabs.length, 1, '틀리면 탭을 열지 않는다');
 });
 
+test('background video-open: 넷플릭스 /watch/숫자 도 받고, 다른 호스트·꼴은 거절', async () => {
+  const b = background();
+  const url = 'https://www.netflix.com/watch/81234567?t=120';
+  assert.deepEqual(await b.send({ type: 'video-open', url, clip: { id: '81234567', start: 120, end: 124 } }), { ok: true });
+  assert.equal(b.tabs.length, 1);
+  assert.equal(b.store.pendingClip.id, '81234567');
+  for (const bad of [
+    { url: 'https://netflix.com.evil.example/watch/81234567' },
+    { url: 'http://www.netflix.com/watch/81234567' },
+    { url: 'https://www.netflix.com/title/81234567' },
+    { url: 'https://www.netflix.com/watch/abc' },
+    { url, clip: { id: '999', start: 1, end: 2 } },
+  ]) assert.deepEqual(await b.send({ type: 'video-open', ...bad }), { error: 'invalid-video' }, JSON.stringify(bad));
+  assert.equal(b.tabs.length, 1);
+});
+
 test('background video-pending: 같은 영상이면 꺼내 주고 지운다, 다른 영상이면 남긴다, 2분 지나면 버린다', async () => {
   const b = background();
   b.store.pendingClip = { id: ID, start: 1, end: 3, ts: Date.now() };
@@ -158,9 +174,9 @@ test('video-subs.js 소스: 글은 textContent 로만, 플레이어 클릭 막�
   assert.match(src, /source: SOURCE, type: 'replay'/);
 });
 
-test('panel-video.js: 유튜브에서만 [영상] 탭(맨 앞), 대본·어려운 단어·한국어 모두', () => {
+test('panel-video.js: 지원 사이트(adapterFor)에서만 [영상] 탭(맨 앞), 대본·어려운 단어·한국어 모두', () => {
   const src = read('panel-video.js');
-  assert.match(src, /youtube\\\.com\$\/\.test\(location\.hostname\)/);
+  assert.match(src, /V\.adapterFor\?\.\(location\)/);
   assert.match(src, /push\(\{ id: 'video', title: '영상', order: 5, render \}\)/);
   assert.match(src, /annotateAll\(\)/);
   assert.match(src, /setKoAll\(/);

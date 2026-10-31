@@ -453,10 +453,15 @@ function videoOpenOf(msg) {
   } catch {
     return null;
   }
-  if (u.protocol !== 'https:' || u.hostname !== 'www.youtube.com' || u.pathname !== '/watch' || !VIDEO_ID.test(u.searchParams.get('v') ?? '')) return null;
+  // 유튜브 /watch?v=<11자> 또는 넷플릭스 /watch/<숫자>(28-22)만 받는다. 호스트는 정확히 일치해야 한다.
+  let vid = '';
+  if (u.protocol === 'https:' && u.hostname === 'www.youtube.com' && u.pathname === '/watch') vid = u.searchParams.get('v') ?? '';
+  const nf = u.protocol === 'https:' && u.hostname === 'www.netflix.com' ? /^\/watch\/(\d{1,20})$/.exec(u.pathname) : null;
+  if (nf) vid = nf[1];
+  if (!(nf || VIDEO_ID.test(vid))) return null;
   const c = msg.clip;
   if (c === undefined || c === null) return { url: u.href, clip: null };
-  const ok = typeof c === 'object' && c.id === u.searchParams.get('v') && [c.start, c.end].every((n) => typeof n === 'number' && Number.isFinite(n)) && c.start >= 0 && c.end > c.start && Math.round(c.end * 100) - Math.round(c.start * 100) <= 6000; // 길이는 1/100초 정수로(words.mjs parseClip 과 같다)
+  const ok = typeof c === 'object' && c.id === vid && [c.start, c.end].every((n) => typeof n === 'number' && Number.isFinite(n)) && c.start >= 0 && c.end > c.start && Math.round(c.end * 100) - Math.round(c.start * 100) <= 6000; // 길이는 1/100초 정수로(words.mjs parseClip 과 같다)
   return ok ? { url: u.href, clip: { id: c.id, start: c.start, end: c.end } } : null;
 }
 

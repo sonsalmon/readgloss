@@ -127,11 +127,13 @@
     PANEL_BANDS, PANEL_FILTERS, EXPR_FILTERS, wordColor, panelLineFlags, passesFilter, stageOf, stageText, videoExpressions, expressionLines,
   };
 
-  // 유튜브 영상 페이지와 로컬 연습 페이지(28-23)에서 [영상] 탭을 붙인다.
-  const isPractice = typeof location !== 'undefined' && location.origin === 'http://127.0.0.1:47831' && location.pathname === '/practice';
-  if (typeof document === 'undefined' || typeof location === 'undefined' || (!/(^|\.)youtube\.com$/.test(location.hostname) && !isPractice)) return;
+  // 지원 사이트(유튜브·넷플릭스·로컬 연습 페이지 28-23)에서 [영상] 탭을 붙인다. 판정은 video-core adapterFor 가 한다.
+  if (typeof document === 'undefined' || typeof location === 'undefined') return;
   if (!V || !Sel) return;
-  const PAGE_HINT = isPractice ? '연습 페이지에서 자막 파일을 골라 주세요' : '유튜브 영상 페이지에서 보여요';
+  const SITE = V.adapterFor?.(location);
+  if (!SITE) return;
+  const isPractice = SITE.name === 'practice';
+  const PAGE_HINT = isPractice ? '연습 페이지에서 자막 파일을 골라 주세요' : `${SITE.label} 영상 페이지에서 보여요`;
 
   const FOLLOW_MS = 3000; // 사용자가 대본을 스크롤하면 이만큼은 지금 줄을 따라가지 않는다
   const SMALL_TABS = Object.freeze([

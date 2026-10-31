@@ -1138,6 +1138,12 @@
     // 장면(영상 주소 + t 또는 clip): 지금 그 영상 페이지면 그 자리에서, 아니면 새 탭에서 그 구간만(27-4)
     async function openScene(scene) {
       if (globalThis.readglossVideoUi?.playScene?.(scene)) return;
+      // 연습 페이지 장면(28-23)은 자막 파일을 다시 골라야 해서 새 탭으로 열 수 없다: 안내만 한다.
+      if (/^https?:/i.test(String(scene.id))) {
+        reviewErr = '연습 페이지에서 파일을 다시 골라 주세요';
+        draw();
+        return;
+      }
       const c = scene.clip ?? { start: scene.t, end: scene.t + 8 };
       const r = await ctx.send({ type: 'video-open', url: scene.url, clip: { id: scene.id, start: c.start, end: c.end } });
       if (r?.error) {

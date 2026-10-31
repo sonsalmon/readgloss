@@ -277,7 +277,7 @@
     S.tracks = [...S.tracks.filter((track) => !(track.videoId === id && track.lang === 'en' && !track.tlang)), { videoId: id, lang: 'en', tlang: '', kind: 'manual', cues, ts: Date.now() }].slice(-20);
     checkPage();
   });
-  // 넷플릭스(28-22): nf-hook.js 가 모은 IMSC 자막 주소를 같은 출처에서 받아 parseImsc 로 줄을 만든다.
+  // 넷플릭스(28-22): nf-hook.js 가 모은 IMSC 자막 주소를 같은 출처·자막 CDN 에서 받아 parseImsc 로 줄을 만든다.
   function nfAddTracks(tracks) {
     if (!Array.isArray(tracks)) return;
     for (const track of tracks.slice(0, 40)) {
@@ -285,13 +285,8 @@
       const lang = String(track?.lang ?? '').toLowerCase().split('-')[0];
       // 영어·한국어 자막만 받는다(28-22). 다른 언어 XML 은 받지 않는다.
       if (!url || (lang !== 'en' && lang !== 'ko')) continue;
-      let same = false;
-      try {
-        same = new URL(url, location.href).origin === location.origin;
-      } catch {
-        same = false;
-      }
-      if (!same) continue; // 확장 권한을 늘리지 않는다: 넷플릭스와 같은 출처만 받는다
+      // 확장 권한을 늘리지 않는다: https 이고 넷플릭스와 같은 출처이거나 자막 CDN(*.nflxvideo.net)일 때만 받는다
+      if (!V.nfTrackUrlOk(url, location.href)) continue;
       const key = `${lang}|${url}`;
       if (nfFetched.has(key) || nfFetching.has(key)) continue;
       nfFetching.add(key);

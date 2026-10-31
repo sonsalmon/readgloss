@@ -1,4 +1,4 @@
-// 과제 T53b(변경 기록 28-2): 랭플릭스 키 배정·Shift 단독 판정·처음 한 번 키 안내.
+// 과제 T53b(변경 기록 28-2): 키 배정·Shift 단독 판정·처음 한 번 키 안내.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -9,7 +9,7 @@ const V = globalThis.readglossVideo;
 const S = globalThis.readglossSettings;
 const src = readFileSync(new URL('../extension/video-subs.js', import.meta.url), 'utf8');
 
-test('KEYS 표: 랭플릭스 배치 9개, H·P 는 없다', () => {
+test('KEYS 표: 키 배치 9개, H·P 는 없다', () => {
   assert.deepEqual(V.KEYS, {
     KeyA: 'prev', KeyS: 'repeat', KeyD: 'next',
     KeyR: 'repeatLine', KeyQ: 'loop', KeyZ: 'slow',

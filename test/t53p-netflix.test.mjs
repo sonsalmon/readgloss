@@ -167,3 +167,24 @@ test('video-subs 소스: 넷플릭스 자막 트랙은 영어·한국어만 받�
   const code = readFileSync(new URL('../extension/video-subs.js', import.meta.url), 'utf8');
   assert.ok(code.includes("if (!url || (lang !== 'en' && lang !== 'ko')) continue;"));
 });
+
+test('nfTrackUrlOk: 같은 출처·nflxvideo.net CDN(https)만 받고 다른 호스트·http 는 버린다', () => {
+  const base = 'https://www.netflix.com/watch/81234567';
+  assert.equal(V.nfTrackUrlOk('/sub/en.xml', base), true);
+  assert.equal(V.nfTrackUrlOk('https://www.netflix.com/sub/en.xml', base), true);
+  assert.equal(V.nfTrackUrlOk('https://ipv4-c001-icn001.1.oca.nflxvideo.net/?o=1', base), true);
+  assert.equal(V.nfTrackUrlOk('https://evil.example/sub.xml', base), false);
+  assert.equal(V.nfTrackUrlOk('https://nflxvideo.net.evil.example/x', base), false);
+  assert.equal(V.nfTrackUrlOk('https://evilnflxvideo.net/x', base), false);
+  assert.equal(V.nfTrackUrlOk('http://a.nflxvideo.net/x', base), false);
+  assert.equal(V.nfTrackUrlOk('javascript:alert(1)', base), false);
+});
+
+test('소스: nfAddTracks 가 nfTrackUrlOk 를 쓰고, [영상] 탭은 adapterFor 로 등록한다', async () => {
+  const { readFileSync } = await import('node:fs');
+  const rd = (f) => readFileSync(new URL(`../extension/${f}`, import.meta.url), 'utf8');
+  assert.match(rd('video-subs.js'), /V\.nfTrackUrlOk\(url, location\.href\)/);
+  assert.match(rd('panel-video.js'), /V\.adapterFor\?\.\(location\)/);
+  assert.doesNotMatch(rd('panel-video.js'), /youtube\\\.com\$\/\.test\(location\.hostname\)/);
+  assert.match(rd('panel-words.js'), /연습 페이지에서 파일을 다시 골라 주세요/);
+});

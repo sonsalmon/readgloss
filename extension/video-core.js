@@ -612,7 +612,7 @@
   const nextRate = (current, slowRate) => (Number(current) === 1 ? clampSlowRate(slowRate) : 1);
 
   // 줄 키(입력칸 밖·고른 글 없음은 부르는 쪽이 본다). 자판과 무관하게 같은 자리(e.code)라 한글 자판이어도 된다.
-  // 28-2 랭플릭스 배치: A 이전 줄 · S 이 줄 처음 · D 다음 줄 · R 문장 반복 · Q 구간 반복 · Z 느리게.
+  // 28-2 키 배치: A 이전 줄 · S 이 줄 처음 · D 다음 줄 · R 문장 반복 · Q 구간 반복 · Z 느리게.
   // W·L·/ 는 자리만 잡아 두고 해당 티켓(T53d·T53e·T53j)에서 동작을 붙인다.
   const KEYS = { KeyA: 'prev', KeyS: 'repeat', KeyD: 'next', KeyR: 'repeatLine', KeyQ: 'loop', KeyZ: 'slow', KeyW: 'focusMode', KeyL: 'drill', Slash: 'panel' };
   function keyAction(e) {
@@ -790,6 +790,16 @@
       return { id, t: parseT(u.searchParams.get('t')) };
     } catch {
       return null;
+    }
+  }
+  // 넷플릭스 자막 주소를 받을지(28-22): https 이고, 페이지와 같은 출처이거나 호스트가 .nflxvideo.net 으로 끝나는 CDN 일 때만.
+  function nfTrackUrlOk(url, base) {
+    try {
+      const u = new URL(url, base);
+      if (u.protocol !== 'https:') return false;
+      return u.origin === new URL(base).origin || u.hostname.toLowerCase().endsWith('.nflxvideo.net');
+    } catch {
+      return false;
     }
   }
   const videoIdOf = (href) => parseScene(href)?.id ?? null;
@@ -1010,6 +1020,6 @@
     params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseSrt, parseImsc, subFormatOf, parseTrack,
     validPolish, polishedCues,
     langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, shuffleTiles, tileCheck, bandOf, minPFor, tokenColor, phraseSpans, tooltipModel, hideTypes, maskFlags, nextHide, drillSpace, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
-    parseT, parseScene, videoIdOf, netflixIdOf, adapterFor, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf, barModel, xToTime, subLayout, rounds,
+    parseT, parseScene, nfTrackUrlOk, videoIdOf, netflixIdOf, adapterFor, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf, barModel, xToTime, subLayout, rounds,
   };
 })();
