@@ -677,10 +677,42 @@
   // 영상 제목: "제목 - YouTube" 에서 뒤를 뗀다. 알림 수 "(3) 제목" 도 뗀다.
   const titleOf = (docTitle) => cleanText(String(docTitle ?? '').replace(/\s+-\s+YouTube$/, '').replace(/^\(\d+\)\s+/, '')).slice(0, MAX_TITLE);
 
+  // 세로 컨트롤 막대(28-10): 설정 순서에서 모르는 이름을 빼고, 빠진 단추는 뒤에 붙인 뒤 숨김을 표시한다.
+  // all 은 화면이 아는 모든 단추 이름(기본 순서 배열), order·hidden 은 저장된 설정이다.
+  function barModel(order, hidden, all) {
+    const names = [];
+    const known = new Set();
+    for (const k of Array.isArray(all) ? all : []) {
+      if (typeof k === 'string' && k && !known.has(k)) {
+        known.add(k);
+        names.push(k);
+      }
+    }
+    const out = [];
+    const seen = new Set();
+    const add = (k) => {
+      if (!known.has(k) || seen.has(k)) return;
+      seen.add(k);
+      out.push(k);
+    };
+    for (const k of Array.isArray(order) ? order : []) add(k);
+    for (const k of names) add(k); // 빠진 단추는 뒤에 붙인다
+    const hid = new Set((Array.isArray(hidden) ? hidden : []).filter((k) => typeof k === 'string'));
+    return out.map((name) => ({ name, hidden: hid.has(name) }));
+  }
+  // 진행 막대 위 좌표 -> 영상 시각(초). 폭이 0이거나 숫자가 아니면 0, 0~duration 으로 자른다.
+  function xToTime(x, width, duration) {
+    const px = num(x);
+    const w = num(width);
+    const d = num(duration);
+    if (px === null || w === null || d === null || w <= 0 || d <= 0) return 0;
+    return Math.min(d, Math.max(0, (px / w) * d));
+  }
+
   globalThis.readglossVideo = {
     ID_RE, ASR, GRACE, MAX_CLIP, HIDE_MODES, HIDE_LABEL, HIDE_TYPES, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT, DRILL_DOUBLE,
     params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseTrack,
     langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, bandOf, minPFor, tokenColor, phraseSpans, tooltipModel, hideTypes, maskFlags, nextHide, drillSpace, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
-    parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf,
+    parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf, barModel, xToTime,
   };
 })();

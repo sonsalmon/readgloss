@@ -25,6 +25,25 @@
   const STOP_KO = new Set(['bridge-off', 'mt-unavailable', 'ext-reloaded', 'pair-failed', 'unauthorized']); // 줄 하나가 아니라 번역 전체가 막힌 오류
   const errText = (r, head) => ERR[r?.error] ?? `${head}(${r?.error ?? '응답 없음'})`;
 
+  // 세로 막대 단추(28-10): 짧은 글자·이름·키. 툴팁(aria-label·title)에 이름과 키를 함께 보여 준다.
+  const BAR = {
+    prev: { text: '‹', name: '이전 줄', key: 'A' },
+    repeat: { text: '↻', name: '이 줄 처음', key: 'S' },
+    next: { text: '›', name: '다음 줄', key: 'D' },
+    repeatLine: { text: '문장', name: '문장 반복', key: 'R' },
+    loop: { text: '구간', name: '구간 반복', key: 'Q' },
+    drill: { text: '드릴', name: '리스닝 드릴', key: 'L' },
+    pauseEach: { text: '줄멈춤', name: '줄마다 멈춤', key: '' },
+    skipGaps: { text: '틈', name: '틈 건너뛰기', key: '' },
+    slow: { text: '느리게', name: '느리게', key: 'Z' },
+    focusMode: { text: '키보드', name: '키보드 저장 모드', key: 'W' },
+    hide: { text: '가리기', name: '가리기 바꾸기', key: '' },
+    ko: { text: '한', name: '한국어 줄 보이기', key: '' },
+    save: { text: '☆', name: '이 줄 구·문장에 저장', key: 'Shift' },
+    explain: { text: '풀이', name: '이 줄 AI 풀이(문맥 번역)', key: '' },
+  };
+  const barLabel = (b) => (b.key ? `${b.name} (${b.key})` : b.name);
+
   let settings = SET.normalize({});
   const vs = () => settings.video;
   const S = {
@@ -444,7 +463,7 @@
     /* 포커스 표시는 검정·흰·검정 세 겹(안 2px 검정 + 흰 테두리 + 밖 2px 검정): 영상이 밝든 어둡든, 어두운 자막 바탕 옆이든 흰 줄이 보인다
        (파랑 한 겹은 흰 화면에서 2.6:1, 흰+검정 두 겹은 흰 화면에서 안쪽 검정만 남아 바탕이 굵어진 것처럼 보였다) */
     .lines:focus-visible { outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 2px rgba(8, 8, 8, .92), 0 0 0 6px rgba(8, 8, 8, .92); }
-    .note { order: -2; } .bar { order: -1; } .msg { order: 1; } /* 화면 차례(풀이 → 막대 → 두 줄 → 안내)와 Tab 차례(두 줄 → 막대 → 풀이)를 따로 */
+    .note { order: -2; } .msg { order: 1; } /* 화면 차례(풀이 → 두 줄 → 안내). 세로 막대는 position: fixed 라 흐름에 끼지 않는다 */
     .en, .ko { box-sizing: border-box; max-width: 100%; padding: .08em .45em; border-radius: 4px; background: rgba(8, 8, 8, .74); color: #fff; text-align: center; line-height: 1.38; overflow-wrap: anywhere; }
     .en { font-size: var(--fs, 22px); user-select: none; }
     .ko { font-size: calc(var(--fs, 22px) * .82); color: #f1f1f1; }
@@ -478,11 +497,15 @@
     .tip .tp-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
     .tip .tp-actions button { min-height: 28px; }
     .box.tip-open .w .g { display: none !important; } /* 말풍선이 뜨면 옛 짧은 뜻 풍선은 겹치지 않게 숨긴다 */
-    /* 막대: 숨어 있을 때는 visibility 라 마우스를 받지 않는다. 아래 여백은 뜻 풍선 자리(풍선이 단추를 가리지 않게)이고 막대의 일부라 두 줄과 틈이 없다 */
-    .bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 4px 0 max(22px, calc(var(--fs, 22px) * .85)); visibility: hidden; opacity: 0; transition: opacity .15s, visibility .15s; }
-    .box:hover .bar, .box:focus-within .bar { visibility: visible; opacity: 1; }
-    /* 단추: 누를 자리 24px 이상, 글자는 자막 크기를 따라 커진다 */
-    button { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; padding: 0 9px; cursor: pointer;
+    /* 세로 막대(28-10): 플레이어 왼쪽 가장자리. 숨어 있을 때는 visibility 라 마우스를 받지 않고, 두 줄·막대에 올리면 보인다.
+       자리(top·left·max-height)는 layout() 이 플레이어 rect 와 유튜브 조작 막대 높이로 잡는다. */
+    .bar { position: fixed; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+      width: max-content; max-width: 96px; padding: 4px; overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
+      visibility: hidden; opacity: 0; transition: opacity .15s 1.6s, visibility 0s 1.75s; } /* 숨을 때만 1.75초 늦춰, 두 줄에서 막대까지 마우스를 옮길 시간을 준다 */
+    .bar::-webkit-scrollbar { display: none; }
+    .box:hover .bar, .box:focus-within .bar, .bar:hover, .bar:focus-within { visibility: visible; opacity: 1; transition: opacity .15s, visibility 0s; }
+    /* 단추: 누를 자리 28px 이상, 글자는 자막 크기를 따라 커진다 */
+    button { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; padding: 0 7px; cursor: pointer;
       border-radius: 6px; border: 1px solid rgba(255, 255, 255, .2); background: rgba(28, 28, 28, .92); color: #fff;
       font: max(12px, calc(var(--fs, 22px) * .56))/1.7 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; white-space: nowrap; }
     button:hover:not(:disabled) { border-color: #fff; }
@@ -491,9 +514,15 @@
     button.stack { display: inline-grid; place-items: center; }
     button.stack > span { grid-area: 1 / 1; }
     button.stack > span:not(.on) { visibility: hidden; }
-    /* 눌린 단추: 옅은 파랑을 어두운 단추 바탕 위에 얹는다(파랑만 반투명이면 밝은 영상 위에서 흰 글자가 1.35:1) */
-    button[aria-pressed="true"], button[aria-expanded="true"] { background: linear-gradient(rgba(62, 166, 255, .32), rgba(62, 166, 255, .32)), rgba(28, 28, 28, .92); border-color: #3ea6ff; }
+    /* 눌린 단추: 주황 테두리 + 옅은 주황 바탕(28-10) */
+    button[aria-pressed="true"], button[aria-expanded="true"] { background: linear-gradient(rgba(245, 158, 11, .30), rgba(245, 158, 11, .30)), rgba(28, 28, 28, .92); border-color: #f59e0b; }
     button:disabled { opacity: .45; cursor: default; }
+    /* 구간 손잡이(28-10): 유튜브 진행 막대 위 A·B 주황 눈금. 자리는 renderRange() 가 rect 로 잡는다 */
+    .range { position: fixed; z-index: 2; pointer-events: none; }
+    .range .h { position: absolute; top: 0; width: 12px; height: 100%; transform: translateX(-50%); box-sizing: border-box;
+      background: #f59e0b; border: 1px solid #111; border-radius: 2px; pointer-events: auto; cursor: ew-resize; touch-action: none; }
+    .range .h::after { content: attr(data-k); position: absolute; left: 50%; top: -1.2em; transform: translateX(-50%);
+      color: #f59e0b; font: 700 11px/1 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; text-shadow: 0 0 2px #000, 0 0 3px #000; }
     .note { position: relative; box-sizing: border-box; max-width: min(100%, 720px); max-height: 38vh; overflow-y: auto; padding: 8px 36px 8px 12px; border-radius: 8px;
       background: rgba(20, 20, 20, .94); color: #eee; font: max(13px, calc(var(--fs, 22px) * .6))/1.55 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; text-align: left; }
     .note .x { position: absolute; top: 6px; right: 6px; padding: 0; }
@@ -562,22 +591,30 @@
     const box = el('div', 'box');
     const bar = el('div', 'bar');
     bar.setAttribute('role', 'toolbar');
-    bar.setAttribute('aria-label', 'readgloss 자막');
-    const prevBtn = button('‹', '이전 줄 (A)', () => run('prev'));
-    const repeatBtn = button('↻', '이 줄 처음 (S)', () => run('repeat'));
-    const nextBtn = button('›', '다음 줄 (D)', () => run('next'));
-    const hideBtn = button('', '가리기 바꾸기', () => run('hide'));
-    stackLabels(hideBtn, Object.fromEntries(V.HIDE_MODES.map((m) => [m, `가리기: ${V.HIDE_LABEL[m]}`])));
-    const pauseBtn = button('줄마다 멈춤', '줄마다 멈춤', () => run('pauseEach'));
-    const lineBtn = button('문장 반복', '문장 반복 (R)', () => run('repeatLine'));
-    const loopBtn = button('구간', '구간 반복 (Q)', () => run('loop', loopBtn));
-    const gapBtn = button('틈 건너뛰기', '틈 건너뛰기', () => run('skipGaps'));
-    const slowBtn = button('느리게', '느리게 (Z)', () => run('slow'));
-    const koBtn = button('한', '한국어 줄 보이기', () => setVideo({ ko: !vs().ko }));
-    const saveBtn = button('', '이 줄 구·문장에 저장 (Shift)', () => saveLine(S.cur, saveBtn));
-    stackLabels(saveBtn, { off: '☆ 저장', on: '★ 저장됨' });
-    const explainBtn = button('풀이', '이 줄 AI 풀이(문맥 번역)', () => explain(S.cur));
-    bar.append(prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, slowBtn, koBtn, saveBtn, explainBtn);
+    bar.setAttribute('aria-label', 'readgloss 자막 컨트롤');
+    // 단추는 한 번만 만들고 설정 순서·숨김에 따라 bar 안에서 다시 늘어놓는다(renderBarOrder)
+    const btns = {};
+    for (const [k, info] of Object.entries(BAR)) {
+      const b = button(info.text, barLabel(info), () => run(k, b));
+      b.dataset.k = k;
+      btns[k] = b;
+    }
+    stackLabels(btns.hide, { off: '가리기', word: '낱말', line: '줄' });
+    stackLabels(btns.save, { off: '☆', on: '★' });
+    const prevBtn = btns.prev;
+    const repeatBtn = btns.repeat;
+    const nextBtn = btns.next;
+    const hideBtn = btns.hide;
+    const pauseBtn = btns.pauseEach;
+    const lineBtn = btns.repeatLine;
+    const loopBtn = btns.loop;
+    const gapBtn = btns.skipGaps;
+    const slowBtn = btns.slow;
+    const drillBtn = btns.drill;
+    const focusBtn = btns.focusMode;
+    const koBtn = btns.ko;
+    const saveBtn = btns.save;
+    const explainBtn = btns.explain;
     const note = el('div', 'note');
     note.hidden = true;
     note.setAttribute('role', 'status');
@@ -647,13 +684,35 @@
     tipEl.hidden = true;
     tipEl.setAttribute('role', 'group');
     tipEl.setAttribute('aria-label', '낱말 뜻과 저장');
+    // 구간 손잡이(28-10): 진행 막대 위에 A·B 눈금. 유튜브 진행 막대를 못 찾으면 hidden.
+    const rangeEl = el('div', 'range');
+    rangeEl.hidden = true;
+    rangeEl.setAttribute('aria-hidden', 'true');
+    const rangeA = el('div', 'h');
+    rangeA.dataset.k = 'A';
+    const rangeB = el('div', 'h');
+    rangeB.dataset.k = 'B';
+    rangeA.dataset.which = 'start';
+    rangeB.dataset.which = 'end';
+    for (const [h, which, label] of [[rangeA, 'start', '구간 시작'], [rangeB, 'end', '구간 끝']]) {
+      h.title = `${label} — 끌어서 옮기기`;
+      h.addEventListener('pointerdown', (e) => startRangeDrag(which, e));
+    }
+    rangeEl.append(rangeA, rangeB);
     box.prepend(notice);
     box.append(lines, bar, note, msg);
     box.append(hint); // 안내 알약(28-7)은 화면 차례(order)로 두 줄 아래에 놓는다
     box.append(drillPill, drillNote); // 드릴 알약·안내도 order 로 자리를 잡는다
     box.append(tipEl); // 말풍선은 position: fixed 라 흐름에 끼지 않는다
+    box.append(rangeEl); // 구간 눈금도 fixed 라 흐름에 끼지 않는다
     shadow.append(style, box, sr);
-    ui = { box, bar, note, notice, lines, en, ko, msg, hint, sr, tip: tipEl, drillPill, drillNote, drillCount, prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, slowBtn, koBtn, saveBtn, explainBtn, lineKey: '', noteKey: '', tokens: [], wcur: -1, wcurFor: '' };
+    ui = {
+      box, bar, note, notice, lines, en, ko, msg, hint, sr, tip: tipEl, drillPill, drillNote, drillCount,
+      prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, slowBtn, drillBtn, focusBtn, koBtn, saveBtn, explainBtn,
+      btns, barKey: '', range: rangeEl, rangeA, rangeB,
+      lineKey: '', noteKey: '', tokens: [], wcur: -1, wcurFor: '',
+    };
+    renderBarOrder();
 
     en.addEventListener('click', (e) => {
       const sp = e.target?.closest?.('.w');
@@ -966,11 +1025,22 @@
   }
 
   // 글자 크기는 플레이어 높이를 따라가고, 줄은 유튜브 조작 막대 위에 둔다(막대가 숨어도 같은 자리 — 마우스를 올렸을 때 자막이 움직이지 않게)
+  // 세로 막대(28-10)는 플레이어 왼쪽 가장자리 안, 위아래로 유튜브 조작 막대와 여백을 둔다. 전체 화면에서도 플레이어 rect 를 그대로 쓴다.
   function layout() {
     if (!host || !player) return;
     host.style.setProperty('--fs', `${V.fontPx(player.clientHeight || 360, vs().fontPct)}px`);
-    const bar = player.querySelector('.ytp-chrome-bottom');
-    host.style.bottom = `${(bar?.offsetHeight || 48) + 14}px`;
+    const chrome = player.querySelector('.ytp-chrome-bottom');
+    const chromeH = chrome?.offsetHeight || 48;
+    host.style.bottom = `${chromeH + 14}px`;
+    if (ui?.bar) {
+      const r = player.getBoundingClientRect();
+      const topPad = Math.min(64, Math.max(20, Math.round((r.height || 360) * 0.16)));
+      const bottomPad = chromeH + 14;
+      ui.bar.style.left = `${Math.round(r.left + 8)}px`;
+      ui.bar.style.top = `${Math.round(r.top + topPad)}px`;
+      ui.bar.style.maxHeight = `${Math.max(84, Math.round((r.height || 360) - topPad - bottomPad))}px`;
+    }
+    renderRange();
   }
 
   const visible = () => Boolean(vs().subs && S.id && player && video && S.cues.length && ccOn() && !adShowing());
@@ -993,7 +1063,9 @@
     ui.msg.hidden = !showMsg;
     if (ui.msg.textContent !== msg) ui.msg.textContent = msg;
     host.style.display = show || showMsg ? 'flex' : 'none';
-    ui.lines.hidden = ui.bar.hidden = !show;
+    ui.lines.hidden = !show;
+    renderBarOrder();
+    ui.bar.hidden = !show || !ui.bar.childElementCount;
     ui.notice.hidden = !(show && !vs().keysNoticeSeen); // 처음 한 번만(알겠어요를 누르면 설정에 남는다)
     const drillOn = show && S.drill;
     ui.box.classList.toggle('drill', drillOn);
@@ -1008,12 +1080,14 @@
     }
     if (!show) {
       ui.note.hidden = true;
+      ui.range.hidden = true;
       closeTip();
       renderFocusHint();
       return;
     }
     renderLine();
     renderBar();
+    renderRange();
     renderNote();
     renderFocusHint();
   }
@@ -1129,6 +1203,15 @@
     b.setAttribute('aria-label', label);
     b.title = label;
   }
+  // 설정 순서·숨김(28-10). 순서가 바뀌었을 때만 단추를 다시 늘어놓는다.
+  function renderBarOrder() {
+    if (!ui?.bar) return;
+    const rows = V.barModel(vs().barOrder, vs().barHidden, SET.DEFAULTS.video.barOrder);
+    const key = rows.map((r) => `${r.name}${r.hidden ? 0 : 1}`).join(',');
+    if (key === ui.barKey) return;
+    ui.barKey = key;
+    ui.bar.replaceChildren(...rows.filter((r) => !r.hidden).map((r) => ui.btns[r.name]).filter(Boolean));
+  }
   function renderBar() {
     const v = vs();
     const cue = S.cues[S.cur];
@@ -1139,12 +1222,79 @@
     ui.gapBtn.setAttribute('aria-pressed', String(v.skipGaps));
     ui.loopBtn.setAttribute('aria-pressed', String(Boolean(S.range)));
     ui.slowBtn.setAttribute('aria-pressed', String(Boolean(video && video.playbackRate !== 1))); // 지금 속도가 1 이 아님(28-3)
+    ui.drillBtn.setAttribute('aria-pressed', String(S.drill));
+    ui.focusBtn.setAttribute('aria-pressed', String(v.focusMode));
     ui.koBtn.setAttribute('aria-pressed', String(v.ko));
     const saved = cue ? Boolean(Sel.findPhrase(S.phrases, cue.text)) : false;
     showLabel(ui.saveBtn, saved ? 'on' : 'off', saved ? '이 줄 저장 빼기 (Shift)' : '이 줄 구·문장에 저장 (Shift)');
     ui.saveBtn.setAttribute('aria-pressed', String(saved));
     ui.explainBtn.setAttribute('aria-expanded', String(Boolean(S.note) && S.note.i === S.cur));
     for (const b of [ui.prevBtn, ui.repeatBtn, ui.nextBtn, ui.saveBtn, ui.explainBtn]) b.disabled = !cue;
+  }
+
+  // 구간 손잡이(28-10): 유튜브 진행 막대 rect 위에 A·B 를 그린다. 막대를 못 찾거나 층이 안 보이면 숨긴다.
+  function progressRect() {
+    const p = player?.querySelector('.ytp-progress-bar') ?? null;
+    const r = p?.getBoundingClientRect?.() ?? null;
+    return r && r.width > 0 && r.height > 0 ? r : null;
+  }
+  function renderRange() {
+    if (!ui?.range) return;
+    const range = S.range;
+    const rect = player && visible() ? progressRect() : null;
+    const duration = Number(video?.duration);
+    if (!range || !Number.isFinite(range.start) || !rect || !Number.isFinite(duration) || duration <= 0) {
+      ui.range.hidden = true;
+      return;
+    }
+    ui.range.hidden = false;
+    ui.range.style.left = `${Math.round(rect.left)}px`;
+    ui.range.style.top = `${Math.round(rect.top - 4)}px`;
+    ui.range.style.width = `${Math.round(rect.width)}px`;
+    ui.range.style.height = `${Math.round(rect.height + 8)}px`;
+    const x = (t) => Math.min(rect.width, Math.max(0, (t / duration) * rect.width));
+    ui.rangeA.hidden = false;
+    ui.rangeA.style.left = `${Math.round(x(range.start))}px`;
+    const hasEnd = Number.isFinite(range.end) && range.end > range.start;
+    ui.rangeB.hidden = !hasEnd;
+    if (hasEnd) ui.rangeB.style.left = `${Math.round(x(range.end))}px`;
+  }
+  // 눈금 끌기: 진행 막대 x -> 시각(xToTime). 끝 ≤ 시작이 되는 값은 받지 않는다.
+  let rangeDrag = null;
+  function startRangeDrag(which, e) {
+    if (!S.range || !video) return;
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    rangeDrag = which;
+    const move = (ev) => {
+      if (!rangeDrag) return;
+      const rect = progressRect();
+      const duration = Number(video?.duration);
+      if (!rect || !Number.isFinite(duration) || duration <= 0) return;
+      if (ev.cancelable) ev.preventDefault();
+      const t = V.xToTime(ev.clientX - rect.left, rect.width, duration);
+      const r = S.range;
+      if (!r) return;
+      if (rangeDrag === 'start') {
+        if (Number.isFinite(r.end) && t >= r.end) return;
+        S.range = { start: t, end: Number.isFinite(r.end) ? r.end : null };
+      } else {
+        if (t <= r.start) return;
+        S.range = { start: r.start, end: t };
+      }
+      renderRange();
+    };
+    const end = () => {
+      rangeDrag = null;
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('pointerup', end, true);
+      window.removeEventListener('pointercancel', end, true);
+      renderBar();
+    };
+    window.addEventListener('pointermove', move, true);
+    window.addEventListener('pointerup', end, true);
+    window.addEventListener('pointercancel', end, true);
   }
 
   function renderNote() {
@@ -1191,6 +1341,9 @@
     if (act === 'repeat') return goLine(Math.max(0, i));
     if (act === 'next') return goLine(Math.min(S.cues.length - 1, i + 1));
     if (act === 'hide') return setVideo({ hide: V.nextHide(vs().hide) });
+    if (act === 'ko') return setVideo({ ko: !vs().ko });
+    if (act === 'save') return saveLine(S.cur, anchorEl);
+    if (act === 'explain') return explain(S.cur);
     if (act === 'pauseEach') return setVideo(vs().pauseEach ? { pauseEach: false } : { pauseEach: true, repeatLine: false });
     if (act === 'repeatLine') return setVideo(vs().repeatLine ? { repeatLine: false } : { repeatLine: true, pauseEach: false });
     if (act === 'skipGaps') return setVideo({ skipGaps: !vs().skipGaps });
@@ -1530,6 +1683,15 @@
   window.addEventListener('blur', () => { if (shiftDown) shiftDown.interrupted = true; }); // 창을 떠나며 Shift 를 놓친 경우
 
   document.addEventListener('yt-navigate-finish', checkPage);
+  window.addEventListener('resize', () => layout());
+  // 페이지가 스크롤되면 fixed 인 막대·구간 눈금 자리를 플레이어 rect 로 다시 잡는다(프레임당 한 번)
+  let scrollRaf = 0;
+  window.addEventListener('scroll', () => {
+    if (scrollRaf) return;
+    scrollRaf = requestAnimationFrame(() => { scrollRaf = 0; layout(); });
+  }, { passive: true, capture: true });
+  document.addEventListener('fullscreenchange', () => layout());
+  document.addEventListener('webkitfullscreenchange', () => layout());
   setInterval(checkPage, 1000); // 주소 바뀜·플레이어 교체·안내 시간을 함께 본다
   checkPage();
 

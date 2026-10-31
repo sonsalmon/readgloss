@@ -251,6 +251,11 @@
     input[type="color"] { width: 32px; height: 26px; padding: 0; border: 1px solid var(--rg-border); border-radius: 6px; background: none; cursor: pointer; vertical-align: middle; }
     .check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
     .check input { margin: 4px 0 0; accent-color: var(--rg-accent); }
+    /* 컨트롤 편집(28-10): 단추 줄마다 ↑·↓ 와 보이기. 좁은 패널에서도 한 줄에 들어가게 */
+    .bar-edit summary { cursor: pointer; font-weight: 600; }
+    .bar-list { margin: 8px 0; }
+    .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .bar-moves { display: flex; gap: 4px; }
     .sites { list-style: none; margin: 0 0 8px; padding: 0; }
     .sites li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--rg-border); }
     .sites li.empty { color: var(--rg-muted); font-size: 12px; border: 0; }
@@ -705,6 +710,11 @@
     'video.wordBands.easy': '칠하기 — 단어 쉬움', 'video.wordBands.medium': '칠하기 — 단어 보통', 'video.wordBands.hard': '칠하기 — 단어 어려움', 'video.idioms': '칠하기 — 숙어',
     'video.hideTypes.hard': '어려운 낱말 가리기', 'video.hideTypes.done': '복습 끝난 낱말 가리기', 'video.hideTypes.other': '그 밖의 낱말 가리기',
   };
+  // 세로 막대 단추 이름(28-10). 설정에는 이름(영문 키)만 남기고 화면에는 한국어로 보여 준다.
+  const BAR_LABEL = {
+    prev: '이전 줄', repeat: '다시', next: '다음 줄', repeatLine: '문장 반복', loop: '구간', drill: '드릴',
+    pauseEach: '줄마다 멈춤', skipGaps: '틈 건너뛰기', slow: '느리게', focusMode: '키보드', hide: '가리기', ko: '한', save: '저장', explain: '풀이',
+  };
   const LEVEL_HINT = {
     A2: 'A2 이상: 거의 모든 단어에 뜻이 붙어요',
     B1: 'B1 이상: 중급 단어부터',
@@ -817,6 +827,60 @@
       h('p', { class: 'hint', text: '이 사이트에서는 보안·머신러닝·수학 용어가 분야 용어로 보여요. 목록 밖에서도 수식·머신러닝 글이면 그 분야만 켜져요.' }), ...glossNodes);
     refreshers.push((s) => glossBox.classList.toggle('dim', s.glossary === 'off'));
 
+    // 세로 막대 컨트롤 편집(28-10): 위·아래 단추로 순서, 보이기 체크로 숨김, [기본값으로]. 모두 기본 HTML 단추·체크라 키보드로 된다.
+    const barDefaults = () => [...(S.DEFAULTS.video.barOrder || [])];
+    const barRows = (video) => {
+      const all = barDefaults();
+      const known = new Set(all);
+      const hidden = new Set((Array.isArray(video?.barHidden) ? video.barHidden : []).filter((k) => known.has(k)));
+      const V = globalThis.readglossVideo;
+      const ordered = V?.barModel
+        ? V.barModel(video?.barOrder, video?.barHidden, all).map((r) => r.name)
+        : [...new Set((Array.isArray(video?.barOrder) ? video.barOrder : all).filter((k) => known.has(k)))];
+      for (const k of all) if (!ordered.includes(k)) ordered.push(k);
+      return ordered.map((name) => ({ name, hidden: hidden.has(name) }));
+    };
+    const barMove = (name, dir) => {
+      const names = barRows(ctx.settings.video).map((r) => r.name);
+      const i = names.indexOf(name);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= names.length) return;
+      [names[i], names[j]] = [names[j], names[i]];
+      ctx.setSettings({ video: { barOrder: names } });
+    };
+    const barShow = (name, show) => {
+      const all = barDefaults();
+      const hidden = new Set(barRows(ctx.settings.video).filter((r) => r.hidden).map((r) => r.name));
+      if (show) hidden.delete(name);
+      else hidden.add(name);
+      ctx.setSettings({ video: { barHidden: all.filter((k) => hidden.has(k)) } });
+    };
+    const barEditor = h('details', { class: 'row bar-edit' }, h('summary', { text: '컨트롤 편집' }));
+    const barList = h('div', { class: 'bar-list', role: 'group', 'aria-label': '막대 단추 순서와 보이기' });
+    const barReset = h('button', { class: 'btn', type: 'button', text: '기본값으로', onclick: () => ctx.setSettings({ video: { barOrder: barDefaults(), barHidden: [] } }) });
+    barEditor.append(h('p', { class: 'hint', text: '위·아래 단추로 순서를 바꾸고, 보이기로 막대에서 숨겨요. 키보드로도 됩니다.' }), barList, barReset);
+    refreshers.push((s) => {
+      const rows = barRows(s.video);
+      const active = barList.contains(shadow.activeElement) ? shadow.activeElement : null;
+      const focusMove = active?.dataset?.barMove ?? '';
+      const focusDir = active?.dataset?.barDir ?? '';
+      const focusShow = active?.dataset?.barShow ?? '';
+      barList.replaceChildren(...rows.map((row, idx) => {
+        const label = BAR_LABEL[row.name] ?? row.name;
+        const up = h('button', { class: 'btn bar-move', type: 'button', text: '↑', 'aria-label': `${label} 위로`, 'data-bar-move': row.name, 'data-bar-dir': 'up', disabled: idx === 0, onclick: () => barMove(row.name, -1) });
+        const down = h('button', { class: 'btn bar-move', type: 'button', text: '↓', 'aria-label': `${label} 아래로`, 'data-bar-move': row.name, 'data-bar-dir': 'down', disabled: idx === rows.length - 1, onclick: () => barMove(row.name, 1) });
+        const input = h('input', { type: 'checkbox', 'data-bar-show': row.name, 'aria-label': `${label} 보이기` });
+        input.checked = !row.hidden;
+        input.addEventListener('change', () => barShow(row.name, input.checked));
+        return h('div', { class: 'row bar-row' }, h('div', { class: 'bar-moves' }, up, down), h('label', { class: 'check' }, input, h('span', {}, label)));
+      }));
+      // 키보드로 ↑·↓ 를 여러 번 눌러도 포커스가 사라지지 않게 같은 단추(없으면 같은 줄의 남은 단추)로 돌려준다.
+      let target = null;
+      if (focusMove) target = barList.querySelector(`[data-bar-move="${focusMove}"][data-bar-dir="${focusDir}"]:not([disabled])`) ?? barList.querySelector(`[data-bar-move="${focusMove}"]:not([disabled])`);
+      else if (focusShow) target = barList.querySelector(`[data-bar-show="${focusShow}"]`);
+      target?.focus();
+    });
+
     // 기본값 복원: 한 번 더 눌러야 한다. 끌 사이트 목록은 남기고, 용어집을 켤 사이트는 기본 목록으로.
     let armed = 0;
     const resetBtn = h('button', { class: 'btn', type: 'button', text: '기본값 복원' });
@@ -907,6 +971,7 @@
       toggle('video.hideTypes.hard'), toggle('video.hideTypes.done'), toggle('video.hideTypes.other'),
       slider('video.fontPct'), choice('video.slowRate', null, 'Z 키나 자막 막대 [느리게]로 1배와 이 속도를 오가요.'),
       toggle('video.wordBands.easy'), toggle('video.wordBands.medium'), toggle('video.wordBands.hard'), toggle('video.idioms', '저장한 짧은 구(8낱말 이하)를 한 덩어리로 칠해요.'),
+      barEditor,
       h('h3', { class: 'sec', text: '화면' }), slider('opacityInput'), slider('opacityUi'), toggle('dimWhileReading', '메모할 때만 진해지고, 읽을 때는 설정한 투명도로 보여요.'),
       h('h3', { class: 'sec', text: '기타' }), toggle('allowCopy', '체크하지 않으면 복사할 때 주석 글자가 섞이지 않아요.'), toggle('selectionTranslate', '글을 드래그하면 맥 번역 카드가 떠요. 한 단어는 사전 카드로 열려요.'), choice('theme'), toggle('floatingButton.show', '숨겨도 브라우저 툴바의 readgloss 아이콘으로 패널을 열 수 있어요.'),
       h('h3', { class: 'sec', text: '끌 사이트' }), ...blockNodes,

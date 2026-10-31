@@ -108,7 +108,7 @@ test('content.js: 카드·확인 메시지는 전체 화면 요소 안에(mountR
 test('설정: video 기본값·범위, reviewMode', async () => {
   await import('../extension/settings-core.js');
   const S = globalThis.readglossSettings;
-  assert.deepEqual(S.DEFAULTS.video, { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false, wordBands: { easy: false, medium: true, hard: true }, idioms: true });
+  assert.deepEqual(S.DEFAULTS.video, { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false, wordBands: { easy: false, medium: true, hard: true }, idioms: true, barOrder: ['prev', 'repeat', 'next', 'repeatLine', 'loop', 'drill', 'pauseEach', 'skipGaps', 'slow', 'focusMode', 'hide', 'ko', 'save', 'explain'], barHidden: [] });
   assert.equal(S.DEFAULTS.reviewMode, 'flip');
   const n = S.normalize({ video: { fontPct: 999, hide: 'nope', ko: 'yes', pauseEach: true }, reviewMode: 'choice' });
   assert.equal(n.video.fontPct, 160);
@@ -176,5 +176,5 @@ test('BUG-001·004: 장면 구간은 자막이 없어도 끝에서 멈추고, �
   assert.ok(tick.indexOf('if (S.clip)') < tick.indexOf('if (!S.cues.length)'), '구간 확인이 줄 확인보다 먼저');
   assert.match(src, /lines\.tabIndex = 0;/);
   assert.match(src, /box\.append\(lines, bar, note, msg\)/, 'Tab 차례: 두 줄 → 막대 → 풀이');
-  assert.match(src, /\.note \{ order: -2; \} \.bar \{ order: -1; \}/, '화면 차례는 그대로(풀이 → 막대 → 두 줄)');
+  assert.match(src, /\.note \{ order: -2; \} \.msg \{ order: 1; \}/, '풀이는 두 줄 위, 세로 막대는 fixed 라 흐름 밖');
 });

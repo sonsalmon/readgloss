@@ -64,13 +64,14 @@ test('자막 층: 처음 한 번 카드·[알겠어요] 저장, Shift 단독은 
   assert.match(src, /act === 'focusMode'\) && spherical\(\)/, '360° 영상은 W 도 양보한다');
 });
 
-test('막대·두 줄 이름: 새 키만 안내하고 H·P·R 옛 안내는 지운다', () => {
-  assert.match(src, /'이전 줄 \(A\)'/);
-  assert.match(src, /'이 줄 처음 \(S\)'/);
-  assert.match(src, /'다음 줄 \(D\)'/);
-  assert.match(src, /'문장 반복 \(R\)'/);
-  assert.match(src, /'구간 반복 \(Q\)'/);
-  assert.match(src, /'이 줄 구·문장에 저장 \(Shift\)'/);
+test('막대·두 줄 이름: 단추 이름과 키를 한 곳에 두고 H·P·R 옛 안내는 지운다', () => {
+  assert.match(src, /prev: \{ text: '‹', name: '이전 줄', key: 'A' \}/);
+  assert.match(src, /repeat: \{ text: '↻', name: '이 줄 처음', key: 'S' \}/);
+  assert.match(src, /next: \{ text: '›', name: '다음 줄', key: 'D' \}/);
+  assert.match(src, /repeatLine: \{ text: '문장', name: '문장 반복', key: 'R' \}/);
+  assert.match(src, /loop: \{ text: '구간', name: '구간 반복', key: 'Q' \}/);
+  assert.match(src, /save: \{ text: '☆', name: '이 줄 구·문장에 저장', key: 'Shift' \}/);
+  assert.match(src, /const barLabel = \(b\) => \(b\.key \? `\$\{b\.name\} \(\$\{b\.key\}\)` : b\.name\);/);
   assert.match(src, /A 이전 줄 · S 이 줄 처음 · D 다음 줄 · R 문장 반복 · Q 구간 반복 · Z 느리게 · Shift 줄 저장/);
   assert.doesNotMatch(src, /가리기 바꾸기 \(H\)|줄마다 멈춤 \(P\)|R 로 보기|R 가린 줄 보기/);
 });

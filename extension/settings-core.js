@@ -3,6 +3,8 @@
 (() => {
   const KEY = 'settings';
   const LEVELS = ['A2', 'B1', 'B2', 'C1', 'C2'];
+  // 세로 컨트롤 막대(28-10): 기본 순서와 저장값이 받는 이름. video-core.barModel 이 이 순서를 바탕으로 그린다.
+  const BAR_NAMES = Object.freeze(['prev', 'repeat', 'next', 'repeatLine', 'loop', 'drill', 'pauseEach', 'skipGaps', 'slow', 'focusMode', 'hide', 'ko', 'save', 'explain']);
   const DEFAULTS = Object.freeze({
     enabled: true, level: 'C1', maxPerParagraph: 3, repeat: 'page',
     annotation: { position: 'top', sizePct: 55, color: 'text', customColor: '#2f6feb', opacityPct: 70, weight: 'normal', gapEm: 0, liftEm: -0.15 },
@@ -21,7 +23,8 @@
     // 변경 기록 28-7: W 키보드 저장 모드(focusMode 기본 false)
     // 변경 기록 28-8: 리스닝 연습 가리기(hide: off·word·line, hideTypes: 어려운·복습 끝·나머지)
     // 변경 기록 28-9: 칠하기 구간(wordBands: 쉬움·보통·어려움, 기본 보통 이상)과 숙어 덩어리(idioms)
-    video: { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false, wordBands: { easy: false, medium: true, hard: true }, idioms: true },
+    // 변경 기록 28-10: 세로 막대 단추 순서(barOrder)와 숨긴 단추(barHidden)
+    video: { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false, wordBands: { easy: false, medium: true, hard: true }, idioms: true, barOrder: BAR_NAMES, barHidden: [] },
     reviewMode: 'flip', // 복습 방식(27-4): 뒤집기 · 고르기 · 듣기
   });
   const ENUMS = {
@@ -54,6 +57,14 @@
 
   // 사이트 목록 정리: 문자열만, trim·소문자·중복 제거, 최대 200개
   const cleanList = (list) => [...new Set(list.filter((s) => typeof s === 'string').map((s) => s.trim().toLowerCase()).filter(Boolean))].slice(0, MAX_SITES);
+
+  // 막대 이름 목록: 아는 이름만, 순서 유지·중복 제거. 배열이 아니면 기본 순서.
+  const cleanBar = (list, def) => {
+    if (!Array.isArray(list)) return [...def];
+    const out = [];
+    for (const k of list) if (BAR_NAMES.includes(k) && !out.includes(k)) out.push(k);
+    return out;
+  };
 
   function normalize(raw) {
     const r = isObj(raw) ? raw : {};
@@ -119,6 +130,8 @@
         focusMode: bool(v.focusMode, DV.focusMode),
         wordBands,
         idioms: bool(v.idioms, DV.idioms),
+        barOrder: cleanBar(v.barOrder, DV.barOrder),
+        barHidden: cleanBar(v.barHidden, []),
       },
       reviewMode: pickEnum(r.reviewMode, ENUMS.reviewMode, D.reviewMode),
     };

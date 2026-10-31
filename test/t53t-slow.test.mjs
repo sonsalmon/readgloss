@@ -53,7 +53,7 @@ test('설정 탭 [느리게 속도]: 0.5·0.6·0.7·0.75·0.8·0.9 고르기', (
 
 test('자막 층: [느리게] 단추는 Z 키와 같은 동작, 영상이 바뀌면 1배, ratechange 는 눌림만 갱신', () => {
   const src = readFileSync(new URL('../extension/video-subs.js', import.meta.url), 'utf8');
-  assert.match(src, /const slowBtn = button\('느리게', '느리게 \(Z\)', \(\) => run\('slow'\)\);/);
+  assert.match(src, /slow: \{ text: '느리게', name: '느리게', key: 'Z' \}/);
   assert.match(src, /ui\.slowBtn\.setAttribute\('aria-pressed', String\(Boolean\(video && video\.playbackRate !== 1\)\)\)/);
   assert.match(src, /video\.playbackRate = V\.nextRate\(video\.playbackRate, vs\(\)\.slowRate\)/);
   assert.match(src, /v\.addEventListener\('ratechange', onRate\)/);

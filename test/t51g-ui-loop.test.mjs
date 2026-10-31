@@ -135,14 +135,14 @@ test('코드 검토 4·11: 답한 뒤 방식을 바꾸면 다음 카드, [장면
   assert.match(src, /document\.createElementNS\(NS, 'svg'\)/);
 });
 
-test('자막 층: 마우스는 두 줄·막대·풀이만 받고, 지난 줄은 글자만 흐리게, 가린 칸은 밑줄, 단추 24px, 키보드 낱말 자리', () => {
+test('자막 층: 마우스는 두 줄·막대·풀이만 받고, 지난 줄은 글자만 흐리게, 가린 칸은 밑줄, 단추 28px, 키보드 낱말 자리', () => {
   const src = read('video-subs.js');
   assert.match(src, /\.box \{ pointer-events: none;/);
   assert.match(src, /\.lines, \.bar, \.note \{ pointer-events: auto; \}/);
   assert.doesNotMatch(src, /\.lines\.past \{ opacity/);
   assert.match(src, /\.lines\.past \.en, \.lines\.past \.ko \{ color: rgba\(255, 255, 255, \.72\); \}/);
   assert.match(src, /\.w\.hid \{[^}]*box-shadow: inset 0 -2px 0/);
-  assert.match(src, /button \{ all: unset;[^}]*min-width: 24px; min-height: 24px;/);
+  assert.match(src, /button \{ all: unset;[^}]*min-width: 28px; min-height: 28px;/);
   assert.match(src, /if \(e\.detail > 0\) b\.blur\(\);/, '키보드로 누르면 막대가 그대로 보인다');
   assert.match(src, /e\.key === 'ArrowLeft' \|\| e\.key === 'ArrowRight'/);
   assert.match(src, /\.lines:focus \.w\.cur \{ outline: 2px solid/);
@@ -152,7 +152,7 @@ test('자막 층: 마우스는 두 줄·막대·풀이만 받고, 지난 줄은 
   assert.match(src, /if \(e\.target\.closest\?\.\('\.ko'\)\) koPress = true;\s*else e\.preventDefault\(\);/, '마우스로는 포커스를 옮기지 않는다(감사 2회차 1), 한국어 줄은 끌어 고르기가 된다(3회차)');
   assert.match(src, /if \(!koPress\) return;\s*koPress = false;\s*lines\.blur\(\);/, '한국어 줄을 고른 뒤 포커스는 놓는다');
   assert.match(src, /\.lines:focus-visible \{ outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 2px rgba\(8, 8, 8, \.92\), 0 0 0 6px rgba\(8, 8, 8, \.92\); \}/, '포커스 표시 검정·흰·검정 세 겹(3회차)');
-  assert.match(src, /button\[aria-pressed="true"\], button\[aria-expanded="true"\] \{ background: linear-gradient\(rgba\(62, 166, 255, \.32\), rgba\(62, 166, 255, \.32\)\), rgba\(28, 28, 28, \.92\);/, '눌린 단추는 어두운 바탕 위 옅은 파랑(밝은 영상 위 흰 글자 1.35:1 이던 것, 3회차)');
+  assert.match(src, /button\[aria-pressed="true"\], button\[aria-expanded="true"\] \{ background: linear-gradient\(rgba\(245, 158, 11, \.30\), rgba\(245, 158, 11, \.30\)\), rgba\(28, 28, 28, \.92\); border-color: #f59e0b;/, '눌린 단추는 주황 테두리(28-10)');
   assert.match(src, /if \(box\.contains\(e\.relatedTarget\) \|\| !document\.hasFocus\(\)\) return;\s*holdOff\('keys'\);\s*ui\.wcur = -1;/, '층을 떠나면 낱말 자리를 지우되, 창을 잠깐 떠날 때는 그대로(영상이 저절로 재생되지 않게)');
   assert.match(src, /const anchor = r && inLayer \? \{ left: r\.left, right: r\.right, top: r\.top, bottom: innerHeight \} : r;/, '확인 메시지는 층 위에');
   assert.match(src, /for \(const m of text\.matchAll\(\/\[\\p\{L\}\\p\{N\}\]\+\/gu\)\)/, '문장 전체 가리기는 한 글자·숫자도');
