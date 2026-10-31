@@ -12,6 +12,10 @@
   const ASR = { gap: 1.0, maxWords: 12, maxSec: 5.5, punctMin: 3, commaMin: 8, tail: 1.0 };
   const GRACE = 0.25; // 줄 끝을 조금 지나도 "지금 줄"로 본다(초)
   const PAUSE_EARLY = 0.08; // 줄마다 멈춤: 끝보다 이만큼 먼저 멈춘다(다음 줄 첫소리가 새지 않게)
+  const PAUSE_LATE = 0.5; // 줄마다 멈춤: 끝을 이만큼 지나면 건너뛴 것으로 본다(초)
+  const REPEAT_LEAD = 0.15; // 문장 반복: 줄 끝보다 이만큼 먼저 줄 시작으로 되감는다(초)
+  const REPEAT_RESET = 0.30; // 문장 반복: 끝에서 이만큼 앞으로 돌아오면 다시 되감을 수 있게 표시를 지운다(초)
+  const GAP_MIN = 0.4; // 틈 건너뛰기: 다음 줄까지 이만큼 비면 건너뛴다(초)
   const KO_NEAR = [0, 1, 2, 3, 4, -1]; // 한국어 줄을 미리 받을 순서(지금 줄 기준)
 
   const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -311,7 +315,57 @@
   // 줄마다 멈춤: 켜져 있고, 이 줄에서 아직 안 멈췄고, 끝 바로 앞~조금 뒤면 멈춘다(그보다 많이 뒤면 건너뛴 것으로 본다).
   function shouldPauseEach({ on, cur, pausedFor, t, cues }) {
     const c = cues?.[cur];
-    return Boolean(on && c && pausedFor !== cur && t >= c.end - PAUSE_EARLY && t < c.end + 0.5);
+    return Boolean(on && c && pausedFor !== cur && t >= c.end - PAUSE_EARLY && t < c.end + PAUSE_LATE);
+  }
+
+  // 매 틱 할 일(변경 기록 28-1, 초 단위): 구간 반복 > 문장 반복 > 줄마다 멈춤 > 틈 건너뛰기.
+  // mem 은 앞 틱의 표시({ repeatedFor, gapTo })를 그대로 받아 이어 쓴다. pausedFor 는 줄마다 멈춤을 한 줄에 한 번만 하려고 받는다.
+  function playbackStep(input) {
+    const i = isObj(input) ? input : {};
+    const list = Array.isArray(i.cues) ? i.cues : [];
+    const t = num(i.t);
+    const cur = Number.isInteger(i.cur) ? i.cur : -1;
+    const st = isObj(i.settings) ? i.settings : {};
+    const from = isObj(i.mem) ? i.mem : {};
+    const mem = {
+      repeatedFor: Number.isInteger(from.repeatedFor) ? from.repeatedFor : -1,
+      gapTo: Number.isInteger(from.gapTo) ? from.gapTo : -1,
+    };
+    const none = () => ({ action: 'none', mem });
+    if (t === null) return none();
+    const cue = cur >= 0 && cur < list.length ? list[cur] : null;
+    const range = isObj(i.range) && finite(i.range.start) && finite(i.range.end) && i.range.end > i.range.start ? i.range : null;
+
+    // 반복 표시는 줄 끝에서 충분히 앞으로 돌아오면 지운다(되감은 뒤 다시 한 번 되감을 수 있게)
+    if (cue && t < cue.end - REPEAT_RESET) mem.repeatedFor = -1;
+    // 틈 표시는 그 줄 안으로 들어오면 지운다(같은 틈을 다음에 지날 때도 다시 건너뛰게)
+    if (cue && mem.gapTo >= 0 && t < cue.end) mem.gapTo = -1;
+
+    // ① 구간 반복
+    if (range && t >= range.end) return { action: 'seek', to: range.start, reason: 'range', mem };
+
+    // ② 문장 반복: 이 줄 끝에 닿으면 줄 시작으로 한 번만
+    if (st.repeatLine && cue && t >= cue.end - REPEAT_LEAD && mem.repeatedFor !== cur) {
+      mem.repeatedFor = cur;
+      return { action: 'seek', to: cue.start, reason: 'repeat', mem };
+    }
+
+    // ③ 줄마다 멈춤: 지금 동작(끝 0.08초 전부터 0.5초 뒤까지, 한 줄에 한 번)
+    const pausedFor = Number.isInteger(i.pausedFor) ? i.pausedFor : -1;
+    if (st.pauseEach && cue && pausedFor !== cur && t >= cue.end - PAUSE_EARLY && t < cue.end + PAUSE_LATE) {
+      return { action: 'pause', reason: 'pauseEach', mem };
+    }
+
+    // ④ 틈 건너뛰기: 지금 줄이 끝나고 다음 줄이 0.4초 넘게 비어 있으면 다음 줄 시작으로
+    if (st.skipGaps && cue && cur + 1 < list.length) {
+      const next = list[cur + 1];
+      if (t >= cue.end && t < next.start && next.start - t >= GAP_MIN && mem.gapTo !== cur + 1) {
+        mem.gapTo = cur + 1;
+        const to = range && next.start >= range.end ? range.start : next.start; // 구간 밖으로 나가면 구간 시작으로
+        return { action: 'seek', to, reason: 'gap', mem };
+      }
+    }
+    return none();
   }
 
   // 장면
@@ -458,7 +512,7 @@
   globalThis.readglossVideo = {
     ID_RE, ASR, GRACE, MAX_CLIP, HIDE_MODES, HIDE_LABEL, KEYS,
     params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseTrack,
-    langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, maskFlags, nextHide, keyAction, shouldPauseEach,
+    langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, maskFlags, nextHide, keyAction, shouldPauseEach, playbackStep,
     parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf,
   };
 })();

@@ -209,3 +209,22 @@ test('selectionTranslate: 기본은 켜짐, 불리언만 받고 나머지는 기
   // 이 페이지 끄기·사이트 끄기와는 별개: sites 에 걸려도 값은 그대로
   assert.equal(S.normalize({ sites: ['a.com'], selectionTranslate: true }).selectionTranslate, true);
 });
+
+test('video.repeatLine·skipGaps: 기본 false, 불리언만 받고, 문장 반복이 켜지면 줄마다 멈춤은 꺼진다', () => {
+  assert.equal(S.DEFAULTS.video.repeatLine, false);
+  assert.equal(S.DEFAULTS.video.skipGaps, false);
+  assert.equal(S.normalize({}).video.repeatLine, false);
+  assert.equal(S.normalize({}).video.skipGaps, false);
+  assert.equal(S.normalize({ video: { repeatLine: true } }).video.repeatLine, true);
+  assert.equal(S.normalize({ video: { skipGaps: true } }).video.skipGaps, true);
+  for (const bad of ['yes', 1, null, {}]) {
+    assert.equal(S.normalize({ video: { repeatLine: bad } }).video.repeatLine, false, String(bad));
+    assert.equal(S.normalize({ video: { skipGaps: bad } }).video.skipGaps, false, String(bad));
+  }
+  // 28-1 배타: 둘 다 참이면 문장 반복을 남기고 줄마다 멈춤을 끈다
+  const both = S.normalize({ video: { repeatLine: true, pauseEach: true } });
+  assert.equal(both.video.repeatLine, true);
+  assert.equal(both.video.pauseEach, false);
+  assert.equal(S.normalize({ video: { repeatLine: false, pauseEach: true } }).video.pauseEach, true);
+  assert.equal(S.merge({}, { video: { repeatLine: true, pauseEach: true } }).video.pauseEach, false);
+});

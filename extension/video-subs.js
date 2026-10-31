@@ -26,6 +26,7 @@
   const S = {
     tracks: [], id: null, mainKey: '', koKey: '', main: null, others: false,
     cues: [], ko: [], koFail: new Set(), cur: -1, past: false, revealed: -1, pausedFor: -1, clip: null,
+    prevT: 0, range: null, mem: { repeatedFor: -1, gapTo: -1 },
     hard: new Map(), asked: new Set(), annotBusy: false, annotErrAt: 0, hardVer: 0,
     koBusy: false, koAll: false, koErr: '', koErrAt: 0,
     savedForms: new Map(), phrases: {}, savedVer: 0, saving: false,
@@ -113,6 +114,8 @@
       S.cur = -1;
       S.revealed = -1;
       S.pausedFor = -1;
+      S.prevT = 0;
+      S.mem = { repeatedFor: -1, gapTo: -1 };
       S.note = null;
       S.koErr = '';
     }
@@ -142,6 +145,9 @@
       S.cues = [];
       S.ko = [];
       S.clip = null;
+      S.range = null;
+      S.prevT = 0;
+      S.mem = { repeatedFor: -1, gapTo: -1 };
       S.koAll = false;
       S.waitSince = Date.now();
       S.msg = '';
@@ -295,10 +301,23 @@
       return;
     }
     const i = V.activeIndex(S.cues, t);
-    if (!S.clip && V.shouldPauseEach({ on: vs().pauseEach, cur: i, pausedFor: S.pausedFor, t, cues: S.cues })) {
-      S.pausedFor = i;
-      video.pause();
-    }
+    if (!S.clip && !video.paused) {
+      // 재생 엔진(28-1): 구간 반복·문장 반복·줄마다 멈춤·틈 건너뛰기. 장면 구간(S.clip)·멈춤 중에는 부르지 않는다.
+      const step = V.playbackStep({
+        t, prevT: S.prevT, cues: S.cues, cur: i,
+        settings: { repeatLine: vs().repeatLine, pauseEach: vs().pauseEach, skipGaps: vs().skipGaps },
+        range: S.range, mem: S.mem, pausedFor: S.pausedFor,
+      });
+      S.prevT = t;
+      S.mem = step.mem;
+      if (step.action === 'seek' && Number.isFinite(step.to)) {
+        video.currentTime = step.to;
+        S.pausedFor = -1;
+      } else if (step.action === 'pause') {
+        S.pausedFor = i;
+        video.pause();
+      }
+    } else S.prevT = t;
     const past = i >= 0 && !V.isLive(S.cues, i, t);
     if (force || i !== S.cur || past !== S.past) {
       if (i !== S.cur) {
@@ -440,11 +459,14 @@
     const hideBtn = button('', '가리기 바꾸기 (H)', () => run('hide'));
     stackLabels(hideBtn, Object.fromEntries(V.HIDE_MODES.map((m) => [m, `가리기: ${V.HIDE_LABEL[m]}`])));
     const pauseBtn = button('줄마다 멈춤', '줄마다 멈춤 (P)', () => run('pauseEach'));
+    const lineBtn = button('문장 반복', '문장 반복', () => run('repeatLine'));
+    const loopBtn = button('구간', '구간 반복', () => run('loop', loopBtn));
+    const gapBtn = button('틈 건너뛰기', '틈 건너뛰기', () => run('skipGaps'));
     const koBtn = button('한', '한국어 줄 보이기', () => setVideo({ ko: !vs().ko }));
     const saveBtn = button('', '이 줄 구·문장에 저장', () => saveLine(S.cur, saveBtn));
     stackLabels(saveBtn, { off: '☆ 저장', on: '★ 저장됨' });
     const explainBtn = button('풀이', '이 줄 AI 풀이(문맥 번역)', () => explain(S.cur));
-    bar.append(prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, koBtn, saveBtn, explainBtn);
+    bar.append(prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, koBtn, saveBtn, explainBtn);
     const note = el('div', 'note');
     note.hidden = true;
     note.setAttribute('role', 'status');
@@ -477,7 +499,7 @@
     sr.setAttribute('aria-live', 'polite');
     box.append(lines, bar, note, msg);
     shadow.append(style, box, sr);
-    ui = { box, bar, note, lines, en, ko, msg, sr, prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, koBtn, saveBtn, explainBtn, lineKey: '', noteKey: '', tokens: [], wcur: -1, wcurFor: '' };
+    ui = { box, bar, note, lines, en, ko, msg, sr, prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, koBtn, saveBtn, explainBtn, lineKey: '', noteKey: '', tokens: [], wcur: -1, wcurFor: '' };
 
     en.addEventListener('click', (e) => {
       const sp = e.target?.closest?.('.w');
@@ -661,6 +683,9 @@
     const hide = V.HIDE_LABEL[v.hide] ?? '끔';
     showLabel(ui.hideBtn, v.hide, `가리기 바꾸기 (H) — 지금 ${hide}`);
     ui.pauseBtn.setAttribute('aria-pressed', String(v.pauseEach));
+    ui.lineBtn.setAttribute('aria-pressed', String(v.repeatLine));
+    ui.gapBtn.setAttribute('aria-pressed', String(v.skipGaps));
+    ui.loopBtn.setAttribute('aria-pressed', String(Boolean(S.range)));
     ui.koBtn.setAttribute('aria-pressed', String(v.ko));
     const saved = cue ? Boolean(Sel.findPhrase(S.phrases, cue.text)) : false;
     showLabel(ui.saveBtn, saved ? 'on' : 'off', saved ? '이 줄 저장 빼기' : '이 줄 구·문장에 저장');
@@ -707,17 +732,39 @@
     if (video.paused) video.play()?.catch?.(() => {});
     tick(true);
   }
-  function run(act) {
+  function run(act, anchorEl) {
     const i = S.cur;
     if (act === 'prev') return goLine(Math.max(0, i - 1));
     if (act === 'repeat') return goLine(Math.max(0, i));
     if (act === 'next') return goLine(Math.min(S.cues.length - 1, i + 1));
     if (act === 'hide') return setVideo({ hide: V.nextHide(vs().hide) });
-    if (act === 'pauseEach') return setVideo({ pauseEach: !vs().pauseEach });
+    if (act === 'pauseEach') return setVideo(vs().pauseEach ? { pauseEach: false } : { pauseEach: true, repeatLine: false });
+    if (act === 'repeatLine') return setVideo(vs().repeatLine ? { repeatLine: false } : { repeatLine: true, pauseEach: false });
+    if (act === 'skipGaps') return setVideo({ skipGaps: !vs().skipGaps });
+    if (act === 'loop') return loopRange(anchorEl);
     if (act === 'reveal') {
       S.revealed = i;
       renderLine();
     }
+  }
+
+  // 구간 반복(28-1): 첫 누름 = 시작, 둘째 = 끝(시작보다 뒤일 때만), 셋째 = 해제. 저장하지 않는다(영상이 바뀌면 checkPage 가 지운다).
+  function loopRange(anchorEl) {
+    if (!video) return;
+    const t = video.currentTime;
+    if (!S.range) {
+      S.range = { start: t, end: null };
+      toast(`구간 시작 ${V.fmtTime(t)} · Q 로 끝`, anchorEl);
+    } else if (!Number.isFinite(S.range.end)) {
+      if (!(t > S.range.start)) return toast('끝은 시작보다 뒤여야 해요', anchorEl);
+      S.range = { start: S.range.start, end: t };
+      toast(`구간 ${V.fmtTime(S.range.start)}–${V.fmtTime(t)} · Q 해제`, anchorEl);
+    } else {
+      S.range = null;
+      toast('구간 반복 해제됨', anchorEl);
+    }
+    render();
+    return undefined;
   }
 
   function lookupWord(word, i, rect) {

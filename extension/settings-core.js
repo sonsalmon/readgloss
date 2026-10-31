@@ -14,7 +14,8 @@
     glossarySites: Object.freeze(['academy.hackthebox.com', 'app.hackthebox.com', 'portswigger.net', 'owasp.org', '*.owasp.org', 'book.hacktricks.xyz', 'book.hacktricks.wiki', 'cloud.hacktricks.xyz', 'hacktricks.wiki', '*.hacktricks.wiki', 'tryhackme.com', 'attack.mitre.org', 'atlas.mitre.org', 'cwe.mitre.org', 'nvd.nist.gov', 'www.exploit-db.com', 'gtfobins.github.io', 'lolbas-project.github.io', 'arxiv.org']),
     floatingButton: { show: true, top: 60 },
     // 유튜브 자막 층(변경 기록 27-2·27-6): 켜기, 한국어 줄, 어려운 단어 칠하기, 마우스를 올리면 멈춤, 자막 켜기 도움, 글자 크기 %, 가리기, 줄마다 멈춤
-    video: { subs: true, ko: true, hard: true, hoverPause: true, autoCC: true, fontPct: 100, hide: 'off', pauseEach: false },
+    // 변경 기록 28-1: 문장 반복·틈 건너뛰기(문장 반복과 줄마다 멈춤은 함께 켤 수 없다)
+    video: { subs: true, ko: true, hard: true, hoverPause: true, autoCC: true, fontPct: 100, hide: 'off', pauseEach: false, repeatLine: false, skipGaps: false },
     reviewMode: 'flip', // 복습 방식(27-4): 뒤집기 · 고르기 · 듣기
   });
   const ENUMS = {
@@ -43,6 +44,8 @@
     const f = isObj(r.floatingButton) ? r.floatingButton : {};
     const v = isObj(r.video) ? r.video : {};
     const D = DEFAULTS, DA = D.annotation, DF = D.floatingButton, DV = D.video;
+    const repeatLine = bool(v.repeatLine, DV.repeatLine);
+    const pauseEach = repeatLine ? false : bool(v.pauseEach, DV.pauseEach); // 함께 켤 수 없다(28-1): 문장 반복이 이긴다
     return {
       enabled: bool(r.enabled, D.enabled),
       level: pickEnum(r.level, LEVELS, D.level),
@@ -81,7 +84,9 @@
         autoCC: bool(v.autoCC, DV.autoCC),
         fontPct: num(v.fontPct, 60, 160, DV.fontPct),
         hide: pickEnum(v.hide, ENUMS.hide, DV.hide),
-        pauseEach: bool(v.pauseEach, DV.pauseEach),
+        pauseEach,
+        repeatLine,
+        skipGaps: bool(v.skipGaps, DV.skipGaps),
       },
       reviewMode: pickEnum(r.reviewMode, ENUMS.reviewMode, D.reviewMode),
     };
