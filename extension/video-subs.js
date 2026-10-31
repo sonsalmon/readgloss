@@ -77,7 +77,8 @@
   let raf = 0;
   let sizeObs = null;
   // 말풍선 상태(28-6): 어느 낱말(tip.k)에 붙어 있는지, 그 줄 번호, 마우스를 떠난 뒤 닫는 타이머
-  const tip = { open: false, k: -1, i: -1, el: null, lower: '', word: '' };
+  // 묻기(28-18)는 말풍선 안에서 열리고, 질문·답을 여기에 담아 다시 그려도 잃지 않는다.
+  const tip = { open: false, k: -1, i: -1, el: null, lower: '', word: '', askOpen: false, askText: '', askAnswer: '', askError: '', askBusy: false, askSeq: 0 };
   let tipOpenTimer = 0;
   let tipCloseTimer = 0;
   let focusTimer = 0; // 키보드 저장 모드 자동 포커스 예약(28-7)
@@ -571,6 +572,14 @@
     .tip .tp-gloss { margin-top: 2px; color: #f1f1f1; overflow-wrap: anywhere; }
     .tip .tp-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
     .tip .tp-actions button { min-height: 28px; }
+    /* 묻기(28-18): 한 줄 입력칸과 답 칸. 답은 1~3문장이라 줄바꿈을 살린다. */
+    .tip .tp-ask { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+    .tip .tp-q { flex: 1 1 140px; min-width: 0; box-sizing: border-box; min-height: 28px; padding: 2px 7px; border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, .45); background: rgba(28, 28, 28, .92); color: #fff;
+      font: max(12px, calc(var(--fs, 22px) * .54))/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+    .tip .tp-q:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+    .tip .tp-answer { flex: 1 1 100%; margin-top: 2px; color: #f1f1f1; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .tip .tp-answer.err { color: #ffb4a8; }
     .box.tip-open .w .g { display: none !important; } /* 말풍선이 뜨면 옛 짧은 뜻 풍선은 겹치지 않게 숨긴다 */
     /* 세로 막대(28-10): 플레이어 왼쪽 가장자리. 숨어 있을 때는 visibility 라 마우스를 받지 않고, 두 줄·막대에 올리면 보인다.
        자리(top·left·max-height)는 layout() 이 플레이어 rect 와 유튜브 조작 막대 높이로 잡는다. */
@@ -997,6 +1006,13 @@
     tip.el = null;
     tip.lower = '';
     tip.word = '';
+    tip.askOpen = false;
+    tip.askText = '';
+    tip.askAnswer = '';
+    tip.askError = '';
+    tip.askBusy = false;
+    tip.askSeq++;
+    holdOff('ask');
     if (!ui?.tip) return;
     ui.tip.hidden = true;
     ui.tip.replaceChildren();
@@ -1019,6 +1035,16 @@
     const k = Number(sp.dataset.k);
     const tk = ui.tokens[k];
     if (!tk?.w) return;
+    if (!tip.open || tip.k !== k || tip.i !== S.cur) {
+      // 다른 낱말·줄로 옮기면 묻기 칸과 답을 새로 시작한다.
+      tip.askOpen = false;
+      tip.askText = '';
+      tip.askAnswer = '';
+      tip.askError = '';
+      tip.askBusy = false;
+      tip.askSeq++;
+      holdOff('ask');
+    }
     tip.open = true;
     tip.k = k;
     tip.i = S.cur;
@@ -1048,12 +1074,74 @@
       const saveButton = button(m.saved ? '★ 저장됨' : '☆ 저장', m.saved ? '★ 저장됨, 누르면 단어장에서 빼기' : '☆ 저장, 단어장에 추가', () => toggleTipSave(m, saveButton));
       acts.append(saveButton);
     }
+    acts.append(button('묻기', '이 줄에 묻기', () => toggleTipAsk()));
     acts.append(button('자세히', '자세히 — 사전 카드 열기', openTipDetail));
     kids.push(acts);
+    if (tip.askOpen) kids.push(buildTipAsk());
     ui.tip.hidden = false;
     ui.tip.replaceChildren(...kids);
     placeTip();
     if (!hard && !dict) askTipDict(tip.lower, tip.word);
+  }
+  // 말풍선 묻기(28-18): 한 줄 입력칸(200자)과 답 칸. 다시 그려도 입력·답을 잃지 않게 tip 에 담아 둔다.
+  function toggleTipAsk() {
+    if (!tip.open) return;
+    tip.askOpen = !tip.askOpen;
+    if (!tip.askOpen) {
+      tip.askSeq++; // 닫으면 늦게 온 답을 버린다
+      holdOff('ask');
+      tip.askError = '';
+      tip.askAnswer = '';
+    }
+    // 묻는 동안 줄이 바뀌어 말풍선이 닫히고 답이 버려지지 않게 영상을 멈춘다(28-6 [자세히]와 같은 방식)
+    if (tip.askOpen) holdOn('ask');
+    paintTip();
+    if (tip.askOpen) ui?.tip?.querySelector('.tp-q')?.focus();
+  }
+  function buildTipAsk() {
+    const box = el('div', 'tp-ask');
+    const input = el('input', 'tp-q');
+    input.type = 'text';
+    input.maxLength = 200;
+    input.value = tip.askText;
+    input.setAttribute('aria-label', '이 줄에 대해 질문');
+    input.addEventListener('input', () => (tip.askText = input.value));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.isComposing) {
+        e.preventDefault();
+        e.stopPropagation();
+        sendTipAsk();
+        return;
+      }
+      if (e.key !== 'Escape') e.stopPropagation(); // 유튜브 단축키로 새지 않게
+    });
+    const go = button('묻기', '질문 보내기', () => sendTipAsk());
+    go.disabled = tip.askBusy;
+    box.append(input, go);
+    if (tip.askBusy) box.append(el('div', 'tp-answer', '답을 가져오는 중…'));
+    else if (tip.askError) box.append(el('div', 'tp-answer err', tip.askError));
+    else if (tip.askAnswer) box.append(el('div', 'tp-answer', tip.askAnswer));
+    return box;
+  }
+  async function sendTipAsk() {
+    const question = tip.askText.trim().slice(0, 200);
+    if (!question || tip.askBusy) return;
+    const i = tip.i;
+    const cue = S.cues[i];
+    if (!cue) return;
+    tip.askText = question;
+    tip.askBusy = true;
+    tip.askError = '';
+    tip.askAnswer = '';
+    const my = ++tip.askSeq;
+    paintTip();
+    const ctx = V.contextOf(S.cues, i, titleNow());
+    const r = await send({ type: 'ask', selection: cue.text, question, context: ctx });
+    if (!tip.open || tip.askSeq !== my) return; // 그 사이 닫았거나 다른 낱말로 옮겼다
+    tip.askBusy = false;
+    if (typeof r?.answer === 'string' && r.answer) tip.askAnswer = r.answer;
+    else tip.askError = errText(r, '답을 가져오지 못했어요');
+    paintTip();
   }
   // 낱말 위에 붙인다. 위가 모자라면(플레이어 위 끝) 낱말 아래에 둔다.
   function placeTip() {
@@ -1878,6 +1966,19 @@
     return r;
   }
 
+  // 패널 [풀이] 탭 묻기(28-18): 지금 줄을 selection 으로, 앞뒤 3줄을 문맥으로 보낸다. 같은 (줄, 질문)은 다리 캐시.
+  async function askAt(i, question) {
+    const cue = S.cues[i];
+    if (!cue) return { error: 'no-cue' };
+    const q = String(question ?? '').trim().slice(0, 200);
+    if (!q) return { error: 'bad-request' };
+    const key = S.mainKey;
+    const ctx = V.contextOf(S.cues, i, titleNow());
+    const r = await send({ type: 'ask', selection: cue.text, question: q, context: ctx });
+    if (key !== S.mainKey || S.cues[i] !== cue) return { error: 'changed' };
+    return r;
+  }
+
   // ---- 한국어 줄(맥 번역): 한 번에 하나씩, 지금 줄 근처부터 ----
   // 지금 줄 근처는 한국어 줄이 보일 때만(층이 꺼졌거나 CC 를 껐으면 맥 번역을 부르지 않는다). [한국어 모두 보기]는 한국어 줄 설정과 상관없이 대본 전체를.
   async function pumpKo() {
@@ -2105,9 +2206,11 @@
   // 360° 영상은 W·A·S·D 로 둘러본다: 그 플레이어에서는 줄 이동·키보드 저장 모드 키(A·S·D·W)를 유튜브에 양보한다
   const spherical = () => Boolean(player?.classList.contains('ytp-webgl-spherical') || player?.querySelector('.ytp-webgl-spherical-control'));
   const inOtherScreen = (path) => path.some((n) => typeof n?.localName === 'string' && n.localName.startsWith('readgloss-') && n !== host);
+  // 자막 층 shadow 는 closed 라 composedPath 에 안 보이니, 그 안 포커스(말풍선 묻기 입력칸 등)는 root.activeElement 로 본다
+  const typingInLayer = () => Sel.isEditableElement(ui?.lines?.getRootNode?.()?.activeElement);
   function keyBlocked(e) {
     const path = e.composedPath();
-    if (Sel.isTypingPath(path, e.isComposing)) return true;
+    if (Sel.isTypingPath(path, e.isComposing) || typingInLayer()) return true;
     if (inOtherScreen(path)) return true;
     const sel = getSelection();
     return Boolean(sel && !sel.isCollapsed && String(sel).trim()); // 고른 글이 있으면 readgloss 의 다른 키(D 개념 등) 몫
@@ -2150,7 +2253,7 @@
     // 패널이 열려 있으면 / 로 닫을 수 있다(28-13): 열 때 포커스가 패널 탭으로 가므로 다른 화면 키 막힘보다 먼저 본다.
     // 패널 안 입력칸에서는 그대로 타이핑한다.
     if (act === 'panel' && S.panelOpen) {
-      if (Sel.isTypingPath(e.composedPath(), e.isComposing)) return;
+      if (Sel.isTypingPath(e.composedPath(), e.isComposing) || typingInLayer()) return;
       e.preventDefault();
       e.stopPropagation();
       run(act);
@@ -2226,5 +2329,6 @@
     // 패널 '나의 표현'(28-12): background {type:'words', op:'get'} 으로 받아 둔 저장 낱말·구·문장.
     library: () => ({ saved: S.saved, phrases: S.phrases, version: S.savedVer }),
     explainAt: (i, force) => explainAt(i, force),
+    askAt: (i, question) => askAt(i, question),
   };
 })();

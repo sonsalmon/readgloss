@@ -214,6 +214,15 @@
     .rgv .v-exps li { margin: 2px 0; overflow-wrap: anywhere; }
     .rgv .v-exps .v-ko { font-size: 12.5px; }
     .rgv .v-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    /* 지금 줄에 묻기(28-18): 풀이 탭 아래 한 줄 입력칸(200자)과 답 칸 */
+    .rgv .v-ask { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--v-border); }
+    .rgv .v-asktitle { color: var(--v-muted); font-size: 12.5px; }
+    .rgv .v-askrow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+    .rgv .v-q { flex: 1 1 160px; min-width: 0; box-sizing: border-box; min-height: 28px; padding: 3px 8px; border-radius: 7px;
+      border: 1px solid var(--v-border); background: transparent; color: var(--v-fg); font: inherit; font-size: 13px; }
+    .rgv .v-q:focus-visible { outline: 2px solid var(--v-accent); outline-offset: 2px; }
+    .rgv .v-askout { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .rgv .v-askout.err { color: var(--v-muted); }
     .rgv [hidden] { display: none !important; }
   `;
 
@@ -347,7 +356,21 @@
     explainPane.setAttribute('role', 'tabpanel');
     const explainBody = el('div', 'v-explain');
     explainBody.setAttribute('role', 'status');
-    explainPane.append(explainBody);
+    // 지금 줄에 묻기(28-18): 한 줄 입력칸(200자)과 답 칸. [묻기]로 다리 /ask 에 보낸다.
+    const askBox = el('div', 'v-ask');
+    const askInput = el('input', 'v-q');
+    askInput.type = 'text';
+    askInput.maxLength = 200;
+    askInput.setAttribute('aria-label', '이 줄에 대해 질문');
+    askInput.placeholder = '이 줄에 대해 묻기';
+    const askGo = btn('묻기', '이 줄에 질문 보내기', () => submitAsk());
+    const askRow = el('div', 'v-askrow');
+    askRow.append(askInput, askGo);
+    const askOut = el('div', 'v-askout');
+    askOut.setAttribute('role', 'status');
+    askOut.hidden = true;
+    askBox.append(el('div', 'v-asktitle', '이 줄에 묻기'), askRow, askOut);
+    explainPane.append(explainBody, askBox);
 
     root.append(style, titleEl, infoEl, roundBox, subtabs, scriptPane, exprPane, explainPane);
     container.replaceChildren(root);
@@ -367,6 +390,7 @@
     let roundLive = -1; // 앞 그리기의 지금 라운드(재생이 다른 라운드로 넘어가면 고른 것을 놓는다)
     let expanded = new Set(); // 펼친 표현 열쇠(`${type}:${key}`)
     let explain = { i: -1, state: 'idle', data: null, error: '', busy: false };
+    let ask = { i: -1, busy: false, answer: '', error: '' };
     const ui = () => globalThis.readglossVideoUi;
     const panelData = () => ui()?.panelData?.() ?? { hard: new Map(), forms: new Map(), done: new Set(), phrases: {}, version: '' };
     const library = () => ui()?.library?.() ?? { saved: {}, phrases: {} };
@@ -801,6 +825,52 @@
       paintExplain();
     }
 
+    // 지금 줄에 묻기(28-18): 지금 줄을 selection 으로, 앞뒤 3줄을 문맥으로 보낸다. 줄이 바뀌어도 받은 답은 그대로 보여 준다.
+    function paintAsk() {
+      if (ask.busy) {
+        askOut.hidden = false;
+        askOut.className = 'v-askout';
+        askOut.textContent = '답을 가져오는 중…';
+      } else if (ask.error) {
+        askOut.hidden = false;
+        askOut.className = 'v-askout err';
+        askOut.textContent = ask.error;
+      } else if (ask.answer) {
+        askOut.hidden = false;
+        askOut.className = 'v-askout';
+        askOut.textContent = ask.answer;
+      } else {
+        askOut.hidden = true;
+        askOut.textContent = '';
+      }
+      askGo.disabled = ask.busy;
+    }
+    async function submitAsk() {
+      const st = ui()?.state();
+      const i = st?.cur ?? -1;
+      const cue = st?.cues?.[i];
+      const question = askInput.value.trim();
+      if (!cue || ask.busy || typeof ui().askAt !== 'function') {
+        if (!cue) {
+          ask = { i: -1, busy: false, answer: '', error: '지금 줄이 없어요' };
+          paintAsk();
+        }
+        return;
+      }
+      if (!question) {
+        ask = { i, busy: false, answer: '', error: '질문을 적어 주세요' };
+        paintAsk();
+        return;
+      }
+      ask = { i, busy: true, answer: '', error: '' };
+      paintAsk();
+      const r = await ui().askAt(i, question);
+      if (!root.isConnected) return;
+      if (typeof r?.answer === 'string' && r.answer) ask = { i, busy: false, answer: r.answer, error: '' };
+      else ask = { i, busy: false, answer: '', error: errorText(r, '답을 가져오지 못했어요') };
+      paintAsk();
+    }
+
     function refresh() {
       if (!ui()) {
         infoEl.textContent = '영상 자막 기능을 불러오지 못했어요. 페이지를 새로고침해 주세요';
@@ -815,6 +885,7 @@
       paintExprFilters();
       if (small === 'expressions') paintExpressions();
       if (small === 'explain') paintExplain();
+      paintAsk();
       follow();
     }
 
@@ -852,6 +923,9 @@
       if (what === 'koAll' || what === 'message') return paintHead();
       if (what === 'page') {
         explain = { i: -1, state: 'idle', data: null, error: '', busy: false };
+        ask = { i: -1, busy: false, answer: '', error: '' };
+        askInput.value = '';
+        paintAsk();
         expanded = new Set();
         roundChoice = null;
         roundShown = 0;

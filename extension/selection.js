@@ -23,7 +23,7 @@
     unauthorized: '다리와 연결하지 못했어요(인증). 확장을 다시 불러와 주세요',
     'ext-reloaded': '확장이 새로 로드됐어요. 이 페이지를 새로고침해 주세요',
   };
-  const errText = (r) => MESSAGES[r?.error] ?? `문제가 생겼어요(${r?.error ?? '응답 없음'})`;
+  const errText = (r, fallback) => (r?.error === 'ai-failed' && fallback ? fallback : MESSAGES[r?.error]) ?? `문제가 생겼어요(${r?.error ?? '응답 없음'})`;
 
   // [내 사전에 추가] 입력칸·"내 사전: …" 줄·약어 줄의 모양. 사전 카드(content.js)도 globalThis.readglossMydict.CSS 로 같이 쓴다.
   const MD_CSS = `
@@ -105,6 +105,17 @@
     .ask-box[hidden] { display: none; }
     .ask-text { font-weight: 600; color: var(--rg-fg); margin-bottom: 6px; word-break: keep-all; }
     .ask-btns { display: flex; gap: 6px; }
+    /* 지금 줄에 묻기(28-18): 고른 글에 대한 한 줄 질문(200자)과 답 칸. 답 아래에 메모장 인용 단추. */
+    .qbox { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rg-border); }
+    .qtitle { color: var(--rg-accent); font-size: 12px; font-weight: 700; }
+    .qrow { display: flex; gap: 6px; margin-top: 4px; }
+    .qin { flex: 1 1 auto; min-width: 0; box-sizing: border-box; min-height: 30px; padding: 3px 8px; border-radius: 7px;
+      border: 1px solid var(--rg-border); background: var(--rg-bg); color: var(--rg-fg); font: inherit; font-size: 13px; }
+    .qin:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: 1px; }
+    .qout { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .qout[hidden] { display: none; }
+    .qout.err { color: var(--rg-muted); }
+    .qquote { margin-top: 8px; }
     .links { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 0 12px 10px; font-size: 11.5px; color: var(--rg-muted); }
     .links[hidden] { display: none; }
     .links a { all: unset; cursor: pointer; color: var(--rg-muted); text-decoration: underline; text-underline-offset: 2px; }
@@ -443,7 +454,33 @@
       ui.notice = el('div', 'msg notice');
       ui.notice.hidden = true;
       ui.notice.setAttribute('role', 'status');
-      scroll.append(ui.mine, el('div', 'src', text), ui.term, ui.out, ui.short.box, ui.wide.box, ui.notice);
+      // 지금 줄에 묻기(28-18): 고른 글(selection)과 지금 문맥 번역이 쓰는 문맥을 다리 /ask 로 보낸다.
+      ui.qBox = el('div', 'qbox');
+      ui.qInput = el('input', 'qin');
+      ui.qInput.type = 'text';
+      ui.qInput.maxLength = 200;
+      ui.qInput.value = current?.askText ?? '';
+      ui.qInput.setAttribute('aria-label', '고른 글에 대해 질문');
+      ui.qInput.addEventListener('input', () => current && (current.askText = ui.qInput.value));
+      for (const t of ['keydown', 'keypress', 'keyup']) {
+        ui.qInput.addEventListener(t, (e) => {
+          if (t === 'keydown' && e.key === 'Enter' && !e.isComposing) {
+            e.stopPropagation();
+            askQuestion();
+            return;
+          }
+          if (e.key !== 'Escape') e.stopPropagation(); // 페이지 단축키로 새지 않게
+        });
+      }
+      ui.qBtn = button('묻기', '고른 글에 질문', () => askQuestion());
+      const qRow = el('div', 'qrow');
+      qRow.append(ui.qInput, ui.qBtn);
+      ui.qOut = el('div', 'qout');
+      ui.qOut.setAttribute('role', 'status');
+      ui.qQuote = button('메모장에 인용', '답을 메모장에 인용', () => quoteAnswer());
+      ui.qQuote.hidden = true;
+      ui.qBox.append(el('div', 'qtitle', '묻기'), qRow, ui.qOut, ui.qQuote);
+      scroll.append(ui.mine, el('div', 'src', text), ui.term, ui.out, ui.short.box, ui.wide.box, ui.notice, ui.qBox);
       ui.ctxBtn = button('', '', () => askContext(core.stageButton('ctx', stage()).wide));
       ui.saveBtn = button('', '', () => togglePhrase());
       ui.saveBtn.setAttribute('aria-disabled', 'true'); // 단어장 상태를 받으면 켠다
@@ -536,6 +573,7 @@
       paintScrapBtn();
       paintTaskRow();
       paintDictLinks(text);
+      paintAsk();
     }
     shadow.append(style, card);
     document.documentElement.append(host);
@@ -903,6 +941,54 @@
     place();
   }
 
+  // 지금 줄에 묻기(28-18): 질문 한 줄을 다리 /ask 로 보내고 답을 카드 안에 보여 준다.
+  // selection = 고른 글, context = 지금 문맥 번역이 쓰는 문맥 모으기(contextFor)를 그대로 재사용한다.
+  function paintAsk() {
+    if (!ui?.qOut || !current) return;
+    ui.qOut.hidden = !(current.askBusy || current.askError || current.askAnswer);
+    ui.qOut.className = `qout${current.askError ? ' err' : ''}`;
+    ui.qOut.textContent = current.askBusy ? '답을 가져오는 중…' : current.askError || current.askAnswer || '';
+    ui.qQuote.hidden = !current.askAnswer || !current.quote;
+    ui.qBtn.setAttribute('aria-disabled', current.askBusy ? 'true' : 'false');
+  }
+  async function askQuestion() {
+    if (!current || current.askBusy) return;
+    const question = String(current.askText ?? '').trim().slice(0, 200);
+    if (!question) {
+      current.askError = '질문을 적어 주세요';
+      paintAsk();
+      place();
+      return;
+    }
+    const my = seq;
+    const cur = current;
+    cur.askText = question;
+    cur.askBusy = true;
+    cur.askAnswer = '';
+    cur.askError = '';
+    paintAsk();
+    place();
+    const ctx = contextFor(cur.range);
+    const context = ctx ? { before: ctx.before, after: ctx.after, title: ctx.title } : undefined;
+    const sent = cur.text.length > 600 ? cur.text.slice(0, 600) : cur.text; // 다리 한도(600자)에 맞춰 앞쪽만
+    const r = await send({ type: 'ask', selection: sent, question, ...(context && { context }) });
+    if (my !== seq || current !== cur) return;
+    cur.askBusy = false;
+    if (typeof r?.answer === 'string' && r.answer) cur.askAnswer = sent.length < cur.text.length ? `${r.answer}\n앞부분 600자만 물었어요` : r.answer;
+    else cur.askError = errText(r, '답을 가져오지 못했어요. 다시 시도해 주세요');
+    paintAsk();
+    place();
+  }
+  // 답 아래 [메모장에 인용]: 스크랩할 때와 같은 quote·번역을 메모장 인용 흐름에 넘긴다.
+  function quoteAnswer() {
+    if (!current?.askAnswer || !current.quote) return;
+    const range = current.range?.cloneRange ? current.range.cloneRange() : current.range;
+    const translation = current.wide ?? current.ctx ?? current.mt ?? '';
+    globalThis.readglossMemoPad?.attachQuote?.({ ...current.quote, ...(translation && { translation }) }, range?.startContainer);
+    getSelection().removeAllRanges();
+    close();
+  }
+
   // wide: [더 넓게 보기] 단계. 앞 결과(문맥 번역)는 남기고 "넓은 문맥 번역" 구역에 보탠다.
   async function askContext(wide) {
     if (ui.ctxBtn.getAttribute('aria-disabled') === 'true') return;
@@ -990,6 +1076,10 @@
       taskTitle: '',
       taskChosen: false,
       guess: null,
+      askText: '',
+      askAnswer: '',
+      askError: '',
+      askBusy: false,
     };
     build(cls.text, cls.kind === 'long');
     place();

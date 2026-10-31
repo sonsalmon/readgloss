@@ -107,6 +107,8 @@ const RELAYS = {
   mt: ({ text, domains, page }) => relay('/mt', { text, domains, page }),
   'translate-context': ({ text, context, force, domains, wide, page }) => relay('/translate-context', { text, context, force: force === true, domains, wide: wide === true, page }),
   'video-polish': ({ id, words }) => relay('/video/polish', { id, words }),
+  // 지금 줄에 묻기(28-18): 고른 글·자막 줄과 질문, 있으면 문맥을 그대로 넘긴다.
+  ask: ({ selection, question, context }) => relay('/ask', { selection, question, ...(context && { context }) }),
 };
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

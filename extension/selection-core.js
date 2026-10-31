@@ -263,6 +263,15 @@
     });
   }
 
+  // 요소 하나가 입력 자리(input·textarea·편집 영역)인지. closed shadow 안은 composedPath 에 안 보이니 root.activeElement 로 묻는다.
+  function isEditableElement(n) {
+    if (!n) return false;
+    if (n.localName === 'input' || n.localName === 'textarea') return true;
+    if (n.isContentEditable === true) return true;
+    const ce = typeof n.getAttribute === 'function' ? n.getAttribute('contenteditable') : null;
+    return ce != null && ce !== 'false';
+  }
+
   // 프라미스를 최대 ms 만 기다린다. 늦으면 undefined(응답이 와도 호출부는 이미 넘어간다).
   function waitUpTo(promise, ms) {
     return new Promise((resolve) => {
@@ -300,6 +309,6 @@
     dictLinks,
     MAX_TEXT, MAX_SIDE, MAX_TITLE, MAX_HEADINGS, WIDE_SIDE, WIDE_HEADINGS,
     classify, around, buildContext, pickHeadings, stageButton, mydictKey, firstMeaning, bestMeaning, mydictMessage, phraseMessage, findPhrase, MAX_EXPRESSIONS, expressionRows, noteText, expressionButton, expressionToggle, lookupExtras, isAcronym, expandAcronym, acronymLine,
-    normalizeUrl, scrapAskKey, localDateStr, scrapMessage, isTypingPath, isOwnUiPath, waitUpTo,
+    normalizeUrl, scrapAskKey, localDateStr, scrapMessage, isTypingPath, isEditableElement, isOwnUiPath, waitUpTo,
   };
 })();
