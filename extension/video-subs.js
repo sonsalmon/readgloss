@@ -33,6 +33,7 @@
     repeatLine: { text: '문장', name: '문장 반복', key: 'R' },
     loop: { text: '구간', name: '구간 반복', key: 'Q' },
     drill: { text: '드릴', name: '리스닝 드릴', key: 'L' },
+    mode: { text: '모드', name: '학습 모드', key: '' },
     pauseEach: { text: '줄멈춤', name: '줄마다 멈춤', key: '' },
     skipGaps: { text: '틈', name: '틈 건너뛰기', key: '' },
     slow: { text: '느리게', name: '느리게', key: 'Z' },
@@ -55,6 +56,9 @@
     done: new Set(), // 단어장 복습 끝난 낱말(28-8 가리기 'done' 유형)
     hovering: false, // 자막 위에 마우스가 있는지(가리기 'word'/'line' 을 잠깐 보인다)
     drill: false, drillReveal: false, drillLastUp: null, drillPress: null, drillNotice: false, drillNoticeSeen: false,
+    // 학습 모드(28-16): 이해 = 한국어 줄을 눌러 그 줄만 보기(koPeek 줄 번호),
+    // 듣기 = 멈춘 뒤 눌러 두 줄 보기(listenReveal), 조립 = 멈춘 뒤 칩 맞히기(build). modePause 는 듣기·조립이 켠 줄마다 멈춤을 돌려놓을 값.
+    koPeek: -1, listenReveal: false, build: null, modePause: null,
     dictMemo: new Map(), // 낱말별 사전 응답(28-6): 영상이 바뀌면 지운다
     koBusy: false, koAll: false, koErr: '', koErrAt: 0,
     savedForms: new Map(), saved: {}, phrases: {}, savedVer: 0, saving: false,
@@ -85,7 +89,18 @@
       S.asked = new Set();
       S.hardVer++;
     }
+    if (s.video.mode !== before.mode) {
+      S.koPeek = -1;
+      S.listenReveal = false;
+      S.build = null;
+      if (s.video.mode !== 'listen' && s.video.mode !== 'build') S.modePause = null;
+    }
     settings = s;
+    // 저장된 모드가 듣기·조립인데(새로 고침 등) 자동 줄마다 멈춤이 아직 아니면 지금 값을 기억해 두고 켠다.
+    if (MODE_AUTO_PAUSE(s.video.mode) && !S.modePause && (!s.video.pauseEach || s.video.repeatLine)) {
+      S.modePause = { pauseEach: s.video.pauseEach, repeatLine: s.video.repeatLine };
+      setVideo({ pauseEach: true, repeatLine: false });
+    }
     layout();
     render();
     pumpKo();
@@ -191,6 +206,9 @@
       S.drillLastUp = null;
       S.drillPress = null;
       S.drillNotice = false;
+      S.koPeek = -1; // 학습 모드(28-16)의 임시 상태는 영상이 바뀌면 지운다(mode 설정은 남는다)
+      S.listenReveal = false;
+      S.build = null;
       if (video) video.playbackRate = 1; // 새 영상은 1배로(28-3)
       clearFocusTimer();
       if (ui?.lines.matches(':focus')) ui.lines.blur();
@@ -297,6 +315,10 @@
     clearFocusTimer();
     S.clipPause = false;
     S.eachPause = false;
+    // 학습 모드(28-16): 다시 재생하면 이해·듣기·조립의 임시 보기·칩을 접는다(다음에 멈출 때 새로 그린다).
+    S.koPeek = -1;
+    S.listenReveal = false;
+    S.build = null;
     // 라운드 끝 안내를 띄운 채 사용자가 다시 재생하면 안내·칩 줄을 지운다(라운드를 재생 중이면 그대로 둔다).
     if (!S.round && S.roundEnd) {
       S.roundEnd = null;
@@ -323,7 +345,7 @@
   }
   const onTime = () => tick();
   // 유튜브 메뉴로 속도를 바꾸면 단추 눌림 표시만 따라 그린다(우리가 playbackRate 를 되돌리지 않는다 — 28-3)
-  const onRate = () => { if (ui) renderBar(); };
+  const onRate = () => { if (ui) renderBar(); if (S.build) renderBuild(); };
   function bind(v) {
     v.addEventListener('play', onPlay);
     v.addEventListener('pause', onPause);
@@ -409,6 +431,9 @@
       if (i !== S.cur) {
         S.cur = i;
         S.revealed = -1;
+        S.koPeek = -1; // 이해 = 줄이 바뀌면 한국어 줄은 다시 숨긴다(28-16)
+        S.listenReveal = false;
+        S.build = null;
         notify('cur', i);
         pumpKo();
         pumpAnnot();
@@ -591,6 +616,23 @@
       background: rgba(8, 8, 8, .94); border: 1px solid rgba(255, 255, 255, .55); color: #fff; text-align: left;
       font: max(12px, calc(var(--fs, 22px) * .56))/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
     .drillnote .dt { margin-bottom: 8px; }
+    /* 학습 모드(28-16): 이해 = 한국어 줄 자리의 '한국어 줄 보기' 단추, 듣기 = 멈춘 뒤 보기 알약 */
+    .ko .kpeek { background: rgba(255, 255, 255, .12); border: 1px dashed rgba(255, 255, 255, .7); color: #f1f1f1; }
+    .modepill { order: 1; pointer-events: auto; display: flex; align-items: center; gap: 4px; margin-top: 4px; padding: 3px 8px; border-radius: 999px;
+      background: rgba(8, 8, 8, .9); border: 1px solid rgba(255, 255, 255, .45); color: #fff;
+      font: max(12px, calc(var(--fs, 22px) * .56))/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+    .modepill button { border-color: transparent; background: transparent; }
+    /* 조립(28-16): 자막 자리에 빈칸과 섞은 칩. 칩은 진짜 단추라 Tab·Enter 로도 고른다 */
+    .build { order: 0; pointer-events: auto; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 6px; max-width: min(92%, 900px); }
+    .build .bslots, .build .btiles, .build .bacts { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 5px; }
+    .build .bslots { padding: 5px 8px; border-radius: 8px; background: rgba(8, 8, 8, .82); border: 1px solid rgba(255, 255, 255, .3); }
+    .build .slot { display: inline-flex; align-items: center; justify-content: center; min-width: 2.2em; min-height: 28px; padding: 0 6px; border-bottom: 2px solid rgba(255, 255, 255, .7);
+      color: #d8d8d8; font: max(12px, calc(var(--fs, 22px) * .56))/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+    .build .tile { background: rgba(8, 8, 8, .92); }
+    .build .tile.placed { border-color: #f59e0b; color: #ffe08a; }
+    .build .tile.shake { animation: rg-shake .42s ease-in-out; }
+    @keyframes rg-shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-5px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
+    .build .bt { color: #fff; }
     /* 자막 위치 조정(28-11): 자막 층 위 띠. 띠를 위아래로 끌면 임시 posY, [적용]으로 저장, [초기화]는 0 */
     .adjust { order: -1; pointer-events: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 4px; padding: 4px 8px; border-radius: 999px;
       background: rgba(8, 8, 8, .92); border: 1px solid rgba(255, 255, 255, .55); color: #fff; cursor: ns-resize; touch-action: none;
@@ -600,7 +642,7 @@
     .box:has(.lines[hidden]) .msg { margin-bottom: max(3.4em, calc(var(--fs, 22px) * 3)); }
     .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     [hidden] { display: none !important; }
-    @media (prefers-reduced-motion: reduce) { .bar, .lines { transition: none; } }
+    @media (prefers-reduced-motion: reduce) { .bar, .lines { transition: none; } .build .tile.shake { animation: none; } }
   `;
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -642,6 +684,7 @@
     }
     stackLabels(btns.hide, { off: '가리기', word: '낱말', line: '줄' });
     stackLabels(btns.save, { off: '☆', on: '★' });
+    stackLabels(btns.mode, { watch: '보기', understand: '이해', listen: '듣기', build: '조립' });
     const prevBtn = btns.prev;
     const repeatBtn = btns.repeat;
     const nextBtn = btns.next;
@@ -656,6 +699,7 @@
     const koBtn = btns.ko;
     const saveBtn = btns.save;
     const explainBtn = btns.explain;
+    const modeBtn = btns.mode;
     const note = el('div', 'note');
     note.hidden = true;
     note.setAttribute('role', 'status');
@@ -718,6 +762,29 @@
     drillPill.setAttribute('aria-label', '리스닝 드릴 문장 이동');
     const drillCount = el('span', 'dc');
     drillPill.append(button('‹ 이전 문장 A ·', '이전 문장 (A)', () => run('prev')), drillCount, button('· 다음 문장 D ›', '다음 문장 (D)', () => run('next')));
+    // 학습 모드(28-16): 듣기는 멈춘 뒤 눌러 두 줄을 보고, 조립은 멈춘 뒤 자막 자리에 섞은 칩을 놓는다.
+    const modePill = el('div', 'modepill');
+    modePill.hidden = true;
+    modePill.setAttribute('role', 'group');
+    modePill.setAttribute('aria-label', '학습 모드 자막 보기');
+    modePill.append(button('자막 보기', '멈춘 자막 두 줄 보기', () => {
+      S.listenReveal = true;
+      render();
+    }));
+    const buildEl = el('div', 'build');
+    buildEl.hidden = true;
+    buildEl.setAttribute('role', 'group');
+    buildEl.setAttribute('aria-label', '조립 — 들은 순서대로 칩 누르기');
+    const buildSlots = el('div', 'bslots');
+    const buildTiles = el('div', 'btiles');
+    const buildActs = el('div', 'bacts');
+    const buildState = el('span', 'bt', '들은 순서대로 눌러 보세요');
+    const buildAgain = button('↺ 다시 듣기', '이 줄 다시 듣기 (S)', () => run('repeat'));
+    const buildSlow = button('느리게', '느리게 재생 (Z)', () => run('slow'));
+    const buildNext = button('다음 줄', '다음 줄 (D)', () => run('next'));
+    buildNext.hidden = true;
+    buildActs.append(buildState, buildAgain, buildSlow, buildNext);
+    buildEl.append(buildSlots, buildTiles, buildActs);
     // 자막 위치 조정(28-11): 설정 탭 [자막 위치 조정] 이 연다. 띠를 끌면 임시로 올리고 [적용]으로 저장한다.
     const adjustEl = el('div', 'adjust');
     adjustEl.hidden = true;
@@ -784,14 +851,16 @@
     box.append(lines, bar, note, msg);
     box.append(hint); // 안내 알약(28-7)은 화면 차례(order)로 두 줄 아래에 놓는다
     box.append(drillPill, drillNote); // 드릴 알약·안내도 order 로 자리를 잡는다
+    box.append(modePill, buildEl); // 학습 모드(28-16): 듣기 보기 알약과 조립 칩
     box.append(adjustEl); // 자막 위치 조정 띠(28-11)
     box.append(tipEl); // 말풍선은 position: fixed 라 흐름에 끼지 않는다
     box.append(rangeEl); // 구간 눈금도 fixed 라 흐름에 끼지 않는다
     shadow.append(style, box, sr);
     ui = {
       box, bar, note, notice, lines, en, ko, msg, hint, sr, tip: tipEl, drillPill, drillNote, drillCount,
+      modePill, build: buildEl, buildSlots, buildTiles, buildState, buildAgain, buildSlow, buildNext, buildKey: '',
       adjust: adjustEl, adjustText,
-      prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, slowBtn, drillBtn, focusBtn, koBtn, saveBtn, explainBtn,
+      prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, slowBtn, drillBtn, focusBtn, koBtn, saveBtn, explainBtn, modeBtn,
       btns, barKey: '', range: rangeEl, rangeA, rangeB,
       lineKey: '', noteKey: '', msgKey: '', tokens: [], wcur: -1, wcurFor: '',
     };
@@ -1168,11 +1237,21 @@
       }
     }
     host.style.display = show || showMsg ? 'flex' : 'none';
-    ui.lines.hidden = !show || (!lay.showEn && !lay.showKo);
+    const mode = vs().mode;
+    const paused = Boolean(video?.paused);
+    if (show && mode === 'build' && paused) ensureBuild();
+    const buildOpen = Boolean(show && mode === 'build' && S.build);
+    const buildDone = buildOpen && S.build.done === true;
+    const modeHide = (mode === 'listen' && !S.listenReveal) || (mode === 'build' && !buildDone);
+    ui.lines.hidden = !show || (!lay.showEn && !lay.showKo) || modeHide;
     ui.adjust.hidden = !(show && adjust.on);
     renderBarOrder();
     ui.bar.hidden = !show || !ui.bar.childElementCount;
     ui.notice.hidden = !(show && !vs().keysNoticeSeen); // 처음 한 번만(알겠어요를 누르면 설정에 남는다)
+    ui.modePill.hidden = !(show && mode === 'listen' && !S.listenReveal && paused);
+    ui.build.hidden = !buildOpen;
+    if (buildOpen) renderBuild();
+    else ui.buildKey = '';
     const drillOn = show && S.drill;
     ui.box.classList.toggle('drill', drillOn);
     ui.lines.classList.toggle('drillhide', drillOn && !S.drillReveal);
@@ -1214,7 +1293,7 @@
     const orderOf = (k) => String(Math.max(0, lay.order.indexOf(k)));
     ui.en.style.order = orderOf('en');
     ui.ko.style.order = orderOf('ko');
-    const key = cue ? [S.mainKey, i, mode, v.hard, v.subType, v.koAbove, S.ko[i] ?? '', S.koErr, S.hardVer, S.savedVer, v.hideTypes?.hard, v.hideTypes?.done, v.hideTypes?.other, v.idioms].join('|') : '';
+    const key = cue ? [S.mainKey, i, mode, v.hard, v.subType, v.koAbove, S.ko[i] ?? '', S.koErr, S.hardVer, S.savedVer, v.hideTypes?.hard, v.hideTypes?.done, v.hideTypes?.other, v.idioms, v.mode, S.koPeek === i ? 1 : 0].join('|') : '';
     if (key === ui.lineKey) return;
     ui.lineKey = key;
     const cursorFor = `${S.mainKey}|${i}`;
@@ -1275,8 +1354,19 @@
     }
     ui.tokens = toks;
     const koText = S.ko[i] || (S.koErr && !S.koFail.has(i) ? S.koErr : '');
-    ui.ko.textContent = lay.showKo ? koText : '';
-    ui.ko.classList.toggle('err', !S.ko[i] && Boolean(koText));
+    if (v.mode === 'understand' && lay.showKo && S.koPeek !== i) {
+      // 이해(28-16): 한국어 줄은 숨기고 그 자리에 보기 단추를 둔다. 누르면 이 줄만 보인다.
+      const peek = button('한국어 줄 보기', '이 줄의 한국어 줄 보기', () => {
+        S.koPeek = i;
+        renderLine();
+      });
+      peek.classList.add('kpeek');
+      ui.ko.classList.remove('err');
+      ui.ko.replaceChildren(peek);
+    } else {
+      ui.ko.textContent = lay.showKo ? koText : '';
+      ui.ko.classList.toggle('err', !S.ko[i] && Boolean(koText));
+    }
     // 말풍선이 열려 있으면 다시 만든 낱말에 붙여 다시 그린다(저장 칠하기·어려운 단어가 바뀌어도 따라간다).
     if (tip.open) {
       const sp = tip.i === i ? ui.en.querySelector(`.w[data-k="${tip.k}"]`) : null;
@@ -1323,12 +1413,18 @@
     if (key === ui.barKey) return;
     ui.barKey = key;
     ui.bar.replaceChildren(...rows.filter((r) => !r.hidden).map((r) => ui.btns[r.name]).filter(Boolean));
+    // 학습 모드(28-16)는 컨트롤 편집 목록과 상관없이 막대 맨 위에 늘 둔다(모드를 잃으면 나머지 단추의 뜻도 흐려진다).
+    if (ui.btns.mode) ui.bar.prepend(ui.btns.mode);
   }
   function renderBar() {
     const v = vs();
     const cue = S.cues[S.cur];
     const hide = V.HIDE_LABEL[v.hide] ?? '끔';
     showLabel(ui.hideBtn, v.hide, `가리기 바꾸기 — 지금 ${hide}`);
+    const modeAt = Math.max(0, V.MODES.indexOf(v.mode));
+    const nextMode = V.MODES[(modeAt + 1) % V.MODES.length];
+    showLabel(ui.modeBtn, v.mode, `학습 모드 — 지금 ${V.MODE_LABEL[v.mode] ?? '보기'} (누르면 ${V.MODE_LABEL[nextMode]})`);
+    ui.modeBtn.setAttribute('aria-pressed', String(v.mode !== 'watch'));
     ui.pauseBtn.setAttribute('aria-pressed', String(v.pauseEach));
     ui.lineBtn.setAttribute('aria-pressed', String(v.repeatLine));
     ui.gapBtn.setAttribute('aria-pressed', String(v.skipGaps));
@@ -1344,7 +1440,89 @@
     for (const b of [ui.prevBtn, ui.repeatBtn, ui.nextBtn, ui.saveBtn, ui.explainBtn]) b.disabled = !cue;
   }
 
-  // 구간 손잡이(28-10): 유튜브 진행 막대 rect 위에 A·B 를 그린다. 막대를 못 찾거나 층이 안 보이면 숨긴다.
+  // ---- 조립(28-16) ----
+  // 멈춘 줄의 영어 낱말만 칩으로 만든다. seed 는 영상·줄·글로 정해 같은 줄은 늘 같은 순서로 섞인다.
+  function ensureBuild() {
+    if (!video?.paused) return;
+    const cue = S.cues[S.cur];
+    if (!cue) {
+      S.build = null;
+      return;
+    }
+    const b = S.build;
+    if (b && b.i === S.cur && b.key === S.mainKey && b.text === cue.text) return;
+    const tokens = V.tokenize(cue.text);
+    const answer = tokens.flatMap((tk, k) => (tk.w ? [k] : []));
+    if (!answer.length) {
+      S.build = null;
+      return;
+    }
+    S.build = {
+      i: S.cur,
+      key: S.mainKey,
+      text: cue.text,
+      tokens,
+      answer,
+      // 같은 낱말이 두 번 나와도 어느 칩을 눌렀든 그 자리의 낱말이면 맞게 본다(글자로 견준다).
+      keys: answer.map((k) => tokens[k]?.lower ?? ''),
+      chips: V.shuffleTiles(answer, `${S.mainKey}|${S.cur}|${cue.text}`),
+      placed: [],
+      wrongK: -1,
+      done: false,
+    };
+  }
+  // 놓은 칸·남은 칩·안내를 그린다. 틀린 칩은 잠깐 흔들고 은행에 그대로 둔다(벌점 없음).
+  function renderBuild() {
+    const b = S.build;
+    if (!ui?.build) return;
+    if (!b) {
+      ui.build.hidden = true;
+      return;
+    }
+    const key = [b.key, b.i, b.text, b.placed.join(','), b.wrongK, b.done ? 1 : 0, video?.playbackRate ?? 1].join('|');
+    if (ui.buildKey === key) return;
+    ui.buildKey = key;
+    const used = new Set(b.placed);
+    ui.buildSlots.replaceChildren(...b.answer.map((k, pos) => {
+      // 칸에는 정답 낱말을 보여 준다(같은 낱말을 다른 자리에서 눌러도 글이 흔들리지 않게).
+      if (pos < b.placed.length) return el('span', 'tile placed', b.tokens[k]?.t ?? '');
+      return el('span', 'slot', String(pos + 1));
+    }));
+    ui.buildTiles.replaceChildren(...b.chips.filter((k) => !used.has(k)).map((k) => {
+      const word = b.tokens[k]?.t ?? '';
+      const tile = button(word, `${word} — 들은 순서대로 누르기`, () => clickTile(k));
+      tile.classList.add('tile');
+      if (k === b.wrongK) tile.classList.add('shake');
+      return tile;
+    }));
+    ui.buildState.textContent = b.done ? '다 맞혔어요' : '들은 순서대로 눌러 보세요';
+    ui.buildNext.hidden = !b.done;
+    ui.buildAgain.disabled = !S.cues[S.cur];
+    ui.buildSlow.setAttribute('aria-pressed', String(Boolean(video && video.playbackRate !== 1)));
+  }
+  function clickTile(k) {
+    const b = S.build;
+    if (!b || b.done) return;
+    const keyOf = (x) => b.tokens[x]?.lower ?? '';
+    const next = [...b.placed, k];
+    const nextKeys = next.map(keyOf);
+    if (!V.tileCheck(nextKeys, b.keys.slice(0, nextKeys.length))) {
+      // 틀린 칩: 흔들기만 하고 placed 는 그대로라 칩이 제자리로 돌아간다.
+      b.wrongK = k;
+      renderBuild();
+      setTimeout(() => {
+        if (S.build !== b) return;
+        b.wrongK = -1;
+        renderBuild();
+      }, 450);
+      return;
+    }
+    b.placed = next;
+    b.wrongK = -1;
+    if (V.tileCheck(b.placed.map(keyOf), b.keys)) b.done = true;
+    render();
+  }
+
   function progressRect() {
     const p = player?.querySelector('.ytp-progress-bar') ?? null;
     const r = p?.getBoundingClientRect?.() ?? null;
@@ -1474,6 +1652,7 @@
       if (!video) return;
       video.playbackRate = V.nextRate(video.playbackRate, vs().slowRate);
       renderBar();
+      if (S.build) renderBuild();
       return;
     }
     // 키보드 저장 모드(28-7): 켜고 끄기 + 상태 줄. 켤 때 이미 사용자가 멈춰 있으면 곧 두 줄로 포커스한다.
@@ -1512,6 +1691,38 @@
       S.revealed = i;
       renderLine();
     }
+    if (act === 'mode') return cycleMode();
+  }
+
+  // 학습 모드(28-16): 막대 [모드] 는 보기 → 이해 → 듣기 → 조립 → 보기 로 돈다.
+  const MODE_AUTO_PAUSE = (m) => m === 'listen' || m === 'build';
+  function cycleMode() {
+    const cur = vs().mode;
+    const at = Math.max(0, V.MODES.indexOf(cur));
+    setMode(V.MODES[(at + 1) % V.MODES.length]);
+  }
+  // 듣기·조립은 줄마다 멈춤을 자동으로 켜고(문장 반복과 배타), 모드를 떠나면 원래 값으로 돌린다.
+  function setMode(next) {
+    if (!V.MODES.includes(next) || next === vs().mode) return;
+    const cur = vs().mode;
+    const patch = { mode: next };
+    if (!MODE_AUTO_PAUSE(cur) && MODE_AUTO_PAUSE(next)) {
+      S.modePause = { pauseEach: vs().pauseEach, repeatLine: vs().repeatLine };
+      patch.pauseEach = true;
+      patch.repeatLine = false;
+    } else if (MODE_AUTO_PAUSE(cur) && !MODE_AUTO_PAUSE(next)) {
+      const snap = S.modePause;
+      S.modePause = null;
+      patch.pauseEach = snap ? snap.pauseEach : vs().pauseEach;
+      patch.repeatLine = snap ? snap.repeatLine : vs().repeatLine;
+    }
+    S.koPeek = -1;
+    S.listenReveal = false;
+    S.build = null;
+    S.revealed = -1;
+    setVideo(patch);
+    toast(`학습 모드 ${V.MODE_LABEL[next]}`, ui?.bar);
+    render();
   }
 
   // 구간 반복(28-1): 첫 누름 = 시작, 둘째 = 끝(시작보다 뒤일 때만), 셋째 = 해제. 저장하지 않는다(영상이 바뀌면 checkPage 가 지운다).

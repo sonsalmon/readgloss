@@ -108,7 +108,7 @@ test('content.js: 카드·확인 메시지는 전체 화면 요소 안에(mountR
 test('설정: video 기본값·범위, reviewMode', async () => {
   await import('../extension/settings-core.js');
   const S = globalThis.readglossSettings;
-  assert.deepEqual(S.DEFAULTS.video, { subs: true, subType: 'dual', koAbove: false, enFontPct: 100, koFontPct: 100, bgOpacity: 75, posY: 0, hard: true, hoverPause: false, autoCC: true, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false, wordBands: { easy: false, medium: true, hard: true }, idioms: true, barOrder: ['prev', 'repeat', 'next', 'repeatLine', 'loop', 'drill', 'pauseEach', 'skipGaps', 'slow', 'focusMode', 'hide', 'ko', 'save', 'explain'], barHidden: [] });
+  assert.deepEqual(S.DEFAULTS.video, { subs: true, subType: 'dual', koAbove: false, enFontPct: 100, koFontPct: 100, bgOpacity: 75, posY: 0, hard: true, hoverPause: false, autoCC: true, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false, wordBands: { easy: false, medium: true, hard: true }, idioms: true, mode: 'watch', barOrder: ['prev', 'repeat', 'next', 'repeatLine', 'loop', 'drill', 'pauseEach', 'skipGaps', 'slow', 'focusMode', 'hide', 'ko', 'save', 'explain'], barHidden: [] });
   assert.equal(S.DEFAULTS.reviewMode, 'flip');
   const n = S.normalize({ video: { fontPct: 999, hide: 'nope', ko: 'yes', pauseEach: true }, reviewMode: 'choice' });
   assert.equal(n.video.enFontPct, 160);

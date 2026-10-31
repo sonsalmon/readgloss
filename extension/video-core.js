@@ -297,6 +297,57 @@
     return out;
   }
 
+  // 영상 학습 모드(28-16): 보기 · 이해 · 듣기 · 조립. 설정 video.mode 와 막대 [모드] 가 이 순서로 돈다.
+  const MODES = ['watch', 'understand', 'listen', 'build'];
+  const MODE_LABEL = Object.freeze({ watch: '보기', understand: '이해', listen: '듣기', build: '조립' });
+  // 조립 칩 섞기(28-16): 같은 seed 는 항상 같은 순서. 섞은 결과가 원래 순서와 같으면 다시 섞는다.
+  // tokens 는 tokenize 결과(또는 아무 배열)이고, 돌려주는 값은 같은 항목을 다른 순서로 담은 새 배열이다.
+  function seed32(seed) {
+    const s = String(seed ?? '');
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h >>> 0;
+  }
+  function random32(state) {
+    let t = (state + 0x6d2b79f5) >>> 0;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return { state: t >>> 0, value: ((t ^ (t >>> 14)) >>> 0) / 4294967296 };
+  }
+  function shuffleTiles(tokens, seed) {
+    const list = Array.isArray(tokens) ? tokens.slice() : [];
+    const n = list.length;
+    if (n <= 1) return list;
+    let state = seed32(seed);
+    const order = list.map((_, i) => i);
+    const mix = () => {
+      for (let i = n - 1; i > 0; i--) {
+        const r = random32(state);
+        state = r.state;
+        const j = Math.floor(r.value * (i + 1));
+        const tmp = order[i];
+        order[i] = order[j];
+        order[j] = tmp;
+      }
+    };
+    // 원래 순서([0,1,…])와 같으면 다시 섞는다. 두 번 연속 같을 수 있으니 몇 번 더 시도한다(항목이 둘 이상일 때).
+    for (let tries = 0; tries < 20; tries++) {
+      mix();
+      if (!order.every((v, i) => v === i)) break;
+    }
+    return order.map((i) => list[i]);
+  }
+  // 조립 채점(28-16): placed 가 answer 와 같은 차례·같은 항목이면 true. 앞부분만 맞는지는 answer 를 잘라서 본다.
+  function tileCheck(placed, answer) {
+    const a = Array.isArray(placed) ? placed : [];
+    const b = Array.isArray(answer) ? answer : [];
+    if (a.length !== b.length) return false;
+    return a.every((v, i) => v === b[i]);
+  }
+
   // 칠하기(28-9): p(모를 확률) 구간 경계·설정에서 고른 구간의 가장 낮은 경계·낱말 색.
   const BAND_EASY = 0.35;
   const BAND_HARD = 0.65;
@@ -765,9 +816,9 @@
   }
 
   globalThis.readglossVideo = {
-    ID_RE, ASR, GRACE, MAX_CLIP, MAX_ROUND: ROUND_MAX, ROUND_MIN, ROUND_TARGET, ROUND_MAX, HIDE_MODES, HIDE_LABEL, HIDE_TYPES, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT, DRILL_DOUBLE,
+    ID_RE, ASR, GRACE, MAX_CLIP, MAX_ROUND: ROUND_MAX, ROUND_MIN, ROUND_TARGET, ROUND_MAX, HIDE_MODES, HIDE_LABEL, HIDE_TYPES, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT, DRILL_DOUBLE, MODES, MODE_LABEL,
     params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseTrack,
-    langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, bandOf, minPFor, tokenColor, phraseSpans, tooltipModel, hideTypes, maskFlags, nextHide, drillSpace, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
+    langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, shuffleTiles, tileCheck, bandOf, minPFor, tokenColor, phraseSpans, tooltipModel, hideTypes, maskFlags, nextHide, drillSpace, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
     parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf, barModel, xToTime, subLayout, rounds,
   };
 })();

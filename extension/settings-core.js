@@ -7,6 +7,8 @@
   const BAR_NAMES = Object.freeze(['prev', 'repeat', 'next', 'repeatLine', 'loop', 'drill', 'pauseEach', 'skipGaps', 'slow', 'focusMode', 'hide', 'ko', 'save', 'explain']);
   // 자막 줄 구성(28-11): 둘 다 · 영어만 · 한국어만 · 안 보이기
   const SUB_TYPES = ['dual', 'en', 'ko', 'none'];
+  // 영상 학습 모드(28-16): 보기 · 이해 · 듣기 · 조립
+  const VIDEO_MODES = ['watch', 'understand', 'listen', 'build'];
   const DEFAULTS = Object.freeze({
     enabled: true, level: 'C1', maxPerParagraph: 3, repeat: 'page',
     annotation: { position: 'top', sizePct: 55, color: 'text', customColor: '#2f6feb', opacityPct: 70, weight: 'normal', gapEm: 0, liftEm: -0.15 },
@@ -27,7 +29,8 @@
     // 변경 기록 28-9: 칠하기 구간(wordBands: 쉬움·보통·어려움, 기본 보통 이상)과 숙어 덩어리(idioms)
     // 변경 기록 28-10: 세로 막대 단추 순서(barOrder)와 숨긴 단추(barHidden)
     // 변경 기록 28-11: 자막 유형(subType)·한국어 위로(koAbove)·영어/한국어 크기(enFontPct·koFontPct)·배경 진하기(bgOpacity)·위치(posY)
-    video: { subs: true, subType: 'dual', koAbove: false, enFontPct: 100, koFontPct: 100, bgOpacity: 75, posY: 0, hard: true, hoverPause: false, autoCC: true, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false, wordBands: { easy: false, medium: true, hard: true }, idioms: true, barOrder: BAR_NAMES, barHidden: [] },
+    // 변경 기록 28-16: 학습 모드(mode: 보기·이해·듣기·조립)
+    video: { subs: true, subType: 'dual', koAbove: false, enFontPct: 100, koFontPct: 100, bgOpacity: 75, posY: 0, hard: true, hoverPause: false, autoCC: true, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false, wordBands: { easy: false, medium: true, hard: true }, idioms: true, mode: 'watch', barOrder: BAR_NAMES, barHidden: [] },
     reviewMode: 'flip', // 복습 방식(27-4): 뒤집기 · 고르기 · 듣기
   });
   const ENUMS = {
@@ -146,6 +149,7 @@
         focusMode: bool(v.focusMode, DV.focusMode),
         wordBands,
         idioms: bool(v.idioms, DV.idioms),
+        mode: pickEnum(v.mode, VIDEO_MODES, DV.mode),
         barOrder: cleanBar(v.barOrder, DV.barOrder),
         barHidden: cleanBar(v.barHidden, []),
       },
