@@ -1,4 +1,4 @@
-// 영상 자막(유튜브) 판단 로직(변경 기록 27): 자막 읽기·줄 묶기·지금 줄·낱말 나누기·가리기·장면 주소·키. DOM 을 만지지 않는 순수 함수만.
+// 영상 자막(유튜브·넷플릭스) 판단 로직(변경 기록 27·28-22): 자막 읽기·줄 묶기·지금 줄·낱말 나누기·가리기·장면 주소·키. DOM 을 만지지 않는 순수 함수만.
 // classic script: globalThis.readglossVideo 로 등록한다(node --test 도 같은 파일을 import 해서 쓴다).
 (() => {
   const ID_RE = /^[A-Za-z0-9_-]{11}$/; // 유튜브 영상 id
@@ -250,6 +250,50 @@
       const text = [];
       for (i++; i < lines.length && lines[i].trim() !== ''; i++) text.push(lines[i]);
       if (start !== null) cues.push({ start, end, text: stripTags(decodeEntities(text.join(' '))) });
+    }
+    return normalizeCues(cues);
+  }
+
+  // 넷플릭스 IMSC(TTML) 자막(28-22): <p begin end dur> 안의 글을 줄로 만든다.
+  // 시각 단위는 tickRate 를 읽는다(기본 1천만). 단위 없는 값은 틱, "10s"·"500ms"·"00:00:01.500" 도 받는다.
+  function imscTime(value, tickRate, frameRate) {
+    const s = String(value ?? '').trim();
+    if (!s) return null;
+    let m;
+    if ((m = /^(-?\d+(?:\.\d+)?)t$/i.exec(s))) return Number(m[1]) / tickRate;
+    if ((m = /^(-?\d+(?:\.\d+)?)ms$/i.exec(s))) return Number(m[1]) / 1000;
+    if ((m = /^(-?\d+(?:\.\d+)?)(h|m|s)$/i.exec(s))) {
+      const n = Number(m[1]);
+      const unit = m[2].toLowerCase();
+      return unit === 'h' ? n * 3600 : unit === 'm' ? n * 60 : n;
+    }
+    if ((m = /^(\d+):(\d{2}):(\d{2}):(\d+)(?:\.(\d+))?$/.exec(s))) {
+      return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + (Number(m[4]) + Number(`0.${m[5] ?? 0}`)) / frameRate;
+    }
+    if ((m = /^(\d+):(\d{2}):(\d{2})(?:[.,](\d+))?$/.exec(s))) return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(`0.${m[4] ?? 0}`);
+    if ((m = /^(\d+):(\d{2})(?:[.,](\d+))?$/.exec(s))) return Number(m[1]) * 60 + Number(m[2]) + Number(`0.${m[3] ?? 0}`);
+    if ((m = /^-?\d+(?:\.\d+)?$/.exec(s))) return Number(s) / tickRate; // 단위 없는 값 = 틱
+    return null;
+  }
+  const imscAttr = (attrs, name) => {
+    const m = new RegExp(`(?:^|\\s)(?:[\\w.-]+:)?${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(attrs);
+    return m ? (m[1] ?? m[2] ?? '') : null;
+  };
+  function parseImsc(body) {
+    const xml = String(body ?? '');
+    if (!xml.trim()) return [];
+    const tt = /<(?:[\w.-]+:)?tt\b([^>]*)>/i.exec(xml);
+    if (!tt) return [];
+    const tickRate = Number(imscAttr(tt[1], 'tickRate')) || 10_000_000;
+    const frameRate = Number(imscAttr(tt[1], 'frameRate')) || 30;
+    const cues = [];
+    for (const m of xml.matchAll(/<(?:[\w.-]+:)?p\b([^>]*)>([\s\S]*?)<\/(?:[\w.-]+:)?p>/gi)) {
+      const begin = imscTime(imscAttr(m[1], 'begin'), tickRate, frameRate);
+      if (begin === null) continue;
+      let end = imscTime(imscAttr(m[1], 'end'), tickRate, frameRate);
+      const dur = imscTime(imscAttr(m[1], 'dur'), tickRate, frameRate);
+      if (end === null && dur !== null) end = begin + dur;
+      cues.push({ start: begin, end, text: stripTags(decodeEntities(m[2])) }); // <br/> 는 stripTags 가 공백으로
     }
     return normalizeCues(cues);
   }
@@ -734,6 +778,11 @@
         return { id: `${u.origin}${u.pathname}?sub=${encodeURIComponent(key)}`, t: parseT(new URLSearchParams(u.hash.replace(/^#/, '')).get('t')) };
       }
       const host = u.hostname.replace(/^(www|m)\./, '');
+      // 넷플릭스(28-22): /watch/<숫자>?t=<초>. 한국어·영어 IMSC 자막 주소의 영상 id 와 같은 꼴이다.
+      if (host === 'netflix.com') {
+        const id = netflixIdOf(url);
+        return id ? { id, t: parseT(u.searchParams.get('t')) } : null;
+      }
       let id = '';
       if (host === 'youtube.com' && u.pathname === '/watch') id = u.searchParams.get('v') ?? '';
       else if (host === 'youtu.be') id = u.pathname.slice(1);
@@ -744,11 +793,60 @@
     }
   }
   const videoIdOf = (href) => parseScene(href)?.id ?? null;
-  // id 가 페이지 주소면 그 페이지 안 시각(#t=초)을 쓴다(로컬 연습 페이지, 28-23). 영상 id 면 지금처럼 유튜브 장면 주소.
+  // 넷플릭스 영상 id: netflix.com/watch/<숫자>. /title/<숫자>·다른 사이트는 null.
+  function netflixIdOf(href) {
+    if (typeof href !== 'string' || href.length > 2000) return null;
+    try {
+      const u = new URL(href);
+      if (!/(^|\.)netflix\.com$/i.test(u.hostname)) return null;
+      const m = /^\/watch\/(\d+)\/?$/.exec(u.pathname);
+      return m ? m[1] : null;
+    } catch {
+      return null;
+    }
+  }
+  // 사이트 어댑터 고르기(28-22): 주소만 보고 유튜브·넷플릭스·로컬 연습 페이지인지 가른다. DOM 은 만지지 않는다.
+  const ADAPTER_INFO = Object.freeze({
+    youtube: Object.freeze({ name: 'youtube', label: '유튜브' }),
+    netflix: Object.freeze({ name: 'netflix', label: '넷플릭스' }),
+    practice: Object.freeze({ name: 'practice', label: '연습 페이지' }),
+  });
+  function adapterFor(loc) {
+    let host = '';
+    let path = '';
+    let origin = '';
+    let href = '';
+    try {
+      if (typeof loc === 'string') href = loc;
+      else if (loc) {
+        host = String(loc.hostname ?? '');
+        path = String(loc.pathname ?? '');
+        origin = String(loc.origin ?? '');
+        href = String(loc.href ?? '');
+      }
+      if (!host && href) {
+        const u = new URL(href);
+        host = u.hostname;
+        path = u.pathname;
+        origin = u.origin;
+      }
+    } catch {
+      return null;
+    }
+    host = host.toLowerCase();
+    if (origin === 'http://127.0.0.1:47831' && path === '/practice') return ADAPTER_INFO.practice;
+    if (/(^|\.)youtube\.com$/.test(host)) return ADAPTER_INFO.youtube;
+    if (/(^|\.)netflix\.com$/.test(host)) return ADAPTER_INFO.netflix;
+    return null;
+  }
+  // id 가 페이지 주소면 그 페이지 안 시각(#t=초)을 쓴다(로컬 연습 페이지, 28-23).
+  // 숫자 id 는 넷플릭스 장면 주소, 나머지는 유튜브 장면 주소(28-22).
   const sceneUrl = (id, sec) => {
     const t = Math.max(0, Math.floor(Number(sec) || 0));
     const base = String(id ?? '');
-    return /^https?:\/\//i.test(base) ? `${base.split('#')[0]}#t=${t}` : `https://www.youtube.com/watch?v=${base}&t=${t}s`;
+    if (/^https?:\/\//i.test(base)) return `${base.split('#')[0]}#t=${t}`;
+    if (/^\d+$/.test(base)) return `https://www.netflix.com/watch/${base}?t=${t}`;
+    return `https://www.youtube.com/watch?v=${base}&t=${t}s`;
   };
 
   // 장면 구간 { start, end }: 다리 words.mjs 와 같은 규칙(0 ≤ start < end ≤ 86400, 길이 ≤ 60)
@@ -909,9 +1007,9 @@
 
   globalThis.readglossVideo = {
     ID_RE, ASR, GRACE, MAX_CLIP, MAX_ROUND: ROUND_MAX, ROUND_MIN, ROUND_TARGET, ROUND_MAX, HIDE_MODES, HIDE_LABEL, HIDE_TYPES, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT, DRILL_DOUBLE, MODES, MODE_LABEL,
-    params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseSrt, subFormatOf, parseTrack,
+    params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseSrt, parseImsc, subFormatOf, parseTrack,
     validPolish, polishedCues,
     langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, shuffleTiles, tileCheck, bandOf, minPFor, tokenColor, phraseSpans, tooltipModel, hideTypes, maskFlags, nextHide, drillSpace, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
-    parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf, barModel, xToTime, subLayout, rounds,
+    parseT, parseScene, videoIdOf, netflixIdOf, adapterFor, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf, barModel, xToTime, subLayout, rounds,
   };
 })();

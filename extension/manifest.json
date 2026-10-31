@@ -34,6 +34,13 @@
       "run_at": "document_start",
       "world": "MAIN",
       "all_frames": false
+    },
+    {
+      "matches": ["https://www.netflix.com/*"],
+      "js": ["nf-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
     }
   ]
 }

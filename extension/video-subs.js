@@ -1,12 +1,12 @@
-// 유튜브 영상 페이지의 readgloss 자막 층(변경 기록 27-2). DOM 접착만 하고 판단은 video-core.js(globalThis.readglossVideo)가 한다.
-// 자막 글은 yt-hook.js(MAIN world)가 플레이어 응답을 엿들어 postMessage 로 넘겨 준다.
+// 유튜브·넷플릭스 영상 페이지의 readgloss 자막 층(변경 기록 27·28-22). DOM 접착만 하고 판단은 video-core.js(globalThis.readglossVideo)가 한다.
+// 자막 글은 yt-hook.js·nf-hook.js(MAIN world)가 플레이어 응답을 엿들어 postMessage 로 넘겨 준다.
 // 패널 [영상] 탭(panel-video.js)·복습(panel-words.js)은 globalThis.readglossVideoUi 로 부른다.
 (() => {
   // 로컬 연습 페이지(28-23): 다리가 내는 http://127.0.0.1:47831/practice 에서도 같은 자막 층·키·패널을 쓴다.
   const PRACTICE_ORIGIN = 'http://127.0.0.1:47831';
   const PRACTICE_PATH = '/practice';
   const isPractice = () => typeof location !== 'undefined' && location.origin === PRACTICE_ORIGIN && location.pathname === PRACTICE_PATH;
-  if (typeof document === 'undefined' || (!/(^|\.)youtube\.com$/.test(location.hostname) && !isPractice()) || globalThis.readglossVideoUi) return;
+  if (typeof document === 'undefined' || (!/(^|\.)youtube\.com$/.test(location.hostname) && !/(^|\.)netflix\.com$/.test(location.hostname) && !isPractice()) || globalThis.readglossVideoUi) return;
   const V = globalThis.readglossVideo;
   const Sel = globalThis.readglossSelection;
   const SET = globalThis.readglossSettings;
@@ -14,6 +14,7 @@
 
   const SOURCE = 'readgloss-yt';
   const PRACTICE_SOURCE = 'readgloss-practice';
+  const NF_SOURCE = 'readgloss-nf';
   const WAIT_MS = 5000; // 이만큼 지나도 영어 줄이 없으면 안내
   const MSG_MS = 8000; // 안내가 떠 있는 시간
   const ERR_PAUSE_MS = 15000; // 번역·주석이 다리 문제로 실패하면 이만큼 쉬었다 다시
@@ -74,11 +75,103 @@
   };
   // 로컬 연습 페이지가 postMessage 로 넘긴 자막(28-23). id 는 페이지가 고른 자막 파일을 가리키는 열쇠다.
   const practice = { id: '', cues: [] };
+
+  // 사이트 어댑터(28-22): 플레이어 찾기·영상 요소·광고·원래 자막 숨김·진행 막대·영상 id·재생 조작만 사이트별로 모은다.
+  // 유튜브 어댑터는 지금 동작 그대로다. 넷플릭스는 재생 조작을 MAIN 월드(nf-hook.js)에 부탁한다.
+  const YT_ADAPTER = {
+    name: 'youtube',
+    playerEl: () => document.getElementById('movie_player'),
+    videoEl: (player) => player?.querySelector('video.html5-main-video') ?? player?.querySelector('video') ?? null,
+    adShowing: (player) => Boolean(player?.classList.contains('ad-showing')),
+    captionHelp: true,
+    ccButton: (player) => player?.querySelector('.ytp-subtitles-button') ?? null,
+    ccOn: (player) => player?.querySelector('.ytp-subtitles-button')?.getAttribute('aria-pressed') !== 'false',
+    pageCss: 'html[data-readgloss-subs] .html5-video-player .ytp-caption-window-container { display: none !important; }',
+    chromeHeight: (player) => player.querySelector('.ytp-chrome-bottom')?.offsetHeight || 48,
+    progressEl: (player) => player?.querySelector('.ytp-progress-bar') ?? null,
+    yieldKeys: (player) => Boolean(player?.classList.contains('ytp-webgl-spherical') || player?.querySelector('.ytp-webgl-spherical-control')),
+    navEvent: 'yt-navigate-finish',
+    idOf: () => location.pathname === '/watch' ? V.videoIdOf(location.href) : null,
+    playback: (video) => video,
+  };
+  const PRACTICE_ADAPTER = {
+    name: 'practice',
+    playerEl: () => document.getElementById('readgloss-practice-player'),
+    videoEl: (player) => player?.querySelector('video') ?? null,
+    adShowing: () => false,
+    captionHelp: false,
+    ccButton: () => null,
+    ccOn: () => true,
+    pageCss: '',
+    chromeHeight: () => 48,
+    progressEl: () => null,
+    yieldKeys: () => false,
+    navEvent: null,
+    idOf: () => (practice.cues.length ? practice.id : null),
+    playback: (video) => video,
+  };
+  // 넷플릭스 광고 표시 세 가지(28-22): 광고 정보 띠·광고 배지·광고 플레이어.
+  const NF_AD_MARKS = ['[data-uia="ads-info-container"]', '[data-uia="ad-badge"]', '[data-uia="ad-player"]'];
+  // 넷플릭스 재생 조작은 모두 nf-hook.js 로 부탁한다(video.currentTime 을 직접 쓰면 멈춘다).
+  function netflixPlayback(media) {
+    if (!media) return null;
+    const ask = (type, extra = {}) => {
+      try {
+        window.postMessage({ source: NF_SOURCE, type, ...extra }, location.origin);
+      } catch {
+        // 못 보내면 그만
+      }
+    };
+    let lastSeekMs = -1;
+    let lastSeekAt = 0;
+    return {
+      get currentTime() { return media.currentTime; },
+      set currentTime(sec) {
+        const ms = Math.max(0, Math.round(Number(sec) * 1000));
+        if (!Number.isFinite(ms)) return;
+        const now = Date.now();
+        if (ms === lastSeekMs && now - lastSeekAt < 300) return; // 같은 자리로 연달아 부탁하지 않는다
+        lastSeekMs = ms;
+        lastSeekAt = now;
+        ask('seek', { ms });
+      },
+      get paused() { return media.paused; },
+      get readyState() { return media.readyState; },
+      get playbackRate() { return media.playbackRate; },
+      set playbackRate(rate) { try { media.playbackRate = rate; } catch { /* 플레이어가 거절하면 그만 */ } },
+      play() { ask('play'); return Promise.resolve(); },
+      pause() { ask('pause'); },
+    };
+  }
+  const NF_ADAPTER = {
+    name: 'netflix',
+    playerEl: () => document.querySelector('.watch-video') ?? document.querySelector('[data-uia="video-canvas"]') ?? document.querySelector('.NFPlayer') ?? document.querySelector('video')?.parentElement ?? null,
+    videoEl: (player) => player?.querySelector('video') ?? document.querySelector('video') ?? null,
+    adShowing: () => NF_AD_MARKS.some((mark) => document.querySelector(mark)),
+    captionHelp: false, // 넷플릭스는 자막 단추를 대신 눌러 줄 필요가 없다
+    ccButton: () => null,
+    ccOn: () => true,
+    pageCss: 'html[data-readgloss-subs] .player-timedtext { display: none !important; }', // 원래 자막을 우리 층이 보이는 동안 숨긴다
+    chromeHeight: () => 64,
+    progressEl: () => null, // 진행 막대 눈금은 유튜브만(28-10)
+    yieldKeys: () => false,
+    navEvent: null,
+    idOf: () => V.netflixIdOf(location.href),
+    playback: (video) => netflixPlayback(video),
+  };
+  const ADAPTERS = { youtube: YT_ADAPTER, netflix: NF_ADAPTER, practice: PRACTICE_ADAPTER };
+  const SITE = V.adapterFor(location);
+  if (!SITE) return;
+  const site = ADAPTERS[SITE.name] ?? YT_ADAPTER;
+  // 넷플릭스 자막 파일을 한 번만 받는다(같은 주소를 replay 마다 다시 받지 않게).
+  const nfFetched = new Set();
+  const nfFetching = new Set();
   // 잠깐 멈춤(마우스를 올림·사전 카드·풀이): 이유가 하나라도 있으면 멈춰 두고, 우리가 멈춘 것만 다시 재생한다. 사용자가 직접 재생하면 이유를 다 지운다.
   const hold = { reasons: new Set(), paused: false, ours: false };
   const listeners = new Set();
   let player = null;
   let video = null;
+  let media = null; // 실제 <video> 요소. video 는 넷플릭스에서 재생 조작을 nf-hook.js 로 넘기는 파사드다.
   let host = null;
   let ui = null;
   let raf = 0;
@@ -176,6 +269,46 @@
     S.tracks = [...S.tracks.filter((track) => !(track.videoId === id && track.lang === 'en' && !track.tlang)), { videoId: id, lang: 'en', tlang: '', kind: 'manual', cues, ts: Date.now() }].slice(-20);
     checkPage();
   });
+  // 넷플릭스(28-22): nf-hook.js 가 모은 IMSC 자막 주소를 같은 출처에서 받아 parseImsc 로 줄을 만든다.
+  function nfAddTracks(tracks) {
+    if (!Array.isArray(tracks)) return;
+    for (const track of tracks.slice(0, 40)) {
+      const url = typeof track?.url === 'string' ? track.url : '';
+      const lang = String(track?.lang ?? '').toLowerCase().split('-')[0];
+      // 영어·한국어 자막만 받는다(28-22). 다른 언어 XML 은 받지 않는다.
+      if (!url || (lang !== 'en' && lang !== 'ko')) continue;
+      let same = false;
+      try {
+        same = new URL(url, location.href).origin === location.origin;
+      } catch {
+        same = false;
+      }
+      if (!same) continue; // 확장 권한을 늘리지 않는다: 넷플릭스와 같은 출처만 받는다
+      const key = `${lang}|${url}`;
+      if (nfFetched.has(key) || nfFetching.has(key)) continue;
+      nfFetching.add(key);
+      fetch(url)
+        .then((r) => (r.ok ? r.text() : ''))
+        .then((body) => {
+          nfFetching.delete(key);
+          if (!body) return;
+          const cues = V.parseImsc(body);
+          if (!cues.length) return;
+          nfFetched.add(key);
+          const videoId = V.netflixIdOf(location.href);
+          if (!videoId) return;
+          const tr = { videoId, lang, tlang: '', kind: 'manual', cues, ts: Date.now() };
+          S.tracks = [...S.tracks.filter((x) => !(x.videoId === tr.videoId && x.lang === tr.lang && x.tlang === '' && x.kind === 'manual')), tr].slice(-20);
+          if (tr.videoId === S.id) chooseTracks();
+        })
+        .catch(() => { nfFetching.delete(key); });
+    }
+  }
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || site.name !== 'netflix') return;
+    const d = e.data;
+    if (d?.source === NF_SOURCE && d.type === 'tracks') nfAddTracks(d.tracks);
+  });
 
   function chooseTracks() {
     const mine = S.tracks.filter((t) => t.videoId === S.id);
@@ -222,7 +355,7 @@
     const ad = adShowing();
     if (S.ad && !ad) S.waitSince = Date.now(); // 광고가 끝났다: 자막 켜기·안내까지 기다리는 시간은 이제부터 잰다
     S.ad = ad;
-    const id = isPractice() ? (practice.cues.length ? practice.id : null) : location.pathname === '/watch' ? V.videoIdOf(location.href) : null;
+    const id = site.idOf();
     if (id !== S.id) {
       S.id = id;
       S.mainKey = '';
@@ -263,6 +396,7 @@
       chooseTracks();
       if (id) {
         window.postMessage({ source: SOURCE, type: 'replay' }, location.origin); // 늦게 뜬 이 스크립트를 위해 들고 있던 자막을 다시
+        if (site.name === 'netflix') window.postMessage({ source: NF_SOURCE, type: 'replay' }, location.origin);
         askPending(id);
         loadSaved();
       }
@@ -273,8 +407,7 @@
   }
 
   function attach() {
-    // 연습 페이지는 페이지가 내놓은 재생 상자(#readgloss-practice-player)에 자막 층을 붙인다(28-23).
-    const p = isPractice() ? document.getElementById('readgloss-practice-player') : document.getElementById('movie_player');
+    const p = site.playerEl();
     if (p !== player) {
       player = p;
       sizeObs?.disconnect();
@@ -288,10 +421,11 @@
       player.append(host);
       layout();
     }
-    const v = player?.querySelector('video.html5-main-video') ?? player?.querySelector('video') ?? null;
-    if (v !== video) {
-      if (video) unbind(video);
-      video = v;
+    const v = site.videoEl(player);
+    if (v !== media) {
+      if (media) unbind(media);
+      media = v;
+      video = v ? site.playback(v) : null;
       if (v) {
         v.playbackRate = 1; // 플레이어가 바뀌면 1배로(28-3)
         bind(v);
@@ -299,10 +433,10 @@
     }
   }
 
-  const adShowing = () => Boolean(player?.classList.contains('ad-showing'));
-  const ccButton = () => player?.querySelector('.ytp-subtitles-button') ?? null;
+  const adShowing = () => site.adShowing(player);
+  const ccButton = () => site.ccButton(player);
   // 단추가 없거나 aria-pressed 모양이 바뀌었으면 켜진 것으로 본다(27-7)
-  const ccOn = () => ccButton()?.getAttribute('aria-pressed') !== 'false';
+  const ccOn = () => site.ccOn(player);
   function ccAvailable(b = ccButton()) {
     if (!b || b.disabled || b.getAttribute('aria-disabled') === 'true') return false;
     const st = getComputedStyle(b);
@@ -310,7 +444,7 @@
   }
   // 자막 켜기 도움: 영상마다 한 번, 자막이 꺼져 있으면 CC 단추를 누른다(플레이어가 자막을 받아야 우리도 받는다)
   function ensureCaptions() {
-    if (!S.id || !player || !vs().subs || !vs().autoCC || S.ccTried.has(S.id) || S.cues.length || adShowing()) return;
+    if (!site.captionHelp || !S.id || !player || !vs().subs || !vs().autoCC || S.ccTried.has(S.id) || S.cues.length || adShowing()) return;
     if (Date.now() - S.waitSince < 1500) return; // 플레이어가 자리 잡을 때까지
     const b = ccButton();
     if (!b || !ccAvailable(b)) {
@@ -330,11 +464,11 @@
     return '';
   }
 
-  // 유튜브 자막은 우리 층이 보이는 동안만 숨긴다
-  const PAGE_CSS = 'html[data-readgloss-subs] .html5-video-player .ytp-caption-window-container { display: none !important; }';
+  // 원래 자막은 우리 층이 보이는 동안만 사이트별 규칙으로 숨긴다(유튜브 .ytp-caption-window-container · 넷플릭스 .player-timedtext).
+  const PAGE_CSS = site.pageCss;
   let pageSheet = null;
   function ensurePageStyle() {
-    if (pageSheet) return;
+    if (!PAGE_CSS || pageSheet) return;
     if (typeof CSSStyleSheet === 'function' && document.adoptedStyleSheets) {
       try {
         pageSheet = new CSSStyleSheet();
@@ -1315,8 +1449,7 @@
     host.style.setProperty('--fs-ko', `${V.fontPx(height, v.koFontPct)}px`);
     const alpha = typeof v.bgOpacity === 'number' && Number.isFinite(v.bgOpacity) ? Math.min(100, Math.max(0, v.bgOpacity)) / 100 : 0.75;
     host.style.setProperty('--bg', String(alpha));
-    const chrome = player.querySelector('.ytp-chrome-bottom');
-    const chromeH = chrome?.offsetHeight || 48;
+    const chromeH = site.chromeHeight(player);
     const posY = Math.min(0, Math.max(-40, Number(adjust.on ? adjust.posY : v.posY) || 0));
     host.style.bottom = `${chromeH + 14 + Math.round((Math.abs(posY) / 100) * height)}px`;
     if (ui?.bar) {
@@ -1674,7 +1807,7 @@
   }
 
   function progressRect() {
-    const p = player?.querySelector('.ytp-progress-bar') ?? null;
+    const p = site.name === 'youtube' ? (player?.querySelector('.ytp-progress-bar') ?? null) : site.progressEl(player);
     const r = p?.getBoundingClientRect?.() ?? null;
     return r && r.width > 0 && r.height > 0 ? r : null;
   }
@@ -2227,7 +2360,7 @@
 
   // ---- 키(27-2·28-2): 입력칸 밖·고른 글 없음·우리 다른 화면(패널·카드·메모장) 밖 ----
   // 360° 영상은 W·A·S·D 로 둘러본다: 그 플레이어에서는 줄 이동·키보드 저장 모드 키(A·S·D·W)를 유튜브에 양보한다
-  const spherical = () => Boolean(player?.classList.contains('ytp-webgl-spherical') || player?.querySelector('.ytp-webgl-spherical-control'));
+  const spherical = () => site.yieldKeys(player);
   const inOtherScreen = (path) => path.some((n) => typeof n?.localName === 'string' && n.localName.startsWith('readgloss-') && n !== host);
   // 자막 층 shadow 는 closed 라 composedPath 에 안 보이니, 그 안 포커스(말풍선 묻기 입력칸 등)는 root.activeElement 로 본다
   const typingInLayer = () => Sel.isEditableElement(ui?.lines?.getRootNode?.()?.activeElement);
@@ -2313,7 +2446,7 @@
   window.addEventListener('pointerdown', () => { if (shiftDown) shiftDown.interrupted = true; }, true);
   window.addEventListener('blur', () => { if (shiftDown) shiftDown.interrupted = true; }); // 창을 떠나며 Shift 를 놓친 경우
 
-  document.addEventListener('yt-navigate-finish', checkPage);
+  if (site.navEvent) document.addEventListener(site.navEvent, checkPage);
   window.addEventListener('resize', () => layout());
   // 페이지가 스크롤되면 fixed 인 막대·구간 눈금 자리를 플레이어 rect 로 다시 잡는다(프레임당 한 번)
   let scrollRaf = 0;
