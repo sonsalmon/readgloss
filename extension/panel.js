@@ -155,6 +155,23 @@
     return typeof msSinceLeave === 'number' && msSinceLeave >= 350;
   }
 
+  // 순수 함수: 툴바 배지 글자(28-21). 0 이하면 지우고, 100 이상은 자리 때문에 "99+"로 줄인다.
+  function badgeText(n) {
+    const v = Math.floor(Number(n));
+    if (!Number.isFinite(v) || v <= 0) return '';
+    return v >= 100 ? '99+' : String(v);
+  }
+
+  // 순수 함수: 패널 맨 위 오늘의 복습 줄(28-21). counts 는 다리 /words/review 의 { due, done, total }.
+  function reviewLine(counts) {
+    const due = Math.max(0, Math.floor(Number(counts?.due) || 0));
+    if (due === 0) return '오늘 복습 끝';
+    const done = Math.max(0, Math.floor(Number(counts?.done) || 0));
+    const total = Math.max(0, Math.floor(Number(counts?.total) || 0));
+    const percent = total > 0 ? Math.round(Math.min(1, done / total) * 100) : 0;
+    return `오늘의 복습 ${due}장 · 완료 ${percent}%`;
+  }
+
   // 순수 함수: 주석 양 자동 조절 offset 문구(T41b)
   function offsetLabel(offset) {
     const n = typeof offset === 'number' ? offset : Number(offset);
@@ -174,6 +191,7 @@
     cleanSite, addSite, removeSite, resetPatch, clampTop, dragTop, mergePatch, themeAttr, isCardPath, isToastPath,
     isConceptPath, isMemoPath,
     pageTranslateMenu, pageTranslateAction, studyModeText, studyModeToggle, menuShouldClose, offsetLabel, MAX_SITES,
+    badgeText, reviewLine,
   };
 
   if (typeof document === 'undefined' || globalThis.readglossPanelLoaded) return; // node 시험·중복 주입: 여기까지
@@ -230,6 +248,12 @@
     .close { all: unset; box-sizing: border-box; cursor: pointer; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; color: var(--rg-muted); font-size: 16px; }
     .close:hover { background: var(--rg-accent-soft); color: var(--rg-fg); }
     .close:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: -2px; }
+    /* 오늘의 복습 입구(28-21): 모든 탭 위 한 줄. 누르면 [내 단어] 복습으로 간다. */
+    .review-entry { all: unset; box-sizing: border-box; display: block; width: 100%; cursor: pointer; padding: 8px 16px;
+      border-bottom: 1px solid var(--rg-border); background: var(--rg-accent-soft); color: var(--rg-accent-ink);
+      font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .review-entry:hover { filter: brightness(.97); }
+    .review-entry:focus-visible { outline: 2px solid var(--rg-accent); outline-offset: -2px; }
     /* 탭 이름은 한 줄로. 유튜브처럼 탭이 늘면 줄이 접히지 않고 옆으로 넘긴다(T51e) */
     .tabs { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--rg-border); overflow-x: auto; scrollbar-width: none; }
     .tabs::-webkit-scrollbar { display: none; }
@@ -518,8 +542,10 @@
   const closeBtn = h('button', { class: 'close', type: 'button', 'aria-label': '닫기', text: '✕', onclick: () => closePanel() });
   const tablist = h('div', { class: 'tabs', role: 'tablist', 'aria-label': 'readgloss 탭' });
   const body = h('div', { class: 'body' });
+  // 오늘의 복습 입구(28-21): 모든 탭 위 한 줄. 누르면 [내 단어] 탭의 복습으로 간다.
+  const reviewEntry = h('button', { class: 'review-entry', type: 'button', text: '오늘의 복습', 'aria-label': '오늘의 복습, 내 단어 복습 열기', onclick: () => { openPanel('words'); openWordsReview(); } });
   const panel = h('aside', { class: 'panel', role: 'dialog', 'aria-label': 'readgloss 패널' },
-    h('div', { class: 'head' }, h('span', { class: 'title', text: 'readgloss' }), status, closeBtn), tablist, body);
+    h('div', { class: 'head' }, h('span', { class: 'title', text: 'readgloss' }), status, closeBtn), reviewEntry, tablist, body);
 
   root.append(dock, panel);
   const style = h('style');
@@ -647,12 +673,35 @@
     if (isOpen) setStatus(r?.ok ? 'on' : 'off');
   }
 
+  // 오늘의 복습 줄(28-21). 다리가 꺼져 있거나 응답이 없으면 숫자 없이 입구만 남긴다.
+  function applyReviewCounts(counts) {
+    if (!counts || typeof counts !== 'object') {
+      reviewEntry.textContent = '오늘의 복습';
+      reviewEntry.setAttribute('aria-label', '오늘의 복습, 내 단어 복습 열기');
+      return;
+    }
+    const line = C.reviewLine(counts);
+    reviewEntry.textContent = line;
+    reviewEntry.setAttribute('aria-label', `${line}, 내 단어 복습 열기`);
+  }
+  async function refreshReviewEntry() {
+    const r = await send({ type: 'words', op: 'review-queue' });
+    applyReviewCounts(r?.counts ?? null);
+  }
+  // [내 단어] 탭을 고른 뒤 그 안의 [복습] 목록을 누른다. 탭 모듈은 자기 순수 함수만 내보내므로 단추로 고른다.
+  function openWordsReview() {
+    const pane = shadow.getElementById('pane-words');
+    const btn = [...(pane?.querySelectorAll('button.sub') ?? [])].find((b) => b.textContent.trim().startsWith('복습'));
+    btn?.click();
+  }
+
   // 열림·닫힘 알림(28-13): 영상 자막 층(video-subs.js)이 이 알림을 받아 재생을 멈추거나 다시 튼다.
   function announcePanel(open) {
     window.dispatchEvent(new CustomEvent('readgloss:panel', { detail: { open, tab: selected } }));
   }
   function openPanel(id) {
-    if (!isOpen) {
+    const opening = !isOpen;
+    if (opening) {
       prevFocus = document.activeElement && document.activeElement !== host ? document.activeElement : null;
       renderTabs();
       isOpen = true;
@@ -660,6 +709,7 @@
       fab.setAttribute('aria-expanded', 'true');
       fab.setAttribute('aria-label', 'readgloss 패널 닫기');
       refreshStatus();
+      refreshReviewEntry(); // 패널을 열 때마다 오늘의 복습 숫자를 다시 읽는다
     }
     selectTab(id ?? selected);
     announcePanel(true);
@@ -688,12 +738,19 @@
   // 사전 카드가 이 Escape 로 닫혔으면(content.js 가 표시를 남긴다) 패널은 그대로 둔다. 확인 메시지(메모)나 개념 칸·카드, 메모장 안에서 누른 Escape 도 무시한다.
   document.addEventListener('keydown', (e) => e.key === 'Escape' && isOpen && !e.readglossCardClosed && !C.isMemoPath(e.composedPath()) && !C.isConceptPath(e.composedPath()) && !C.isToastPath(e.composedPath()) && closePanel(), true);
   window.addEventListener('readgloss:open-panel', (e) => openPanel(e.detail?.tab));
+  // 단어장이 바뀌면(저장·빼기) 오늘의 복습 장수도 달라질 수 있어 줄을 다시 읽는다(28-21).
+  window.addEventListener('readgloss:words', () => isOpen && refreshReviewEntry());
   // 자막 층의 / 는 열려 있는 패널을 닫으라고 이 알림을 보낸다(28-13).
   window.addEventListener('readgloss:close-panel', () => closePanel());
   try {
     chrome.runtime.onMessage.addListener((msg, sender) => {
-      if (sender.id !== chrome.runtime.id || msg?.type !== 'open-panel') return; // 툴바 아이콘(background.js 가 보낸다)
-      isOpen ? closePanel() : openPanel();
+      if (sender.id !== chrome.runtime.id) return;
+      if (msg?.type === 'open-panel') { // 툴바 아이콘(background.js 가 보낸다)
+        isOpen ? closePanel() : openPanel();
+        return;
+      }
+      // 복습 결과 뒤 background.js 가 다시 읽은 숫자를 그대로 받아 줄을 맞춘다(28-21).
+      if (msg?.type === 'review-counts') applyReviewCounts(msg.counts);
     });
   } catch { /* 확장 밖(시험 페이지) */ }
 

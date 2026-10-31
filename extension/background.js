@@ -1,6 +1,30 @@
 // service worker: content script 의 요청을 다리(127.0.0.1:47831)로 전달한다. 상태는 토큰 하나뿐(chrome.storage.local).
 const BRIDGE = 'http://127.0.0.1:47831';
 
+// 툴바 배지 글자(28-21). 패널의 badgeText 와 같은 규칙: 0 이하면 지우고, 100 이상은 자리 때문에 "99+"로 줄인다.
+function badgeText(n) {
+  const v = Math.floor(Number(n));
+  if (!Number.isFinite(v) || v <= 0) return '';
+  return v >= 100 ? '99+' : String(v);
+}
+
+// 툴바 배지(28-21): 오늘 복습 장수. 0 이면 지우고, 100 이상은 "99+"로 줄인다. 배지를 못 만져도 요청은 그대로 둔다.
+function applyBadge(due) {
+  try {
+    const p = chrome.action?.setBadgeText?.({ text: badgeText(due) });
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch { /* action 이 없거나 막혀도 조용히 */ }
+}
+
+// 오늘 복습 큐를 다시 읽어 배지를 맞춘다. 다리가 꺼져 있으면 지우고 오류를 내지 않는다.
+async function refreshReviewBadge() {
+  try {
+    await words({ op: 'review-queue' });
+  } catch {
+    applyBadge(0);
+  }
+}
+
 class BridgeOff extends Error {}
 
 async function bridgeFetch(path, init) {
@@ -143,20 +167,47 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // --- 내 단어(T7): content script·패널의 'words' 요청을 다리 /words 로 전달한다. op:'get' 은 GET, 나머지는 POST. ---
 async function words(msg, retried = false) {
   const token = await getToken(retried);
-  if (!token) return { error: 'pair-failed' };
+  const isReview = msg?.op === 'review' || msg?.op === 'review-queue'; // 배지(28-21)를 맞출 요청
+  if (!token) {
+    if (isReview) applyBadge(0);
+    return { error: 'pair-failed' };
+  }
   const { op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page, headings, result, clip, base, mode, modes } = msg; // 구·문장(save-phrase·unsave-phrase) 필드는 T14, kind('expression'|'sentence')는 T17, memo 는 T19, headings 는 T33a, review 는 T44, clip(영상 장면 구간)은 T51c, base(구 원형)는 T53l, mode·modes(복습 유형)는 T53m
   const path = op === 'review-queue' ? '/words/review' : '/words';
   const init = op === 'get' || op === 'review-queue' ? { headers: { 'X-Bridge-Token': token } } : { method: 'POST', headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ op, lemma, word, gloss, sentence, url, text, translation, context, title, id, kind, memo, page, headings, result, clip, base, mode, modes }) };
   const res = await bridgeFetch(path, init);
   if (res.status === 401 && !retried) return words(msg, true);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) return { error: data.error || `http-${res.status}` };
+  if (!res.ok) {
+    if (isReview) applyBadge(0);
+    return { error: data.error || `http-${res.status}` };
+  }
+  if (isReview) applyBadge(data?.counts?.due);
   return data;
+}
+
+// 복습 결과 뒤 같은 탭의 패널이 맨 위 줄을 바로 맞추게 숫자를 보낸다(28-21). 패널이 없는 탭은 조용히 넘어간다.
+function sendReviewCounts(sender, counts) {
+  const tabId = sender?.tab?.id;
+  if (tabId == null || !counts) return;
+  try {
+    const p = chrome.tabs.sendMessage(tabId, { type: 'review-counts', counts });
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch { /* content script 가 없는 탭 */ }
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id || msg?.type !== 'words') return;
-  words({ ...msg, page: pageOf(msg, sender) }).then(sendResponse, (e) => sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' }));
+  words({ ...msg, page: pageOf(msg, sender) }).then(
+    (data) => {
+      sendResponse(data);
+      if (msg.op === 'review' && data?.counts) sendReviewCounts(sender, data.counts);
+    },
+    (e) => {
+      if (msg.op === 'review' || msg.op === 'review-queue') applyBadge(0);
+      sendResponse({ error: e instanceof BridgeOff ? 'bridge-off' : 'internal' });
+    },
+  );
   return true; // 비동기 응답
 });
 
@@ -314,6 +365,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // content script 가 없는 페이지(chrome:// 등)에서는 거절되니 삼킨다.
 chrome.action.onClicked.addListener((tab) => {
   if (tab.id != null) chrome.tabs.sendMessage(tab.id, { type: 'open-panel' }).catch(() => {});
+});
+
+// 페이지가 열리면 오늘 복습 장수를 다시 읽어 툴바 배지를 맞춘다(28-21). 다리가 꺼져 있으면 지우고 조용히 끝난다.
+chrome.tabs.onUpdated?.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === 'complete') refreshReviewBadge();
 });
 
 // --- 메모(T29b): content script·패널의 'memos' 요청을 다리 /memos 로 전달한다. op:'get' 은 GET, 나머지는 POST. ---
