@@ -125,9 +125,11 @@
   const expressionButton = (en, saved) =>
     saved ? { text: '★', label: `★ ${en} 단어장에 있음, 누르면 빼기` } : { text: '☆', label: `☆ ${en} 단어장에 추가` };
   // 줄 하나의 단추 -> 다리에 보낼 메시지. src: { sentence: 표현이 나온 원문, url, title }
-  function expressionToggle({ en, ko, id }, { sentence = '', url, title } = {}) {
+  // base(28-15): AI 풀이가 준 표현의 원형. 없으면 en 을 그대로 기본형으로 쓴다(새 AI 호출 없음).
+  function expressionToggle({ en, ko, id, base }, { sentence = '', url, title } = {}) {
     if (id) return { type: 'words', op: 'unsave-phrase', id };
-    const msg = { type: 'words', op: 'save-phrase', text: en, translation: clip(ko, 2000), kind: 'expression' };
+    const b = clip(base || en, 80);
+    const msg = { type: 'words', op: 'save-phrase', text: en, translation: clip(ko, 2000), kind: 'expression', ...(b && { base: b }) };
     if (clip(sentence, MAX_TEXT)) msg.sentence = clip(sentence, MAX_TEXT);
     if (clip(url, 2000)) msg.url = clip(url, 2000);
     if (clip(title, 200)) msg.title = clip(title, 200);

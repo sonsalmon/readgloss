@@ -71,6 +71,8 @@
     if (expr?.stage === 'doing') return `복습 중 · ${Number(expr.box) || 1}상자`;
     return '복습 전';
   };
+  // base(28-15)로 묶기: panel-words 의 순수 함수를 쓴다(먼저 로드된다). 없으면(시험에서 단독 로드) 그대로 둔다.
+  const groupExpressions = (rows) => (typeof globalThis.readglossWords?.groupByBase === 'function' ? globalThis.readglossWords.groupByBase(rows) : rows);
   // 이 영상 주소(같은 v)로 저장한 낱말·구. 저장한 문장 줄은 나의 표현이 아니므로 뺀다.
   // 구의 기본형은 저장할 때 남긴 base(28-15), 없으면 그 장면 원문이다.
   function videoExpressions(library, id) {
@@ -92,12 +94,13 @@
       const review = isObj(item.review) ? item.review : null;
       out.push({
         type: 'phrase', key: pid, title: String(item.base || item.text || ''), text: String(item.text || ''),
-        gloss: String(item.translation || ''), stage: stageOf(review), box: Number(review?.box) || 0, url: item.url,
+        base: String(item.base || ''), gloss: String(item.translation || ''), stage: stageOf(review), box: Number(review?.box) || 0, url: item.url,
       });
     }
-    return out.sort((a, b) => a.title.localeCompare(b.title));
+    return groupExpressions(out).sort((a, b) => a.title.localeCompare(b.title));
   }
   // 그 표현이 들은 이 영상 줄 번호들. 낱말은 저장 단어의 흔한 활용형까지(saved-marks-core), 구는 글자 무시 대조.
+  // base 로 묶인 구는 같은 기본형의 다른 장면 원문도 함께 찾는다(28-15).
   function expressionLines(cues, expr) {
     const list = Array.isArray(cues) ? cues : [];
     const out = [];
@@ -109,10 +112,13 @@
       });
       return out;
     }
-    const text = String(expr?.text || expr?.title || '');
-    if (!text) return out;
+    const texts = [expr?.text, expr?.title, ...(Array.isArray(expr?.scenes) ? expr.scenes.flatMap((s) => [s?.text, s?.title]) : [])]
+      .map((s) => String(s || ''))
+      .filter(Boolean);
+    if (!texts.length) return out;
+    const spans = texts.map((text) => ({ text }));
     list.forEach((c, i) => {
-      if (V.phraseSpans(V.tokenize(c?.text), [{ text }]).length) out.push(i);
+      if (V.phraseSpans(V.tokenize(c?.text), spans).length) out.push(i);
     });
     return out;
   }
@@ -687,7 +693,7 @@
       head.append(
         el('span', 'v-extitle', x.title),
         el('span', 'v-exgloss', x.gloss || '뜻 없음'),
-        el('span', 'v-exmeta', `${x.type === 'word' ? '낱말' : '구'} · ${stageText(x)}`),
+        el('span', 'v-exmeta', `${x.type === 'word' ? '낱말' : '구'} · ${stageText(x)}${x.scenes?.length ? ` · 장면 ${x.scenes.length + 1}` : ''}`),
       );
       li.append(head);
       if (open) {

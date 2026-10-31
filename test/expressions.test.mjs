@@ -40,7 +40,7 @@ test('expressionButton: ☆/★ 과 aria-label(보이는 글자 포함)', () => 
 test('expressionToggle: 안 담았으면 save-phrase(kind expression·sentence), 담았으면 unsave-phrase', () => {
   const src = { sentence: 'Let us delve into the topic.', url: 'https://x.test/a', title: 'T' };
   assert.deepEqual(S.expressionToggle({ en: 'delve into', ko: '탐구하다', id: null }, src), {
-    type: 'words', op: 'save-phrase', text: 'delve into', translation: '탐구하다', kind: 'expression', sentence: 'Let us delve into the topic.', url: 'https://x.test/a', title: 'T',
+    type: 'words', op: 'save-phrase', text: 'delve into', translation: '탐구하다', kind: 'expression', base: 'delve into', sentence: 'Let us delve into the topic.', url: 'https://x.test/a', title: 'T',
   });
   assert.deepEqual(S.expressionToggle({ en: 'delve into', ko: '탐구하다', id: 'abc123abc123' }, src), { type: 'words', op: 'unsave-phrase', id: 'abc123abc123' });
   const long = S.expressionToggle({ en: 'delve into', ko: 'k', id: null }, { sentence: `${'s '.repeat(800)}`, url: '', title: '' });

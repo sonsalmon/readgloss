@@ -14,6 +14,7 @@ const MAX_SENTENCE = 1000;
 const MAX_URL = 2000;
 const OPS = ['known', 'unknown', 'save', 'unsave', 'history'];
 const PHRASE = { text: 1000, translation: 2000, ctxTranslation: 2000, note: 400, url: 2000, title: 200, sentence: MAX_SENTENCE };
+export const BASE_MAX = 80; // 구 기본형(28-15) 상한
 const KINDS = ['expression', 'sentence']; // 구·문장 항목의 종류. expression = 문장·문단에서 뽑은 기억할 표현, 기본은 sentence
 
 const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : null);
@@ -51,6 +52,13 @@ export function parseClip(v) {
   return { start: s / 100, end: e / 100 };
 }
 
+// 구 기본형(28-15, 선택): 없거나 null 이면 undefined, 공백을 정리한 1~80자 문자열이면 그것, 그 밖(타입·길이)은 버린다.
+export function parseBase(v) {
+  if (typeof v !== 'string') return undefined;
+  const base = normalizeText(v);
+  return base && base.length <= BASE_MAX ? base : undefined;
+}
+
 // save-phrase / unsave-phrase 요청 -> 정규화한 요청 | null
 function parsePhraseOp(v) {
   if (v.op === 'unsave-phrase') return typeof v.id === 'string' && PHRASE_ID.test(v.id) ? { op: 'unsave-phrase', id: v.id } : null;
@@ -62,6 +70,7 @@ function parsePhraseOp(v) {
   const kind = v.kind ?? 'sentence';
   const headings = parseHeadings(v.headings);
   const clip = parseClip(v.clip);
+  const base = parseBase(v.base);
   if (!text || text.length > PHRASE.text || translation === null || url === null || title === null || sentence === null || headings === null || clip === null || !KINDS.includes(kind) || (url && !/^https?:\/\//i.test(url))) return null;
   let context;
   if (v.context !== undefined && v.context !== null) {
@@ -72,7 +81,7 @@ function parsePhraseOp(v) {
     if (ct === null || note === null) return null;
     context = { translation: ct, ...(note && { note }), ...(c.wide && { wide: true }) };
   }
-  return { op: 'save-phrase', text, translation, ...(context && { context }), url, title, kind, sentence, ...(headings !== undefined && { headings }), ...(clip && { clip }) };
+  return { op: 'save-phrase', text, translation, ...(context && { context }), url, title, kind, sentence, ...(headings !== undefined && { headings }), ...(clip && { clip }), ...(base && { base }) };
 }
 
 // memo: {op:'memo', lemma, memo} 또는 {op:'memo', id, memo} 중 정확히 하나. memo 는 0~1000자('' 이면 지움).
@@ -188,6 +197,7 @@ export function createWords({ file, db, now = Date.now }) {
           ...(v.url && { url: str(v.url, PHRASE.url) }),
           ...(v.title && { title: str(v.title, PHRASE.title) }),
           ...(parseClip(v.clip) && { clip: parseClip(v.clip) }),
+          ...(parseBase(v.base) && { base: parseBase(v.base) }),
           ...(Array.isArray(v.headings) && { headings: v.headings.slice(0, 3) }),
           ...withMemo(memoOf(v)),
           ...(rev && { review: rev }),
@@ -229,6 +239,7 @@ export function createWords({ file, db, now = Date.now }) {
           ...(v.url && { url: str(v.url, PHRASE.url) }),
           ...(v.title && { title: str(v.title, PHRASE.title) }),
           ...(parseClip(v.clip) && { clip: parseClip(v.clip) }),
+          ...(parseBase(v.base) && { base: parseBase(v.base) }),
           ...(Array.isArray(v.headings) && { headings: v.headings.slice(0, 3) }),
           ...withMemo(memoOf(v)),
           ...(rev && { review: rev }),
@@ -412,7 +423,7 @@ export function createWords({ file, db, now = Date.now }) {
     reviewQueue,
     // parseWordsOp 를 통과한 요청만 받는다. 바뀐 전체 상태를 돌려준다. memo/review 대상이 없으면 null(404).
     // ponytail: 메모리를 먼저 바꾸고 쓴다. 디스크 쓰기가 실패하면 이 실행 동안만 메모리와 파일이 어긋난다(파일 자체는 rename 으로 안 깨진다).
-    apply({ op, lemma, word, gloss, sentence, url, id, text, translation, context, title, kind, memo, headings, result, clip }) {
+    apply({ op, lemma, word, gloss, sentence, url, id, text, translation, context, title, kind, memo, headings, result, clip, base }) {
       if (op === 'review') {
         const target = lemma !== undefined ? saved : phrases;
         const key = lemma !== undefined ? lemma : id;
@@ -458,10 +469,11 @@ export function createWords({ file, db, now = Date.now }) {
         if (op === 'save-phrase') {
           const prev = phrases.get(key);
           const effectiveHeadings = headings !== undefined ? headings : prev?.headings;
+          const effectiveBase = base !== undefined ? base : prev?.base; // 새 요청에 없으면 옛 기본형을 남긴다
           const ts = now(); // 시계는 한 번만 읽는다(저장 시각과 복습 시작일이 어긋나지 않게)
           const review = prev?.review ?? initialReview(dateOf(ts));
           // 다시 저장해도 메모와 복습 상태는 남긴다. clip(장면 구간)은 주소와 함께 다녀서 새 요청 것만 쓴다(27-3).
-          phrases.set(key, { text, translation, kind, ...(sentence && { sentence }), ...(context && { context }), ...(url && { url }), ...(title && { title }), ...(clip && { clip }), ...(effectiveHeadings && { headings: effectiveHeadings }), ...withMemo(prev?.memo), review, ts });
+          phrases.set(key, { text, translation, kind, ...(sentence && { sentence }), ...(context && { context }), ...(url && { url }), ...(title && { title }), ...(clip && { clip }), ...(effectiveHeadings && { headings: effectiveHeadings }), ...(effectiveBase && { base: effectiveBase }), ...withMemo(prev?.memo), review, ts });
         } else {
           phrases.delete(key);
         }

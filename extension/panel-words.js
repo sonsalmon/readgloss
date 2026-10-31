@@ -114,19 +114,45 @@
     return c ? { title: p.context.wide ? '넓은 문맥 번역' : '문맥 번역', text: c } : { title: '', text: p?.translation ?? '' };
   }
 
+  // 구 기본형(base, 28-15)으로 묶기: 같은 base(대소문자·앞뒤 공백 무시)의 줄은 첫 줄 아래 scenes 로 모은다.
+  // base 가 없는 줄(옛 항목·문장)은 그대로 둔다. rows 순서는 첫 줄이 나온 자리를 지킨다.
+  function groupByBase(rows) {
+    const out = [];
+    const groups = new Map();
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const base = String(row?.base ?? '').replace(/\s+/g, ' ').trim();
+      if (!base) {
+        out.push(row);
+        continue;
+      }
+      const key = base.toLowerCase();
+      const hit = groups.get(key);
+      if (hit) {
+        hit.scenes.push(row);
+        continue;
+      }
+      const group = { ...row, base, scenes: [] };
+      groups.set(key, group);
+      out.push(group);
+    }
+    return out;
+  }
+
   // 구·문장: 최근 저장순. 검색은 원문·맥 번역·문맥 번역·출처 문장 어디든 포함 일치(대소문자 무시). filter: all·expression·sentence.
+  // base 가 있으면 기본형으로 묶고, 같은 base 의 다른 장면은 scenes 로 넘긴다(28-15).
   function phraseRows(phrases, query = '', filter = 'all') {
     const q = norm(query).trim();
-    return Object.entries(phrases ?? {})
+    const rows = Object.entries(phrases ?? {})
       .map(([id, p]) => ({ id, ...p }))
       .sort((a, b) => b.ts - a.ts)
       .filter((p) => (filter === 'expression' || filter === 'sentence' ? kindOf(p) === filter : true))
-      .filter((p) => !q || [p.text, p.translation, p.context?.translation, p.context?.note, p.sentence].some((f) => norm(f).includes(q)))
+      .filter((p) => !q || [p.text, p.translation, p.context?.translation, p.context?.note, p.sentence, p.base].some((f) => norm(f).includes(q)))
       .map((p) => ({
         id: p.id, text: p.text, preview: clip(p.text, 300), translation: p.translation ?? '', context: p.context ?? null,
         kind: kindOf(p), sentence: p.sentence ?? '', primary: phrasePrimary(p), sourceTitle: p.title ?? '', memo: p.memo ?? '',
-        title: p.title || hostOf(p.url ?? ''), href: safeHref(p.url ?? ''), ts: p.ts,
+        title: p.title || hostOf(p.url ?? ''), href: safeHref(p.url ?? ''), ts: p.ts, base: p.base ?? '',
       }));
+    return groupByBase(rows);
   }
 
   // ---- 저장된 문장에서 낱말 더블클릭 -> 원래 사이트에서처럼 사전 카드(window 'readgloss:lookup') ----
@@ -279,7 +305,7 @@
 
   globalThis.readglossWords = {
     LISTS, SUBS, formatDate, counts, countsAll, actionsFor, rowsFor, buttonModel, eventDetail, wordEventDetail, messageFor,
-    clip, PHRASE_FILTERS, phraseCounts, phrasePrimary, phraseRows, pickWord, lookupDetail, mydictRows, checkMydict, mydictMessage, mydictEventDetail, unsavePhraseMessage, memoMessage,
+    clip, PHRASE_FILTERS, phraseCounts, phrasePrimary, phraseRows, groupByBase, pickWord, lookupDetail, mydictRows, checkMydict, mydictMessage, mydictEventDetail, unsavePhraseMessage, memoMessage,
     memoKey, memoOk, memoErrorText,
     maskWord, nextCardState,
     REVIEW_MODES, quizChoices, listenText, pickVoice, speak,
@@ -332,6 +358,10 @@
     .rgw .pexp { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
     .rgw .badge { flex: none; padding: 0 7px; border-radius: 999px; background: var(--w-soft); color: var(--w-ink); font-size: 11.5px; font-weight: 700; }
     .rgw .psent { margin-top: 2px; color: var(--w-muted); font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+    .rgw .pbase { margin-bottom: 3px; color: var(--w-accent); font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+    .rgw .pscenes { margin: 6px 0 0 10px; border-left: 2px solid var(--w-border); padding-left: 8px; }
+    .rgw .pscenes .pscene { padding: 6px 0; border-top: 0; }
+    .rgw .pscenes .ptext { font-weight: 400; font-size: 13px; }
     .rgw .kinds { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
     .rgw .chip { min-height: 24px; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--w-border); background: none; font-size: 12.5px; }
     .rgw .chip[aria-pressed="true"] { background: var(--w-soft); border-color: var(--w-accent); color: var(--w-ink); font-weight: 600; }
@@ -441,6 +471,7 @@
     let memoErr = '';
     let focusMemo = false;
     let confirming = null; // 한 번 더 눌러야 지워지는 key
+    let expandedBase = new Set(); // 기본형으로 묶인 구에서 펼친 줄(28-15)
     let formErr = { where: '', text: '' };
     let selfEvent = false;
     let selfWords = false;
@@ -771,6 +802,7 @@
     function phraseRow(p) {
       const li = el('li');
       const src = { url: p.href, title: p.sourceTitle };
+      if (p.base) li.append(el('div', 'pbase', `기본형 · ${p.base}`));
       if (p.kind === 'expression') {
         const top = el('div', 'pexp');
         top.append(el('span', 'badge', '표현'), el('span', 'ptext', p.preview), el('span', 'ptrans', `— ${p.primary.text}`));
@@ -787,6 +819,37 @@
         if (p.primary.title) li.append(el('div', 'plabel', p.primary.title));
         if (p.primary.text) li.append(el('div', 'ptrans', p.primary.text));
         if (p.context?.note) li.append(el('div', 'exp', p.context.note));
+      }
+      // 같은 기본형의 다른 장면(28-15): 한 줄 아래 펼침. 각 줄은 그 장면 원문·날짜·출처·빼기.
+      if (p.scenes?.length) {
+        const key = p.base.toLowerCase();
+        const open = expandedBase.has(key);
+        li.append(btn(open ? `다른 장면 ${p.scenes.length}개 접기` : `다른 장면 ${p.scenes.length}개 펼치기`, () => {
+          if (open) expandedBase.delete(key);
+          else expandedBase.add(key);
+          draw();
+        }, 'act', `${p.base} 의 다른 장면 ${p.scenes.length}개 ${open ? '접기' : '펼치기'}`));
+        if (open) {
+          const ul = el('ul', 'pscenes');
+          for (const s of p.scenes) {
+            const scene = el('li', 'pscene');
+            scene.append(el('span', 'ptext', s.preview ?? s.text));
+            const smeta = el('div', 'meta');
+            smeta.append(el('span', 'date', W.formatDate(s.ts)));
+            if (s.href) {
+              const a = el('a', 'src', s.title || s.href);
+              a.href = s.href;
+              a.target = '_blank';
+              a.rel = 'noopener';
+              a.title = s.href;
+              smeta.append(a);
+            }
+            smeta.append(btn('빼기', () => removePhrase(s), 'act', `${String(s.preview ?? s.text).slice(0, 30)} 단어장에서 빼기`));
+            scene.append(smeta);
+            ul.append(scene);
+          }
+          li.append(ul);
+        }
       }
       const editingMemo = memoEdit?.kind === 'phrase' && memoEdit.key === p.id;
       if (editingMemo) li.append(memoForm('phrase', p.id));
