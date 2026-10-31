@@ -65,3 +65,11 @@ test('다리 GET /practice: 토큰 없이 200 HTML, 다른 경로는 여전히 4
     await s.close();
   }
 });
+
+test('연습 페이지 소스: Space·K 로 재생·멈춤, 예제 단추는 누른 뒤 포커스를 놓는다', async () => {
+  const { readFileSync } = await import('node:fs');
+  const html = readFileSync(new URL('../bridge/practice.html', import.meta.url), 'utf8');
+  assert.match(html, /e\.code !== 'Space' && e\.key !== 'k'/);
+  assert.match(html, /exampleButton\.blur\(\)/);
+  assert.match(html, /closest\('button, input, textarea, select, \[contenteditable\]'\)/);
+});

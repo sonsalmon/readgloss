@@ -312,6 +312,7 @@
     const audio = file.type ? file.type.startsWith('audio/') : /\.(mp3|m4a|aac|wav|ogg|oga|flac|opus)$/i.test(file.name);
     useSource(URL.createObjectURL(file), folderName(file), audio);
     video.play().catch(() => {});
+    mediaInput.blur();
   });
 
   subInput.addEventListener('change', async () => {
@@ -338,13 +339,23 @@
     useSource(exampleUrl, '예제 대사', true);
     postCues(EXAMPLE_CUES, 'practice-example');
     video.play().catch(() => {});
-    setStatus('예제 대사 10줄을 보여 줘요. 키 A·S·D·R·Q·Z·Shift 를 눌러 보세요.');
+    setStatus('예제 대사 10줄을 보여 줘요. 키 A·S·D·R·Q·Z·Shift 를 눌러 보세요. Space 는 재생·멈춤.');
+    exampleButton.blur(); // 포커스가 남으면 Space 가 예제를 처음부터 다시 연다
   });
 
-  playButton.addEventListener('click', () => {
+  function togglePlay() {
     if (!mediaUrl) return;
     if (video.paused) video.play().catch(() => {});
     else video.pause();
+  }
+  playButton.addEventListener('click', togglePlay);
+  // Space·K = 재생·멈춤(유튜브처럼). 단추·입력칸에 포커스가 있으면 그쪽 몫으로 둔다.
+  document.addEventListener('keydown', (e) => {
+    if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+    if (e.code !== 'Space' && e.key !== 'k' && e.key !== 'K') return;
+    if (e.target instanceof Element && e.target.closest('button, input, textarea, select, [contenteditable]')) return;
+    e.preventDefault();
+    togglePlay();
   });
   seek.addEventListener('input', () => {
     const duration = Number(video.duration);
