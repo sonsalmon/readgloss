@@ -13,6 +13,9 @@
   const MSG_MS = 8000; // 안내가 떠 있는 시간
   const ERR_PAUSE_MS = 15000; // 번역·주석이 다리 문제로 실패하면 이만큼 쉬었다 다시
   const MAX_ASKED = 20000; // 물어본 낱말 기억 상한(넘으면 비운다)
+  const TIP_HOVER_MS = 250; // 마우스를 올린 뒤 말풍선이 뜨기까지(28-6)
+  const TIP_CLOSE_MS = 200; // 낱말·말풍선을 떠난 뒤 닫히기까지(28-6)
+  const MAX_DICT_MEMO = 500; // 한 영상에서 뜻을 기억해 둘 낱말 수
   const ERR = {
     'bridge-off': '다리가 꺼져 있어요', 'mt-unavailable': '맥 번역 도우미가 없어요(npm run build:mt)', 'mt-failed': '맥 번역이 실패했어요',
     'ext-reloaded': '확장이 새로 로드됐어요. 이 페이지를 새로고침해 주세요', 'pair-failed': '다리와 연결하지 못했어요(인증)', unauthorized: '다리와 연결하지 못했어요(인증)',
@@ -28,6 +31,7 @@
     cues: [], ko: [], koFail: new Set(), cur: -1, past: false, revealed: -1, pausedFor: -1, clip: null,
     prevT: 0, range: null, mem: { repeatedFor: -1, gapTo: -1 },
     hard: new Map(), asked: new Set(), annotBusy: false, annotErrAt: 0, hardVer: 0,
+    dictMemo: new Map(), // 낱말별 사전 응답(28-6): 영상이 바뀌면 지운다
     koBusy: false, koAll: false, koErr: '', koErrAt: 0,
     savedForms: new Map(), phrases: {}, savedVer: 0, saving: false,
     note: null, waitSince: Date.now(), ccTried: new Set(), msg: '', msgAt: 0, ad: false, shown: false,
@@ -41,6 +45,10 @@
   let ui = null;
   let raf = 0;
   let sizeObs = null;
+  // 말풍선 상태(28-6): 어느 낱말(tip.k)에 붙어 있는지, 그 줄 번호, 마우스를 떠난 뒤 닫는 타이머
+  const tip = { open: false, k: -1, i: -1, el: null, lower: '', word: '' };
+  let tipOpenTimer = 0;
+  let tipCloseTimer = 0;
 
   function apply(s) {
     if (s.level !== settings.level) {
@@ -152,6 +160,8 @@
       S.koAll = false;
       S.waitSince = Date.now();
       S.msg = '';
+      S.dictMemo = new Map(); // 영상이 바뀌면 낱말별 사전 기억을 지운다(28-6)
+      closeTip();
       hold.reasons.clear();
       hold.paused = false;
       chooseTracks();
@@ -399,6 +409,15 @@
       padding: 1px 6px; border-radius: 4px; background: rgba(20, 20, 20, .94); color: #ffe08a; font-size: max(12px, .52em); line-height: 1.5; }
     .w.hard:hover .g, .lines:focus .w.hard.cur .g { display: block; }
     .w.hid .g { display: none !important; }
+    /* 말풍선(28-6): 낱말 위에 원형·뜻·저장·자세히. 어두운 바탕 + 흰 글자로 밝은 영상에서도 4.5:1 이상, 단추는 키보드로도 닿는다 */
+    .tip { position: fixed; z-index: 2; pointer-events: auto; box-sizing: border-box; max-width: min(320px, 84vw); padding: 8px 10px; border-radius: 8px; text-align: left;
+      background: rgba(8, 8, 8, .97); border: 1px solid rgba(255, 255, 255, .55); color: #fff; box-shadow: 0 2px 12px rgba(0, 0, 0, .55);
+      font: max(12px, calc(var(--fs, 22px) * .54))/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+    .tip .tp-lemma { font-size: max(14px, calc(var(--fs, 22px) * .64)); font-weight: 700; color: #fff; overflow-wrap: anywhere; }
+    .tip .tp-gloss { margin-top: 2px; color: #f1f1f1; overflow-wrap: anywhere; }
+    .tip .tp-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+    .tip .tp-actions button { min-height: 28px; }
+    .box.tip-open .w .g { display: none !important; } /* 말풍선이 뜨면 옛 짧은 뜻 풍선은 겹치지 않게 숨긴다 */
     /* 막대: 숨어 있을 때는 visibility 라 마우스를 받지 않는다. 아래 여백은 뜻 풍선 자리(풍선이 단추를 가리지 않게)이고 막대의 일부라 두 줄과 틈이 없다 */
     .bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 4px 0 max(22px, calc(var(--fs, 22px) * .85)); visibility: hidden; opacity: 0; transition: opacity .15s, visibility .15s; }
     .box:hover .bar, .box:focus-within .bar { visibility: visible; opacity: 1; }
@@ -528,15 +547,38 @@
     msg.setAttribute('role', 'status');
     const sr = el('div', 'sr'); // 키보드 낱말 자리를 읽어 주는 곳(화면에는 안 보인다)
     sr.setAttribute('aria-live', 'polite');
+    // 낱말 말풍선(28-6): 자막 층 shadow 안에 그린다. 낱말 위(자리가 모자라면 아래)에 붙고 단추는 키보드로도 닿는다.
+    const tipEl = el('div', 'tip');
+    tipEl.hidden = true;
+    tipEl.setAttribute('role', 'group');
+    tipEl.setAttribute('aria-label', '낱말 뜻과 저장');
     box.prepend(notice);
     box.append(lines, bar, note, msg);
+    box.append(tipEl); // 말풍선은 position: fixed 라 흐름에 끼지 않는다
     shadow.append(style, box, sr);
-    ui = { box, bar, note, notice, lines, en, ko, msg, sr, prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, slowBtn, koBtn, saveBtn, explainBtn, lineKey: '', noteKey: '', tokens: [], wcur: -1, wcurFor: '' };
+    ui = { box, bar, note, notice, lines, en, ko, msg, sr, tip: tipEl, prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, slowBtn, koBtn, saveBtn, explainBtn, lineKey: '', noteKey: '', tokens: [], wcur: -1, wcurFor: '' };
 
     en.addEventListener('click', (e) => {
       const sp = e.target?.closest?.('.w');
       if (sp) pickWord(sp);
     });
+    // 마우스를 낱말에 0.25초 올리면 말풍선(28-6). 낱말과 말풍선 사이를 오가는 동안에는 닫지 않는다.
+    en.addEventListener('pointerover', (e) => {
+      if (e.pointerType === 'touch') return;
+      const sp = e.target?.closest?.('.w');
+      if (sp) armTip(sp);
+    });
+    en.addEventListener('pointerout', (e) => {
+      const sp = e.target?.closest?.('.w');
+      if (!sp) return;
+      if (e.relatedTarget && sp.contains(e.relatedTarget)) return; // 낱말 안(옛 뜻 풍선)으로 옮겼다
+      clearTimeout(tipOpenTimer);
+      if (tip.open) scheduleTipClose();
+    });
+    tipEl.addEventListener('pointerenter', cancelTipClose);
+    tipEl.addEventListener('pointerleave', () => { if (tip.open) scheduleTipClose(); });
+    tipEl.addEventListener('focusin', cancelTipClose);
+    tipEl.addEventListener('focusout', (e) => { if (tip.open && !tipEl.contains(e.relatedTarget)) scheduleTipClose(); });
     // 두 줄에 포커스가 있을 때: ←·→ 낱말 자리, Enter 그 낱말 사전(가린 낱말이면 그 줄 보이기), Esc 나가기.
     // 화살표는 유튜브의 5초 이동으로 새지 않게 여기서 멈춘다(포커스가 우리 층 밖이면 건드리지 않는다).
     lines.addEventListener('keydown', (e) => {
@@ -564,6 +606,7 @@
       holdOff('keys');
       ui.wcur = -1;
       ui.en.querySelector('.w.cur')?.classList.remove('cur');
+      closeTip();
     });
     // Esc: 층 안 포커스를 놓아 키보드를 유튜브로 돌려준다(같은 Esc 로 사전 카드를 닫았으면 그대로 둔다)
     box.addEventListener('keydown', (e) => {
@@ -573,8 +616,157 @@
     box.addEventListener('mouseleave', () => holdOff('hover'));
   }
 
+  // ---- 말풍선(28-6) ----
+  const dictPending = new Set(); // 사전에 묻는 중인 낱말(같은 낱말을 두 번 묻지 않는다)
+  function cancelTipClose() {
+    clearTimeout(tipCloseTimer);
+    tipCloseTimer = 0;
+  }
+  function scheduleTipClose() {
+    clearTimeout(tipCloseTimer);
+    tipCloseTimer = setTimeout(() => {
+      tipCloseTimer = 0;
+      if (ui?.tip?.matches?.(':focus-within')) return; // 말풍선 단추에 키보드 포커스가 있으면 둔다
+      closeTip();
+    }, TIP_CLOSE_MS);
+  }
+  function closeTip() {
+    clearTimeout(tipOpenTimer);
+    tipOpenTimer = 0;
+    cancelTipClose();
+    tip.open = false;
+    tip.k = -1;
+    tip.i = -1;
+    tip.el = null;
+    tip.lower = '';
+    tip.word = '';
+    if (!ui?.tip) return;
+    ui.tip.hidden = true;
+    ui.tip.replaceChildren();
+    ui.box.classList.remove('tip-open');
+  }
+  function armTip(sp) {
+    if (!ui || !sp?.isConnected || sp.classList.contains('hid')) return;
+    const k = Number(sp.dataset.k);
+    if (!Number.isInteger(k) || !ui.tokens[k]?.w) return;
+    cancelTipClose();
+    if (tip.open && tip.k === k && tip.i === S.cur) return;
+    clearTimeout(tipOpenTimer);
+    tipOpenTimer = setTimeout(() => {
+      tipOpenTimer = 0;
+      showTip(sp);
+    }, TIP_HOVER_MS);
+  }
+  function showTip(sp) {
+    if (!ui?.tip || !sp?.isConnected || sp.classList.contains('hid')) return;
+    const k = Number(sp.dataset.k);
+    const tk = ui.tokens[k];
+    if (!tk?.w) return;
+    tip.open = true;
+    tip.k = k;
+    tip.i = S.cur;
+    tip.el = sp;
+    tip.lower = tk.lower;
+    tip.word = tk.t;
+    ui.box.classList.add('tip-open');
+    paintTip();
+  }
+  function paintTip() {
+    if (!tip.open || !ui?.tip) return;
+    const hard = S.hard.get(tip.lower);
+    const dict = S.dictMemo.get(tip.lower);
+    const m = V.tooltipModel({ word: tip.word, hard, dict, saved: S.savedForms.has(tip.lower) });
+    const kids = [];
+    if (m.state === 'found') {
+      kids.push(el('div', 'tp-lemma', m.lemma), el('div', 'tp-gloss', m.gloss));
+    } else if (typeof dict?.error === 'string') {
+      kids.push(el('div', 'tp-gloss', errText(dict, '뜻을 가져오지 못했어요')));
+    } else if (!dict && !hard) {
+      kids.push(el('div', 'tp-gloss', '찾는 중…'));
+    } else {
+      kids.push(el('div', 'tp-gloss', '사전에 없어요'));
+    }
+    const acts = el('div', 'tp-actions');
+    if (m.state === 'found') {
+      const saveButton = button(m.saved ? '★ 저장됨' : '☆ 저장', m.saved ? '★ 저장됨, 누르면 단어장에서 빼기' : '☆ 저장, 단어장에 추가', () => toggleTipSave(m, saveButton));
+      acts.append(saveButton);
+    }
+    acts.append(button('자세히', '자세히 — 사전 카드 열기', openTipDetail));
+    kids.push(acts);
+    ui.tip.hidden = false;
+    ui.tip.replaceChildren(...kids);
+    placeTip();
+    if (!hard && !dict) askTipDict(tip.lower, tip.word);
+  }
+  // 낱말 위에 붙인다. 위가 모자라면(플레이어 위 끝) 낱말 아래에 둔다.
+  function placeTip() {
+    if (!tip.open || !ui?.tip || !tip.el?.isConnected) return;
+    const r = tip.el.getBoundingClientRect();
+    const t = ui.tip.getBoundingClientRect();
+    const pad = 8;
+    const left = Math.max(pad, Math.min(innerWidth - t.width - pad, r.left + r.width / 2 - t.width / 2));
+    let top = r.top - t.height - 6;
+    if (top < pad) top = Math.min(innerHeight - t.height - pad, r.bottom + 6);
+    ui.tip.style.left = `${Math.round(left)}px`;
+    ui.tip.style.top = `${Math.round(top)}px`;
+  }
+  async function askTipDict(lower, word) {
+    if (dictPending.has(lower)) return;
+    dictPending.add(lower);
+    const id = S.id;
+    const r = await send({ type: 'dict', word });
+    dictPending.delete(lower);
+    if (id !== S.id) return; // 그 사이 영상이 바뀌었다
+    S.dictMemo.set(lower, r && typeof r === 'object' ? (r.error ? { found: false, error: r.error } : r) : { found: false, error: '응답 없음' });
+    if (S.dictMemo.size > MAX_DICT_MEMO) S.dictMemo.delete(S.dictMemo.keys().next().value);
+    if (tip.open && tip.lower === lower) paintTip();
+  }
+  // 저장 칠하기를 바로 갱신한다(loadSaved 를 다시 부르지 않고 그 낱말의 활용형만).
+  function setTipSaved(lower, lemma, on) {
+    if (on) {
+      const forms = globalThis.readglossSavedMarksCore?.buildFormSet?.([lemma]) ?? new Map();
+      for (const [form, l] of forms) S.savedForms.set(form, l);
+      S.savedForms.set(lower, S.savedForms.get(lower) ?? lower);
+    } else {
+      const target = String(S.savedForms.get(lower) || lemma || lower).toLowerCase();
+      for (const [form, l] of [...S.savedForms]) if (l === target || form === lower) S.savedForms.delete(form);
+    }
+    S.savedVer++;
+  }
+  async function toggleTipSave(m, btn) {
+    const cue = S.cues[tip.i];
+    if (!cue) return;
+    const lower = tip.lower;
+    const word = tip.word;
+    const saved = S.savedForms.has(lower);
+    const lemma = saved ? S.savedForms.get(lower) || m.lemma : m.lemma || lower;
+    // 지금 카드 저장과 같은 메시지(27-2·28-6): 문장 = 이 줄, 주소 = 이 줄 장면
+    const msg = saved
+      ? { type: 'words', op: 'unsave', lemma }
+      : { type: 'words', op: 'save', lemma, word, gloss: m.gloss, sentence: cue.text, url: V.sceneUrl(S.id, cue.start) };
+    btn.disabled = true;
+    const r = await send(msg);
+    if (!tip.open || tip.lower !== lower) return;
+    btn.disabled = false;
+    if (r?.saved) {
+      setTipSaved(lower, lemma, !saved);
+      toast(saved ? '단어장에서 뺐어요' : '단어장에 저장했어요', ui.tip);
+      wordsChanged();
+      renderLine(); // .w.saved 칠하기를 바로 다시 그린다
+      paintTip();
+    } else toast(errText(r, '저장하지 못했어요'), btn);
+  }
+  function openTipDetail() {
+    if (!tip.open) return;
+    const { i, word, el: sp } = tip;
+    const rect = sp?.isConnected ? sp.getBoundingClientRect() : null;
+    closeTip();
+    if (rect) lookupWord(word, i, rect); // 낱말 누르기와 같은 사전 카드(카드는 지금처럼 영상을 멈춘다)
+  }
+
   // 낱말 하나 고르기(마우스·Enter): 가린 낱말이면 그 줄을 보이고, 아니면 사전 카드
   function pickWord(sp) {
+    closeTip();
     if (!S.cues[S.cur]) return;
     if (sp.classList.contains('hid')) {
       S.revealed = S.cur;
@@ -594,6 +786,8 @@
     const tk = ui.tokens[k];
     const h = vs().hard ? S.hard.get(tk.lower) : null;
     ui.sr.textContent = sp.classList.contains('hid') ? '가린 낱말, Enter 로 그 줄 보기' : `${tk.t}${h?.gloss ? `, ${h.gloss}` : ''}`;
+    if (sp.classList.contains('hid')) closeTip();
+    else showTip(sp); // 키보드 낱말 자리에도 같은 말풍선(28-6)
   }
 
   // 글자 크기는 플레이어 높이를 따라가고, 줄은 유튜브 조작 막대 위에 둔다(막대가 숨어도 같은 자리 — 마우스를 올렸을 때 자막이 움직이지 않게)
@@ -628,6 +822,7 @@
     ui.notice.hidden = !(show && !vs().keysNoticeSeen); // 처음 한 번만(알겠어요를 누르면 설정에 남는다)
     if (!show) {
       ui.note.hidden = true;
+      closeTip();
       return;
     }
     renderLine();
@@ -654,6 +849,7 @@
     ui.tokens = [];
     if (!cue) {
       ui.ko.textContent = '';
+      closeTip();
       return;
     }
     const toks = V.tokenize(cue.text);
@@ -680,6 +876,14 @@
     const koText = S.ko[i] || (S.koErr && !S.koFail.has(i) ? S.koErr : '');
     ui.ko.textContent = v.ko ? koText : '';
     ui.ko.classList.toggle('err', !S.ko[i] && Boolean(koText));
+    // 말풍선이 열려 있으면 다시 만든 낱말에 붙여 다시 그린다(저장 칠하기·어려운 단어가 바뀌어도 따라간다).
+    if (tip.open) {
+      const sp = tip.i === i ? ui.en.querySelector(`.w[data-k="${tip.k}"]`) : null;
+      if (sp) {
+        tip.el = sp;
+        paintTip();
+      } else closeTip();
+    }
   }
 
   // 낱말이 아닌 조각. 문장 전체 가리기면 그 안의 글자·숫자(한 글자 a·I, x86, café 등)도 가린다 — 사전 낱말이 아니라 누르면 그 줄을 보이기만 한다

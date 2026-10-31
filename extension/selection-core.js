@@ -278,7 +278,7 @@
     .filter(Boolean)
     .slice(-MAX_HEADINGS);
 
-  // 명세 22-1 사전 링크: YouGlish·네이버·Oxford·Cambridge (모두 encodeURIComponent)
+  // 명세 22-1·28-6 사전 링크: YouGlish·네이버·Oxford·Cambridge·Urban Dictionary (모두 encodeURIComponent)
   // 공백 정리 뒤 빈 글이거나 80자 넘으면 []
   function dictLinks(text) {
     const t = norm(text);
@@ -289,6 +289,7 @@
       { id: 'naver', label: '네이버', url: `https://en.dict.naver.com/#/search?query=${q}` },
       { id: 'oxford', label: 'Oxford', url: `https://www.oxfordlearnersdictionaries.com/search/english/?q=${q}` },
       { id: 'cambridge', label: 'Cambridge', url: `https://dictionary.cambridge.org/search/english/direct/?q=${q}` },
+      { id: 'urban', label: 'Urban', url: `https://www.urbandictionary.com/define.php?term=${q}` },
     ];
   }
 

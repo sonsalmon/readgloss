@@ -297,6 +297,24 @@
     return out;
   }
 
+  // 마우스 말풍선(28-6): 어려운 단어 칠하기(S.hard)가 있으면 그것을, 없으면 사전 응답(dict)을 쓴다.
+  // dict 는 아직 안 물었으면 없을 수 있고, 사전에 없으면 found:false 다. saved 는 지금 단어장에 있는지.
+  function tooltipModel({ word, hard, dict, saved } = {}) {
+    const w = cleanText(word).toLowerCase();
+    const h = isObj(hard) ? hard : null;
+    const d = isObj(dict) ? dict : null;
+    const hardGloss = cleanText(h?.gloss);
+    const entryGloss = cleanText(d?.entries?.[0]?.senses?.[0]?.text);
+    const dictGloss = cleanText(d?.gloss) || (d?.found === true ? entryGloss : '');
+    const found = Boolean(hardGloss) || Boolean(cleanText(h?.lemma)) || d?.found === true;
+    return {
+      lemma: cleanText(h?.lemma) || cleanText(d?.lemma) || w,
+      gloss: hardGloss || dictGloss,
+      state: found ? 'found' : 'missing',
+      saved: saved === true,
+    };
+  }
+
   // 가리기: 'off' | 'hard'(isHard 인 낱말) | 'all'(낱말 전부). 조각마다 가릴지.
   const HIDE_MODES = ['off', 'hard', 'all'];
   const HIDE_LABEL = { off: '끔', hard: '어려운 단어', all: '문장' };
@@ -535,7 +553,7 @@
   globalThis.readglossVideo = {
     ID_RE, ASR, GRACE, MAX_CLIP, HIDE_MODES, HIDE_LABEL, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT,
     params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseTrack,
-    langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, maskFlags, nextHide, clampSlowRate, nextRate, keyAction, shiftTapAction, shouldPauseEach, playbackStep,
+    langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, tooltipModel, maskFlags, nextHide, clampSlowRate, nextRate, keyAction, shiftTapAction, shouldPauseEach, playbackStep,
     parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf,
   };
 })();
