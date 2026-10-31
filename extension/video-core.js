@@ -297,6 +297,78 @@
     return out;
   }
 
+  // 칠하기(28-9): p(모를 확률) 구간 경계·설정에서 고른 구간의 가장 낮은 경계·낱말 색.
+  const BAND_EASY = 0.35;
+  const BAND_HARD = 0.65;
+  const BAND_MIN = Object.freeze({ easy: 0, medium: BAND_EASY, hard: BAND_HARD });
+  function bandOf(p) {
+    if (typeof p !== 'number' || !Number.isFinite(p)) return null;
+    return p < BAND_EASY ? 'easy' : p < BAND_HARD ? 'medium' : 'hard';
+  }
+  // 고른 구간 중 가장 낮은 경계. 아무것도 안 골랐으면 null(칠하지 않는다).
+  function minPFor(bands) {
+    if (!isObj(bands)) return null;
+    let min = null;
+    for (const k of ['easy', 'medium', 'hard']) {
+      if (bands[k] === true && (min === null || BAND_MIN[k] < min)) min = BAND_MIN[k];
+    }
+    return min;
+  }
+  // 우선순위: 복습 끝(초록) > 고른 구간(주황) > 저장만 됨(✓). 알아요는 칠하지 않는다.
+  function tokenColor({ p, bands, saved, done, known } = {}) {
+    if (done === true) return 'green';
+    if (known === true) return null;
+    const b = bandOf(p);
+    if (b && isObj(bands) && bands[b] === true) return 'orange';
+    if (saved === true) return 'check';
+    return null;
+  }
+
+  // 저장한 구(8낱말 이하)가 줄 안에 들어 있으면 그 낱말들의 토큰 번호 범위를 돌려준다.
+  // 대소문자·문장부호는 무시하고, 겹치는 구는 앞에서 시작하고 더 긴 것을 먼저 고른다. start·end 는 tokenize 결과의 조각 번호(포함).
+  const PHRASE_MAX_WORDS = 8;
+  const phraseWords = (text) => String(text ?? '').toLowerCase().replace(/’/g, "'").match(/[a-z]+(?:['-][a-z]+)*/g) ?? [];
+  function phraseSpans(tokens, phrases) {
+    const list = Array.isArray(tokens) ? tokens : [];
+    const words = [];
+    list.forEach((tk, k) => {
+      if (tk?.w) words.push({ lower: String(tk.lower ?? tk.t ?? '').toLowerCase(), k });
+    });
+    const found = [];
+    const entries = Array.isArray(phrases) ? phrases : Object.values(isObj(phrases) ? phrases : {});
+    for (const p of entries) {
+      const text = typeof p === 'string' ? p : isObj(p) && typeof p.text === 'string' ? p.text : null;
+      if (text === null) continue;
+      const pw = phraseWords(text);
+      if (!pw.length || pw.length > PHRASE_MAX_WORDS) continue;
+      for (let i = 0; i + pw.length <= words.length; i++) {
+        let same = true;
+        for (let j = 0; j < pw.length; j++) {
+          if (words[i + j].lower !== pw[j]) {
+            same = false;
+            break;
+          }
+        }
+        if (same) found.push({ from: i, to: i + pw.length - 1, p, text });
+      }
+    }
+    found.sort((a, b) => a.from - b.from || (b.to - b.from) - (a.to - a.from));
+    const spans = [];
+    let last = -1;
+    for (const f of found) {
+      if (f.from <= last) continue; // 앞에서 고른 구와 겹치면 건너뛴다
+      last = f.to;
+      const span = { start: words[f.from].k, end: words[f.to].k };
+      // 그리는 쪽이 알약 색·글을 알아야 해서 넣되, 범위만 보는 시험의 deepEqual 에는 안 걸리게 숨긴다.
+      Object.defineProperties(span, {
+        text: { value: f.text, enumerable: false },
+        done: { value: f.p?.review?.done === true, enumerable: false },
+      });
+      spans.push(span);
+    }
+    return spans;
+  }
+
   // 마우스 말풍선(28-6): 어려운 단어 칠하기(S.hard)가 있으면 그것을, 없으면 사전 응답(dict)을 쓴다.
   // dict 는 아직 안 물었으면 없을 수 있고, 사전에 없으면 found:false 다. saved 는 지금 단어장에 있는지.
   function tooltipModel({ word, hard, dict, saved } = {}) {
@@ -608,7 +680,7 @@
   globalThis.readglossVideo = {
     ID_RE, ASR, GRACE, MAX_CLIP, HIDE_MODES, HIDE_LABEL, HIDE_TYPES, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT, DRILL_DOUBLE,
     params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseTrack,
-    langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, tooltipModel, hideTypes, maskFlags, nextHide, drillSpace, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
+    langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, bandOf, minPFor, tokenColor, phraseSpans, tooltipModel, hideTypes, maskFlags, nextHide, drillSpace, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
     parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf,
   };
 })();

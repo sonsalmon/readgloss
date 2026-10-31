@@ -55,8 +55,10 @@
   let tipCloseTimer = 0;
   let focusTimer = 0; // 키보드 저장 모드 자동 포커스 예약(28-7)
 
+  const bandsKey = (v) => `${v?.wordBands?.easy ? 1 : 0}${v?.wordBands?.medium ? 1 : 0}${v?.wordBands?.hard ? 1 : 0}`;
   function apply(s) {
-    if (s.level !== settings.level) {
+    const before = settings.video;
+    if (s.level !== settings.level || bandsKey(s.video) !== bandsKey(before) || s.video.hard !== before.hard) {
       S.hard = new Map();
       S.asked = new Set();
       S.hardVer++;
@@ -454,6 +456,13 @@
     .w:hover { background: rgba(255, 255, 255, .2); }
     .w.hard { text-decoration: underline dotted rgba(255, 214, 102, .95); text-decoration-thickness: .08em; text-underline-offset: .2em; }
     .w.saved { background: rgba(56, 189, 248, .34); }
+    /* 칠하기(28-9): 주황 = 고른 구간, 초록 = 복습 끝. 흰 글자와 4.5:1 이상(#c2522b·#1a7f37) */
+    .w.or, .phr.or { background: #c2522b; color: #fff; }
+    .w.gr, .phr.gr { background: #1a7f37; color: #fff; }
+    .w.or, .w.gr, .phr .w { text-decoration: none; }
+    .w.chk::after { content: '✓'; margin-left: .1em; font-size: .78em; color: #ffe08a; }
+    .phr { border-radius: 999px; padding: 0 .24em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+    .phr .w:hover { background: rgba(255, 255, 255, .18); }
     .w.hid { color: transparent; background: rgba(255, 255, 255, .38); box-shadow: inset 0 -2px 0 rgba(255, 255, 255, .85); text-decoration: none; }
     .lines:focus .w.cur { outline: 2px solid #3ea6ff; outline-offset: 1px; } /* 키보드 낱말 자리(←·→) */
     .w .g { display: none; position: absolute; left: 50%; bottom: 100%; z-index: 1; transform: translate(-50%, -2px); white-space: nowrap; pointer-events: none;
@@ -1019,7 +1028,7 @@
     // 멈췄거나 자막 위에 마우스가 있거나 드릴 Space 로 보이는 동안에는 가리기를 잠깐 푼다(28-8).
     const hideOff = S.revealed === i || S.drillReveal || (v.hide !== 'off' && (Boolean(video?.paused) || S.hovering));
     const mode = hideOff ? 'off' : v.hide;
-    const key = cue ? [S.mainKey, i, mode, v.hard, v.ko, S.ko[i] ?? '', S.koErr, S.hardVer, S.savedVer, v.hideTypes?.hard, v.hideTypes?.done, v.hideTypes?.other].join('|') : '';
+    const key = cue ? [S.mainKey, i, mode, v.hard, v.ko, S.ko[i] ?? '', S.koErr, S.hardVer, S.savedVer, v.hideTypes?.hard, v.hideTypes?.done, v.hideTypes?.other, v.idioms].join('|') : '';
     if (key === ui.lineKey) return;
     ui.lineKey = key;
     const cursorFor = `${S.mainKey}|${i}`;
@@ -1035,11 +1044,12 @@
       return;
     }
     const toks = V.tokenize(cue.text);
+    const bands = v.hard ? v.wordBands : null;
     const typeOf = (w) => (S.hard.has(w) ? 'hard' : S.done.has(S.savedForms.get(w) ?? w) ? 'done' : 'other');
     const hid = V.maskFlags(toks, mode, typeOf, v.hideTypes);
     const lineHid = mode === 'line' && hid.some(Boolean); // 고른 유형이 하나라도 있으면 줄 통째로(사이 글자 포함)
-    toks.forEach((tk, k) => {
-      if (!tk.w) return void appendRest(tk.t, lineHid);
+    const appendToken = (tk, k, parent, inPhrase = false) => {
+      if (!tk.w) return void appendRest(tk.t, lineHid, parent);
       const sp = el('span', 'w', tk.t);
       sp.dataset.k = String(k);
       if (k === ui.wcur) sp.classList.add('cur');
@@ -1048,13 +1058,35 @@
         sp.classList.add('hard');
         if (h.gloss) sp.append(el('span', 'g', h.gloss));
       }
-      if (S.savedForms.has(tk.lower)) sp.classList.add('saved');
+      if (!inPhrase) {
+        const saved = S.savedForms.has(tk.lower);
+        const done = S.done.has(S.savedForms.get(tk.lower) ?? tk.lower);
+        const color = V.tokenColor({ p: h?.p, bands, saved, done, known: false });
+        if (color === 'green') sp.classList.add('gr');
+        else if (color === 'orange') sp.classList.add('or');
+        else if (color === 'check') sp.classList.add('chk');
+      }
       if (hid[k]) {
         sp.classList.add('hid');
         sp.title = HID_TITLE;
       }
-      ui.en.append(sp);
-    });
+      parent.append(sp);
+    };
+    // 저장한 구(28-9): 낱말들을 한 알약으로 감싼다(복습 끝 = 초록, 아니면 주황).
+    const spans = v.idioms ? V.phraseSpans(toks, S.phrases) : [];
+    const spanAt = new Map(spans.map((s) => [s.start, s]));
+    for (let k = 0; k < toks.length;) {
+      const span = spanAt.get(k);
+      if (span) {
+        const wrap = el('span', `phr ${span.done ? 'gr' : 'or'}`);
+        for (let j = k; j <= span.end && j < toks.length; j++) appendToken(toks[j], j, wrap, true);
+        ui.en.append(wrap);
+        k = span.end + 1;
+      } else {
+        appendToken(toks[k], k, ui.en);
+        k++;
+      }
+    }
     ui.tokens = toks;
     const koText = S.ko[i] || (S.koErr && !S.koFail.has(i) ? S.koErr : '');
     ui.ko.textContent = v.ko ? koText : '';
@@ -1071,17 +1103,17 @@
 
   // 낱말이 아닌 조각. 줄 통째 가리기면 그 안의 글자·숫자(한 글자 a·I, x86, café 등)도 가린다 — 사전 낱말이 아니라 누르면 그 줄을 보이기만 한다
   const HID_TITLE = '가린 낱말 — 눌러서 보기';
-  function appendRest(text, hideAll) {
-    if (!hideAll) return void ui.en.append(text);
+  function appendRest(text, hideAll, parent = ui.en) {
+    if (!hideAll) return void parent.append(text);
     let last = 0;
     for (const m of text.matchAll(/[\p{L}\p{N}]+/gu)) {
-      if (m.index > last) ui.en.append(text.slice(last, m.index));
+      if (m.index > last) parent.append(text.slice(last, m.index));
       const sp = el('span', 'w hid', m[0]);
       sp.title = HID_TITLE;
-      ui.en.append(sp);
+      parent.append(sp);
       last = m.index + m[0].length;
     }
-    if (last < text.length) ui.en.append(text.slice(last));
+    if (last < text.length) parent.append(text.slice(last));
   }
 
   function stackLabels(b, labels) {
@@ -1335,9 +1367,11 @@
   async function askAnnot(words) {
     S.annotBusy = true;
     const level = settings.level;
-    const r = await send({ type: 'annotate', words, level });
+    const bands = bandsKey(vs());
+    const minP = V.minPFor(vs().wordBands);
+    const r = await send({ type: 'annotate', words, level, ...(minP !== null && { minP }) });
     S.annotBusy = false;
-    if (level !== settings.level) return true; // 그 사이 수준이 바뀌었다(apply 가 칠하기를 비웠다): 옛 수준 답은 버리고 새 수준으로 다시 묻게
+    if (level !== settings.level || bands !== bandsKey(vs())) return true; // 그 사이 수준·칠 구간이 바뀌었다(apply 가 칠하기를 비웠다): 옛 답은 버리고 다시 묻게
     if (!r?.items || typeof r.items !== 'object') {
       S.annotErrAt = Date.now();
       return false;
@@ -1348,7 +1382,7 @@
     }
     for (const w of words) S.asked.add(w);
     for (const [w, it] of Object.entries(r.items)) {
-      if (it && typeof it === 'object' && typeof it.gloss === 'string') S.hard.set(w.toLowerCase(), { lemma: typeof it.lemma === 'string' ? it.lemma : w.toLowerCase(), gloss: it.gloss });
+      if (it && typeof it === 'object' && typeof it.gloss === 'string') S.hard.set(w.toLowerCase(), { lemma: typeof it.lemma === 'string' ? it.lemma : w.toLowerCase(), gloss: it.gloss, p: typeof it.p === 'number' ? it.p : null });
     }
     S.hardVer++;
     renderLine();
@@ -1357,7 +1391,8 @@
   }
   function pumpAnnot() {
     const v = vs();
-    if (!(v.hard || (v.hide !== 'off' && v.hideTypes?.hard === true)) || !visible() || S.annotBusy || Date.now() - S.annotErrAt < ERR_PAUSE_MS) return; // 층이 보일 때만(대본 전체는 annotateAll)
+    const needAnnot = v.hard && V.minPFor(v.wordBands) !== null;
+    if (!(needAnnot || (v.hide !== 'off' && v.hideTypes?.hard === true)) || !visible() || S.annotBusy || Date.now() - S.annotErrAt < ERR_PAUSE_MS) return; // 층이 보일 때만(대본 전체는 annotateAll)
     const { words } = V.annotateBatch(S.cues, Math.max(0, S.cur), S.asked);
     if (words.length) askAnnot(words).then((ok) => ok && pumpAnnot());
   }

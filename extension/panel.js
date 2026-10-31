@@ -63,6 +63,7 @@
   ];
   const TOGGLES = [{ path: 'enabled' }, { path: 'selectionTranslate' }, { path: 'floatingButton.show' }, { path: 'dimWhileReading' }, { path: 'structureHints' }, { path: 'savedMarks' },
     { path: 'video.subs' }, { path: 'video.ko' }, { path: 'video.hard' }, { path: 'video.hoverPause' }, { path: 'video.autoCC' }, { path: 'video.pauseEach' },
+    { path: 'video.wordBands.easy' }, { path: 'video.wordBands.medium' }, { path: 'video.wordBands.hard' }, { path: 'video.idioms' },
     { path: 'video.hideTypes.hard' }, { path: 'video.hideTypes.done' }, { path: 'video.hideTypes.other' }];
 
   // 슬라이더가 준 값(문자열 가능) -> 설정 patch. 범위·단계로 고치고, 숫자가 아니면 null.
@@ -701,6 +702,7 @@
     savedMarks: '단어장 단어 칠하기',
     'video.subs': '유튜브 자막 층 켜기', 'video.ko': '한국어 줄 보이기', 'video.hard': '어려운 단어 칠하기', 'video.hoverPause': '자막에 마우스를 올리면 잠깐 멈춤',
     'video.autoCC': '자막이 꺼져 있으면 켜기', 'video.pauseEach': '줄마다 멈춤', 'video.hide': '가리기(듣기 연습)', 'video.fontPct': '자막 크기', 'video.slowRate': '느리게 속도',
+    'video.wordBands.easy': '칠하기 — 단어 쉬움', 'video.wordBands.medium': '칠하기 — 단어 보통', 'video.wordBands.hard': '칠하기 — 단어 어려움', 'video.idioms': '칠하기 — 숙어',
     'video.hideTypes.hard': '어려운 낱말 가리기', 'video.hideTypes.done': '복습 끝난 낱말 가리기', 'video.hideTypes.other': '그 밖의 낱말 가리기',
   };
   const LEVEL_HINT = {
@@ -904,6 +906,7 @@
       toggle('video.pauseEach', 'P 키로도 바꿔요. A 앞 줄 · S 이 줄 다시 · D 다음 줄.'), choice('video.hide', null, '막대 [가리기] 단추로 끔 → 낱말 → 줄 순서로 바뀌어요. 가린 낱말을 누르면 그 줄이 보여요.'),
       toggle('video.hideTypes.hard'), toggle('video.hideTypes.done'), toggle('video.hideTypes.other'),
       slider('video.fontPct'), choice('video.slowRate', null, 'Z 키나 자막 막대 [느리게]로 1배와 이 속도를 오가요.'),
+      toggle('video.wordBands.easy'), toggle('video.wordBands.medium'), toggle('video.wordBands.hard'), toggle('video.idioms', '저장한 짧은 구(8낱말 이하)를 한 덩어리로 칠해요.'),
       h('h3', { class: 'sec', text: '화면' }), slider('opacityInput'), slider('opacityUi'), toggle('dimWhileReading', '메모할 때만 진해지고, 읽을 때는 설정한 투명도로 보여요.'),
       h('h3', { class: 'sec', text: '기타' }), toggle('allowCopy', '체크하지 않으면 복사할 때 주석 글자가 섞이지 않아요.'), toggle('selectionTranslate', '글을 드래그하면 맥 번역 카드가 떠요. 한 단어는 사전 카드로 열려요.'), choice('theme'), toggle('floatingButton.show', '숨겨도 브라우저 툴바의 readgloss 아이콘으로 패널을 열 수 있어요.'),
       h('h3', { class: 'sec', text: '끌 사이트' }), ...blockNodes,

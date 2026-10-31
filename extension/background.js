@@ -115,15 +115,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // --- 자동 주석(T3): content script 의 'annotate' 요청(단어 목록)을 다리 /annotate(맥 사전)로 전달한다. ---
-async function annotate({ words, level, host, domains, acronyms, page }, retried = false) {
+async function annotate({ words, level, host, domains, acronyms, minP, page }, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
   const res = await bridgeFetch('/annotate', {
     method: 'POST',
     headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ words, level, host, domains, acronyms, page }),
+    body: JSON.stringify({ words, level, host, domains, acronyms, minP, page }),
   });
-  if (res.status === 401 && !retried) return annotate({ words, level, host, domains, acronyms, page }, true);
+  if (res.status === 401 && !retried) return annotate({ words, level, host, domains, acronyms, minP, page }, true);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return { error: data.error || `http-${res.status}` };
   return { items: data.items };

@@ -502,9 +502,10 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
   async function handleAnnotate(req, res, cors) {
     const { value, status } = await readJson(req);
     if (status) return send(res, status, { error: status === 413 ? 'too-large' : 'bad-request' }, cors);
-    const { words, level = DEFAULT_LEVEL, acronyms = [] } = value ?? {};
+    const { words, level = DEFAULT_LEVEL, acronyms = [], minP } = value ?? {};
     if (!Array.isArray(words) || words.some((w) => typeof w !== 'string') || !ANNOTATE_LEVELS.includes(level)) return send(res, 400, { error: 'bad-request' }, cors);
     if (!Array.isArray(acronyms) || acronyms.some((a) => typeof a !== 'string')) return send(res, 400, { error: 'bad-request' }, cors);
+    if (minP !== undefined && (typeof minP !== 'number' || !Number.isFinite(minP) || minP < 0 || minP > 1)) return send(res, 400, { error: 'bad-request' }, cors);
     if (words.length > MAX_ANNOTATE_WORDS || acronyms.length > MAX_ACRONYMS) return send(res, 413, { error: 'too-large' }, cors);
 
     // 하루 한 번 자동 조절: annot_offset_day 가 오늘이 아니고 auto 가 켜져 있으면
@@ -531,7 +532,7 @@ export function createBridge({ ask, askTranslate, askContext, askStructure = ask
     const reqSignals = getSignals();
     const reqScoreOf = createScoreOf(reqSignals, wstat);
     try {
-      send(res, 200, { items: await annotate(words.map((w) => w.toLowerCase()).filter((w) => WORD_RE.test(w)), level, glossary.domains(value), acronyms.filter((a) => ACRONYM_RE.test(a)), reqScoreOf) }, cors);
+      send(res, 200, { items: await annotate(words.map((w) => w.toLowerCase()).filter((w) => WORD_RE.test(w)), level, glossary.domains(value), acronyms.filter((a) => ACRONYM_RE.test(a)), reqScoreOf, minP) }, cors);
     } catch (e) {
       if (e instanceof DictUnavailableError) send(res, 503, { error: 'dict-unavailable' }, cors);
       else send(res, 502, { error: 'dict-failed' }, cors);

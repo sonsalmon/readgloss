@@ -243,25 +243,28 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
     return v;
   }
 
-  return async function annotate(words, level = DEFAULT_LEVEL, domains = [], acronyms = [], scoreOfOverride) {
+  return async function annotate(words, level = DEFAULT_LEVEL, domains = [], acronyms = [], scoreOfOverride, minP) {
     const effScoreOf = scoreOfOverride !== undefined ? scoreOfOverride : scoreOf;
     const min = rank(level);
-    const th = thresholdFor ? thresholdFor(level) : threshold(level, 0);
+    const useMinP = typeof minP === 'number' && Number.isFinite(minP);
+    const th = useMinP ? minP : thresholdFor ? thresholdFor(level) : threshold(level, 0);
+    const pOf = (lemma, level, surface) => (effScoreOf ? effScoreOf(lemma, level, surface) : baseP(level));
+    const withP = (v, p) => (useMinP ? { ...v, p: Math.round(p * 100) / 100 } : v);
     const items = {};
     // 약어: 내 사전(분야와 무관) -> 약어집(그 약어의 분야가 활성일 때만). 아는 단어(원형 = 소문자 철자)는 뺀다.
     for (const a of new Set(acronyms)) {
       const key = a.toLowerCase();
       const m = mydict.get(key);
-      if (m) items[a] = { lemma: key, gloss: m.ko, term: true, mine: true, acronym: true };
+      if (m) items[a] = withP({ lemma: key, gloss: m.ko, term: true, mine: true, acronym: true }, pOf(key, levels.get(key) ?? null, key));
       else if (!isKnown(key)) {
         const g = glossary.acronym(key, domains);
-        if (g) items[a] = { lemma: key, gloss: g.ko, term: true, domain: g.d, acronym: true };
+        if (g) items[a] = withP({ lemma: key, gloss: g.ko, term: true, domain: g.d, acronym: true }, pOf(key, levels.get(key) ?? null, key));
       }
     }
     for (const w of new Set(words)) {
       const m = mydict.find(w);
       if (m) {
-        items[w] = { lemma: m.key, gloss: m.ko, term: true, mine: true };
+        items[w] = withP({ lemma: m.key, gloss: m.ko, term: true, mine: true }, pOf(m.key, levels.get(m.key) ?? null, w));
         continue;
       }
       // ponytail: 표면형이 목록에서 이미 기준 미만이면 원형 확인 없이 쉬움. 흔한 단어는 표제어가 많아 사전이 20ms 쯤 걸리기 때문이고, 어긋나면 주석이 덜 붙을 뿐이다.
@@ -276,7 +279,9 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
           if (!hasSavedOrLookup) continue;
         }
       } else {
-        if (own !== undefined && rank(own) < min) continue;
+        if (useMinP) {
+          if (own !== undefined && baseP(own) < th - 1e-9) continue;
+        } else if (own !== undefined && rank(own) < min) continue;
       }
       if (isKnown(w)) continue; // 표면형이 곧 아는 원형이면 사전도 안 부른다
       // 용어집에 철자(복수형 포함)가 있으면 사전은 안 부른다: 용어집 단어는 사전에 없거나 엉뚱한 뜻이 첫 줄인 일이 많다.
@@ -293,9 +298,12 @@ export function createAnnotate({ dict, levels = loadWordLevels(), isKnown = () =
       if (v && !isKnown(v.lemma)) {
         if (effScoreOf) {
           const p = effScoreOf(v.lemma, v.level, w);
-          if (p >= th - 1e-9) items[w] = v;
+          if (p >= th - 1e-9) items[w] = withP(v, p);
+        } else if (useMinP) {
+          const p = baseP(v.level);
+          if (p >= th - 1e-9) items[w] = withP(v, p);
         } else {
-          if (v.level === null || rank(v.level) >= min) items[w] = v;
+          if (v.level === null || rank(v.level) >= min) items[w] = withP(v, baseP(v.level));
         }
       }
     }

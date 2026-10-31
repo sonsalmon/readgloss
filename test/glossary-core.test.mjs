@@ -117,7 +117,7 @@ test('manifest: glossary-core.js 는 settings-core.js 뒤, 쓰는 파일(content
 test('배선: 세 요청(annotate·dict·translate)이 host·domains 를 다리로 그대로 넘기고, 보내는 쪽은 hint 를 쓴다', () => {
   const read = (f) => readFileSync(new URL(`../extension/${f}`, import.meta.url), 'utf8');
   const bg = read('background.js'); // T14: page(공부 기록)·acronyms 가 더 실린다
-  for (const body of ['{ words, level, host, domains, acronyms, page }', '{ word, host, domains, ...(nolog === true ? { nolog: true } : {}), page }', '{ text, force: force === true, bulk: bulk === true, host, domains, page }']) assert.ok(bg.includes(`JSON.stringify(${body})`), body);
+  for (const body of ['{ words, level, host, domains, acronyms, minP, page }', '{ word, host, domains, ...(nolog === true ? { nolog: true } : {}), page }', '{ text, force: force === true, bulk: bulk === true, host, domains, page }']) assert.ok(bg.includes(`JSON.stringify(${body})`), body);
   assert.match(read('annotate.js'), /G\.hint\(when, document, location\.hostname\)/);
   assert.match(read('paragraph.js'), /readglossGlossary\?\.hint\(settings, document, location\.hostname\)/);
   assert.match(read('content.js'), /readglossGlossary\?\.hint\(\{ glossary, glossarySites \}, document, location\.hostname\)/);

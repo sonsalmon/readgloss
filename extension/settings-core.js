@@ -20,7 +20,8 @@
     // 변경 기록 28-6: 마우스를 올려도 영상은 멈추지 않는다(hoverPause 기본 false). 켜면 지금처럼 멈춘다.
     // 변경 기록 28-7: W 키보드 저장 모드(focusMode 기본 false)
     // 변경 기록 28-8: 리스닝 연습 가리기(hide: off·word·line, hideTypes: 어려운·복습 끝·나머지)
-    video: { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false },
+    // 변경 기록 28-9: 칠하기 구간(wordBands: 쉬움·보통·어려움, 기본 보통 이상)과 숙어 덩어리(idioms)
+    video: { subs: true, ko: true, hard: true, hoverPause: false, autoCC: true, fontPct: 100, hide: 'off', hideTypes: { hard: true, done: false, other: false }, pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75, focusMode: false, wordBands: { easy: false, medium: true, hard: true }, idioms: true },
     reviewMode: 'flip', // 복습 방식(27-4): 뒤집기 · 고르기 · 듣기
   });
   const ENUMS = {
@@ -69,6 +70,8 @@
       : oldHide === 'all' ? { hard: true, done: true, other: true }
         : isObj(v.hideTypes) ? v.hideTypes : DV.hideTypes;
     const hideTypes = { hard: bool(rawTypes.hard, DV.hideTypes.hard), done: bool(rawTypes.done, DV.hideTypes.done), other: bool(rawTypes.other, DV.hideTypes.other) };
+    const rawBands = isObj(v.wordBands) ? v.wordBands : DV.wordBands;
+    const wordBands = { easy: bool(rawBands.easy, DV.wordBands.easy), medium: bool(rawBands.medium, DV.wordBands.medium), hard: bool(rawBands.hard, DV.wordBands.hard) };
     return {
       enabled: bool(r.enabled, D.enabled),
       level: pickEnum(r.level, LEVELS, D.level),
@@ -114,6 +117,8 @@
         keysNoticeSeen: bool(v.keysNoticeSeen, DV.keysNoticeSeen),
         slowRate: clampSlowRate(v.slowRate),
         focusMode: bool(v.focusMode, DV.focusMode),
+        wordBands,
+        idioms: bool(v.idioms, DV.idioms),
       },
       reviewMode: pickEnum(r.reviewMode, ENUMS.reviewMode, D.reviewMode),
     };
