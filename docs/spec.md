@@ -34,6 +34,31 @@
 - 단위 시험 `test/t53a-playback.test.mjs`(우선순위·되감기 여유·틈·구간 경계·배타), `test/t53b-keys.test.mjs`(키 표·Shift 단독 판정·안내 한 번), `test/t53t-slow.test.mjs`(속도 범위·토글) + 설정 시험. `npm test` 전부 통과(시작 기준 1220개 중 실패 0).
 - 기존 t51 시험 중 키 표(H·P·R)를 기대하던 것은 28-2 에 맞게 고친다(옛 동작을 지키는 시험이면 이유를 커밋에 적는다).
 
+### 28-6. 마우스 말풍선 + 자세히 (T53c)
+- 자막 층 영어 줄의 낱말(`.w`)에 마우스를 0.25초 올리면 그 낱말 위에 말풍선. 영상은 멈추지 않는다(**`video.hoverPause` 기본값을 false 로 바꾼다** — 랭플릭스 동작. 켜면 지금처럼 멈춘다).
+- 말풍선 내용: 기본형(원형) · 이 장면 뜻 한 줄 · [☆ 저장]/[★ 저장됨] · [자세히]. 원형·뜻은 S.hard 에 있으면 그것, 없으면 `{type:'dict', word}` 를 한 번 물어 낱말별로 기억(S.dictMemo, 영상이 바뀌면 지움). 사전에 없으면 "사전에 없어요" + [자세히]만.
+- [☆ 저장] = 지금 카드 저장과 같은 메시지 `{type:'words', op:'save', lemma, word, gloss, sentence: 지금 줄, url: sceneUrl}`(이미 저장이면 op:'unsave'). 저장 뒤 `.w.saved` 칠하기를 바로 다시 그린다.
+- [자세히] = 지금 낱말 누르기와 같은 사전 카드(lookupWord). 카드는 지금처럼 영상을 멈춘다.
+- 마우스가 낱말·말풍선을 떠나면 0.2초 뒤 닫힌다. 키보드 낱말 자리(←→)에서도 같은 말풍선을 보인다(T53d).
+- 외부 사전: `selection-core.js:dictLinks` 에 Urban Dictionary(`https://www.urbandictionary.com/define.php?term={q}`)를 더해 다섯 곳(YouGlish·네이버·Oxford·Cambridge·Urban).
+- 순수 함수(video-core): `tooltipModel({ word, hard, dict, saved })` → { lemma, gloss, state:'found'|'missing', saved }.
+
+### 28-7. 키보드 저장 모드 (T53d, W)
+- `video.focusMode`(기본 false). W = 켜고 끄기, 켤 때·끌 때 상태 줄 "키보드 저장 모드 켜짐/꺼짐".
+- 켜져 있고 **사용자가 멈췄을 때**(줄마다 멈춤·장면 구간 끝·카드·hold 로 멈춘 것은 제외) 0.3초 뒤 두 줄 묶음에 포커스, 낱말 자리는 지금 줄의 첫 어려운 낱말(S.hard), 없으면 첫 낱말.
+- 두 줄 묶음 안 키: ←→ 낱말(끝에서 처음으로 돈다) · Enter = 그 낱말 저장/해제(28-6 의 저장과 같은 메시지) · ↓ = 자세히(사전 카드) · Shift 단독 = 줄 저장(T53b) · Esc = 포커스 놓고 재생.
+- 포커스 동안 자막 아래 안내 알약: "n/N · ←→ 표현 · Enter 저장 · Shift 줄 저장 · ↓ 자세히 · Esc 재생". 낱말 자리에는 28-6 말풍선이 붙는다.
+- 순수 함수: `focusStart(tokens, hardSet)` → 첫 자리 번호, `focusStep(wordIdxs, cur, step)` → 돌기, `shouldAutoFocus({ on, pauseReason })`.
+
+### 28-8. 리스닝 드릴 + 리스닝 연습 설정 (T53e)
+- L = 드릴 켜고 끄기(저장 안 함, 영상이 바뀌면 끔). 켜지면 자막 층의 두 줄을 통째로 숨기고, 화면 가운데 아래 알약 "‹ 이전 문장 A · n / 전체 · 다음 문장 D ›", 처음 한 번 안내 카드 "Space 를 누르고 있으면 자막 보기 · 두 번 빠르게 누르면 재생/정지"([가리기]로 접기).
+- 드릴 중 Space: 누름(반복 키 무시) → 자막 보임, 뗌 → 숨김. 뗀 뒤 0.28초 안에 다시 누르면 재생/정지 토글(그 누름은 보이기 안 함). Space 는 유튜브로 넘기지 않는다(preventDefault·stopPropagation, 입력칸 밖·자막 층 보일 때만).
+- 순수 함수 `drillSpace({ now, lastUp })` → { action:'reveal'|'toggle', nextLastUp }, 상수 DRILL_DOUBLE = 0.28.
+- 리스닝 연습 모드(설정, 드릴과 따로 늘 켜 둘 수 있음): 지금 `video.hide`('off'|'hard'|'all')를 `video.hide`('off'|'word'|'line') + `video.hideTypes`({ hard:true, done:false, other:false })로 바꾼다. 옛 값 정규화: 'hard' → 'word'+hard, 'all' → 'line'. 'word' 는 고른 유형의 낱말만 가리고, 'line' 은 고른 유형 낱말이 든 줄을 통째로 가린다. done = 단어장에서 복습 끝난 낱말, other = 그 밖의 낱말. 멈추거나 자막 위에 마우스를 올리면 가린 것이 보인다.
+- 설정 탭 "영상 자막" 칸: 가리기(끔·낱말·줄) + 가릴 유형 세 개 켜기.
+- 막대 [가리기] 단추는 끔 → 낱말 → 줄 → 끔 으로 돈다(지금 nextHide 를 새 값으로).
+- 설정 탭에서 '줄마다 멈춤'을 켤 때 '문장 반복'이 켜져 있으면 문장 반복을 끄고 줄마다 멈춤을 켠다(반대도 같다). 지금은 정규화 때문에 조용히 무시된다(1차 검증에서 찾음).
+
 ## 변경 기록 27 (2026-10-26, 정범 요청 "랭플릭스 보고 요구사항 분석해서 구현") — 유튜브 영상 인풋: 이중자막 층 + 복습 방식
 
 정범 정리: 영어 튜터(english-tutor)는 아웃풋(말하기·쓰기)용, readgloss는 인풋(읽기·듣기)용. 랭플릭스에서 **인풋 고리**만 가져온다. 정찰 지도·기능 표는 `replica/recon.md`·`replica/features.csv`, 짜임새는 `replica/architecture.md`. 랭플릭스 코드·내부 주소는 보지 않는다(22절과 같은 원칙).
