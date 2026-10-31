@@ -58,6 +58,7 @@
     koBusy: false, koAll: false, koErr: '', koErrAt: 0,
     savedForms: new Map(), saved: {}, phrases: {}, savedVer: 0, saving: false,
     note: null, waitSince: Date.now(), ccTried: new Set(), msg: '', msgAt: 0, ad: false, shown: false,
+    panelOpen: false, // 패널이 열려 있는지(28-13): / 가 열기·닫기를 가르고, 열 때 멈춤 이유를 건다
   };
   // 잠깐 멈춤(마우스를 올림·사전 카드·풀이): 이유가 하나라도 있으면 멈춰 두고, 우리가 멈춘 것만 다시 재생한다. 사용자가 직접 재생하면 이유를 다 지운다.
   const hold = { reasons: new Set(), paused: false, ours: false };
@@ -409,6 +410,14 @@
       video.play()?.catch?.(() => { hold.ours = false; });
     }
   }
+  // 패널 열림·닫힘(28-13): 열 때 재생 중이었으면 멈추고('panel' 이유), 닫으면 그 이유만 푼다.
+  // 재생 중이 아니었으면 이유를 걸지 않으므로, 그 사이 사용자가 재생한 경우에도 닫을 때 건드리지 않는다.
+  window.addEventListener('readgloss:panel', (e) => {
+    S.panelOpen = e.detail?.open === true;
+    if (S.panelOpen) {
+      if (video && !video.paused) holdOn('panel');
+    } else holdOff('panel');
+  });
   // 멈춘 이유(28-7): 사용자 멈춤만 키보드 저장 모드가 두 줄로 포커스한다. 우리가 멈춘 것은 이유별로 가른다.
   function pauseReasonNow() {
     if (hold.paused || hold.reasons.size) return hold.reasons.has('card') ? 'card' : 'hold';
@@ -1449,8 +1458,12 @@
       render();
       return;
     }
-    // 자리만 잡은 키(28-2): 동작은 해당 티켓에서 붙인다. 지금은 아무것도 하지 않되 키는 이미 여기서 막혀 유튜브로 넘어가지 않는다.
-    if (act === 'panel') return; // T53j 패널
+    // 패널 열기·닫기(28-13): 열 때는 [영상] 탭으로. 이미 열려 있으면(열림 알림을 받아 S.panelOpen) 닫기 알림을 보낸다.
+    if (act === 'panel') {
+      if (S.panelOpen) window.dispatchEvent(new CustomEvent('readgloss:close-panel'));
+      else window.dispatchEvent(new CustomEvent('readgloss:open-panel', { detail: { tab: 'video' } }));
+      return;
+    }
     if (act === 'reveal') {
       S.revealed = i;
       renderLine();
@@ -1747,6 +1760,15 @@
     const act = V.keyAction(e);
     if (!act || !visible()) return;
     if ((act === 'prev' || act === 'repeat' || act === 'next' || act === 'focusMode') && spherical()) return;
+    // 패널이 열려 있으면 / 로 닫을 수 있다(28-13): 열 때 포커스가 패널 탭으로 가므로 다른 화면 키 막힘보다 먼저 본다.
+    // 패널 안 입력칸에서는 그대로 타이핑한다.
+    if (act === 'panel' && S.panelOpen) {
+      if (Sel.isTypingPath(e.composedPath(), e.isComposing)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      run(act);
+      return;
+    }
     if (keyBlocked(e)) return;
     e.preventDefault();
     e.stopPropagation();

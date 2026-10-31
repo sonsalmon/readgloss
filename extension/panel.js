@@ -647,6 +647,10 @@
     if (isOpen) setStatus(r?.ok ? 'on' : 'off');
   }
 
+  // 열림·닫힘 알림(28-13): 영상 자막 층(video-subs.js)이 이 알림을 받아 재생을 멈추거나 다시 튼다.
+  function announcePanel(open) {
+    window.dispatchEvent(new CustomEvent('readgloss:panel', { detail: { open, tab: selected } }));
+  }
   function openPanel(id) {
     if (!isOpen) {
       prevFocus = document.activeElement && document.activeElement !== host ? document.activeElement : null;
@@ -658,6 +662,7 @@
       refreshStatus();
     }
     selectTab(id ?? selected);
+    announcePanel(true);
     shadow.getElementById(`tab-${selected}`)?.focus({ preventScroll: true });
   }
   function closePanel({ restoreFocus = true } = {}) {
@@ -666,6 +671,7 @@
     root.classList.remove('open');
     fab.setAttribute('aria-expanded', 'false');
     fab.setAttribute('aria-label', 'readgloss 패널 열기');
+    announcePanel(false);
     if (restoreFocus && document.activeElement === host) {
       if (prevFocus?.isConnected) prevFocus.focus({ preventScroll: true });
       else shadow.activeElement?.blur();
@@ -682,6 +688,8 @@
   // 사전 카드가 이 Escape 로 닫혔으면(content.js 가 표시를 남긴다) 패널은 그대로 둔다. 확인 메시지(메모)나 개념 칸·카드, 메모장 안에서 누른 Escape 도 무시한다.
   document.addEventListener('keydown', (e) => e.key === 'Escape' && isOpen && !e.readglossCardClosed && !C.isMemoPath(e.composedPath()) && !C.isConceptPath(e.composedPath()) && !C.isToastPath(e.composedPath()) && closePanel(), true);
   window.addEventListener('readgloss:open-panel', (e) => openPanel(e.detail?.tab));
+  // 자막 층의 / 는 열려 있는 패널을 닫으라고 이 알림을 보낸다(28-13).
+  window.addEventListener('readgloss:close-panel', () => closePanel());
   try {
     chrome.runtime.onMessage.addListener((msg, sender) => {
       if (sender.id !== chrome.runtime.id || msg?.type !== 'open-panel') return; // 툴바 아이콘(background.js 가 보낸다)
