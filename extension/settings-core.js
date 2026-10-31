@@ -15,7 +15,9 @@
     floatingButton: { show: true, top: 60 },
     // 유튜브 자막 층(변경 기록 27-2·27-6): 켜기, 한국어 줄, 어려운 단어 칠하기, 마우스를 올리면 멈춤, 자막 켜기 도움, 글자 크기 %, 가리기, 줄마다 멈춤
     // 변경 기록 28-1: 문장 반복·틈 건너뛰기(문장 반복과 줄마다 멈춤은 함께 켤 수 없다)
-    video: { subs: true, ko: true, hard: true, hoverPause: true, autoCC: true, fontPct: 100, hide: 'off', pauseEach: false, repeatLine: false, skipGaps: false },
+    // 변경 기록 28-2: 키 배정 안내를 처음 한 번 보여 주고 [알겠어요] 로 keysNoticeSeen 을 남긴다
+    // 변경 기록 28-3: 느리게 재생 속도(slowRate, 0.5~0.9)
+    video: { subs: true, ko: true, hard: true, hoverPause: true, autoCC: true, fontPct: 100, hide: 'off', pauseEach: false, repeatLine: false, skipGaps: false, keysNoticeSeen: false, slowRate: 0.75 },
     reviewMode: 'flip', // 복습 방식(27-4): 뒤집기 · 고르기 · 듣기
   });
   const ENUMS = {
@@ -24,6 +26,17 @@
     hide: ['off', 'hard', 'all'], reviewMode: ['flip', 'choice', 'listen'],
   };
   const MAX_SITES = 200;
+
+  // 느리게 재생(28-3): video-core.clampSlowRate 와 같은 규칙. settings-core 는 video-core 를 부르지 않으므로 여기에 둔다.
+  const SLOW_MIN = 0.5;
+  const SLOW_MAX = 0.9;
+  const SLOW_STEP = 0.05;
+  const SLOW_DEFAULT = 0.75;
+  function clampSlowRate(v) {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return SLOW_DEFAULT;
+    const snapped = Math.round(Math.round(v / SLOW_STEP) * SLOW_STEP * 100) / 100;
+    return Math.min(SLOW_MAX, Math.max(SLOW_MIN, snapped));
+  }
 
   const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
   const pickEnum = (v, list, def) => (list.includes(v) ? v : def);
@@ -87,6 +100,8 @@
         pauseEach,
         repeatLine,
         skipGaps: bool(v.skipGaps, DV.skipGaps),
+        keysNoticeSeen: bool(v.keysNoticeSeen, DV.keysNoticeSeen),
+        slowRate: clampSlowRate(v.slowRate),
       },
       reviewMode: pickEnum(r.reviewMode, ENUMS.reviewMode, D.reviewMode),
     };
@@ -129,5 +144,5 @@
     });
   }
 
-  globalThis.readglossSettings = { KEY, DEFAULTS, LEVELS, normalize, merge, siteMatches, siteBlocked, load, save, onChange };
+  globalThis.readglossSettings = { KEY, DEFAULTS, LEVELS, clampSlowRate, normalize, merge, siteMatches, siteBlocked, load, save, onChange };
 })();

@@ -178,17 +178,20 @@ test('maskFlags·nextHide: 끔 → 어려운 단어 → 문장 → 끔', () => {
   assert.equal(V.nextHide('weird'), 'off');
 });
 
-test('keyAction: A·S·D·H·R·P 자리(e.code), 조합키·누르고 있기·한글 조합 중은 아님', () => {
+test('keyAction: A·S·D·R·Q·Z·W·L·/ 자리(e.code), 조합키·누르고 있기·한글 조합 중은 아님', () => {
   const k = (code, extra = {}) => V.keyAction({ code, key: 'x', ...extra });
   assert.equal(k('KeyA'), 'prev');
   assert.equal(k('KeyS'), 'repeat');
   assert.equal(k('KeyD'), 'next');
-  assert.equal(k('KeyH'), 'hide');
-  assert.equal(k('KeyR'), 'reveal');
-  assert.equal(k('KeyP'), 'pauseEach');
+  assert.equal(k('KeyR'), 'repeatLine');
+  assert.equal(k('KeyQ'), 'loop');
+  assert.equal(k('KeyZ'), 'slow');
+  assert.equal(k('KeyW'), 'focusMode');
+  assert.equal(k('KeyL'), 'drill');
+  assert.equal(k('Slash'), 'panel');
   assert.equal(k('KeyA', { key: 'ㅁ' }), 'prev', '한글 자판이어도 같은 자리');
   for (const extra of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }, { shiftKey: true }, { repeat: true }, { isComposing: true }]) assert.equal(k('KeyS', extra), null, JSON.stringify(extra));
-  for (const code of ['KeyK', 'KeyJ', 'KeyL', 'KeyC', 'KeyF', 'KeyT', 'KeyM', 'KeyI', 'KeyO', 'KeyW', 'Space']) assert.equal(k(code), null, `유튜브 키 ${code}`);
+  for (const code of ['KeyK', 'KeyJ', 'KeyC', 'KeyF', 'KeyT', 'KeyM', 'KeyI', 'KeyO', 'KeyH', 'KeyP', 'Space']) assert.equal(k(code), null, `유튜브 키·없앤 키 ${code}`);
   assert.equal(V.keyAction(null), null);
 });
 

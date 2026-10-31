@@ -146,6 +146,7 @@
       S.ko = [];
       S.clip = null;
       S.range = null;
+      if (video) video.playbackRate = 1; // 새 영상은 1배로(28-3)
       S.prevT = 0;
       S.mem = { repeatedFor: -1, gapTo: -1 };
       S.koAll = false;
@@ -184,7 +185,10 @@
     if (v !== video) {
       if (video) unbind(video);
       video = v;
-      if (v) bind(v);
+      if (v) {
+        v.playbackRate = 1; // 플레이어가 바뀌면 1배로(28-3)
+        bind(v);
+      }
     }
   }
 
@@ -258,12 +262,15 @@
     tick(true);
   }
   const onTime = () => tick();
+  // 유튜브 메뉴로 속도를 바꾸면 단추 눌림 표시만 따라 그린다(우리가 playbackRate 를 되돌리지 않는다 — 28-3)
+  const onRate = () => { if (ui) renderBar(); };
   function bind(v) {
     v.addEventListener('play', onPlay);
     v.addEventListener('pause', onPause);
     v.addEventListener('seeked', onSeeked);
     v.addEventListener('timeupdate', onTime);
     v.addEventListener('loadedmetadata', onTime);
+    v.addEventListener('ratechange', onRate);
     if (!v.paused) startLoop();
   }
   function unbind(v) {
@@ -272,6 +279,7 @@
     v.removeEventListener('seeked', onSeeked);
     v.removeEventListener('timeupdate', onTime);
     v.removeEventListener('loadedmetadata', onTime);
+    v.removeEventListener('ratechange', onRate);
   }
   function startLoop() {
     if (!raf) raf = requestAnimationFrame(loop);
@@ -414,6 +422,15 @@
     .note .nt { color: #c8c8c8; margin-top: 3px; }
     .note .ex { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; }
     .note .ex .en2 { font-weight: 600; } .note .ex .ko2 { color: #c8c8c8; }
+    /* 처음 한 번 키 안내(28-2): 자막 층 위 작은 카드. 밝은 영상 위에서도 읽히게 어두운 바탕 + 흰 글자, 단추는 기존 포커스 세 겹을 쓴다 */
+    .notice { order: -3; pointer-events: auto; box-sizing: border-box; max-width: min(92%, 440px); padding: 10px 12px; border-radius: 10px;
+      background: rgba(8, 8, 8, .94); border: 1px solid rgba(255, 255, 255, .55); color: #fff; text-align: left;
+      font: max(12px, calc(var(--fs, 22px) * .56))/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+    .notice .nt-title { font-size: max(14px, calc(var(--fs, 22px) * .68)); font-weight: 700; margin-bottom: 6px; }
+    .notice .nt-keys { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; }
+    .notice .nt-k { display: inline-grid; place-items: center; min-width: 2.2em; padding: 0 5px; border-radius: 4px; background: #2b2b2b; color: #fff; font-weight: 600; }
+    .notice .nt-d { align-self: center; color: #f1f1f1; }
+    .notice .nt-ok { margin-top: 8px; }
     .msg { margin-top: 4px; padding: 4px 12px; border-radius: 6px; background: rgba(20, 20, 20, .88); color: #eee;
       font: max(13px, calc(var(--fs, 22px) * .6))/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
     /* 안내만 뜰 때(우리 두 줄이 없을 때)는 유튜브 자막이 보일 수 있으니 그 자리 위로 올린다 */
@@ -453,28 +470,42 @@
     const bar = el('div', 'bar');
     bar.setAttribute('role', 'toolbar');
     bar.setAttribute('aria-label', 'readgloss 자막');
-    const prevBtn = button('‹', '앞 줄 (A)', () => run('prev'));
-    const repeatBtn = button('↻', '이 줄 다시 (S)', () => run('repeat'));
+    const prevBtn = button('‹', '이전 줄 (A)', () => run('prev'));
+    const repeatBtn = button('↻', '이 줄 처음 (S)', () => run('repeat'));
     const nextBtn = button('›', '다음 줄 (D)', () => run('next'));
-    const hideBtn = button('', '가리기 바꾸기 (H)', () => run('hide'));
+    const hideBtn = button('', '가리기 바꾸기', () => run('hide'));
     stackLabels(hideBtn, Object.fromEntries(V.HIDE_MODES.map((m) => [m, `가리기: ${V.HIDE_LABEL[m]}`])));
-    const pauseBtn = button('줄마다 멈춤', '줄마다 멈춤 (P)', () => run('pauseEach'));
-    const lineBtn = button('문장 반복', '문장 반복', () => run('repeatLine'));
-    const loopBtn = button('구간', '구간 반복', () => run('loop', loopBtn));
+    const pauseBtn = button('줄마다 멈춤', '줄마다 멈춤', () => run('pauseEach'));
+    const lineBtn = button('문장 반복', '문장 반복 (R)', () => run('repeatLine'));
+    const loopBtn = button('구간', '구간 반복 (Q)', () => run('loop', loopBtn));
     const gapBtn = button('틈 건너뛰기', '틈 건너뛰기', () => run('skipGaps'));
+    const slowBtn = button('느리게', '느리게 (Z)', () => run('slow'));
     const koBtn = button('한', '한국어 줄 보이기', () => setVideo({ ko: !vs().ko }));
-    const saveBtn = button('', '이 줄 구·문장에 저장', () => saveLine(S.cur, saveBtn));
+    const saveBtn = button('', '이 줄 구·문장에 저장 (Shift)', () => saveLine(S.cur, saveBtn));
     stackLabels(saveBtn, { off: '☆ 저장', on: '★ 저장됨' });
     const explainBtn = button('풀이', '이 줄 AI 풀이(문맥 번역)', () => explain(S.cur));
-    bar.append(prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, koBtn, saveBtn, explainBtn);
+    bar.append(prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, slowBtn, koBtn, saveBtn, explainBtn);
     const note = el('div', 'note');
     note.hidden = true;
     note.setAttribute('role', 'status');
+    // 처음 한 번 키 안내(28-2): [알겠어요] 를 누르면 video.keysNoticeSeen 을 남겨 다시 보이지 않는다
+    const notice = el('div', 'notice');
+    notice.hidden = true;
+    notice.setAttribute('role', 'note');
+    notice.setAttribute('aria-label', '키가 바뀌었어요');
+    const noticeKeys = el('div', 'nt-keys');
+    for (const [key, desc] of [['A', '이전 줄'], ['S', '이 줄 처음'], ['D', '다음 줄'], ['R', '문장 반복'], ['Q', '구간 반복'], ['Z', '느리게'], ['Shift', '줄 저장']]) {
+      const row = el('div', 'nt-k', key);
+      noticeKeys.append(row, el('div', 'nt-d', desc));
+    }
+    const noticeOk = button('알겠어요', '키 안내 닫기', () => setVideo({ keysNoticeSeen: true }));
+    noticeOk.classList.add('nt-ok');
+    notice.append(el('div', 'nt-title', '키가 바뀌었어요'), noticeKeys, noticeOk);
     const lines = el('div', 'lines');
     // 키보드만 쓸 때: Tab 으로 두 줄에 오면 막대가 보이고 다음 Tab 이 막대 단추로 간다(27-2)
     lines.tabIndex = 0;
     lines.setAttribute('role', 'group');
-    lines.setAttribute('aria-label', 'readgloss 자막 — A 앞 줄 · S 이 줄 다시 · D 다음 줄 · H 가리기 · R 가린 줄 보기 · P 줄마다 멈춤 · ←→ 낱말 · Enter 사전 · Esc 나가기');
+    lines.setAttribute('aria-label', 'readgloss 자막 — A 이전 줄 · S 이 줄 처음 · D 다음 줄 · R 문장 반복 · Q 구간 반복 · Z 느리게 · Shift 줄 저장 · ←→ 낱말 · Enter 사전 · Esc 나가기');
     // 마우스로 눌러도 포커스는 층으로 옮기지 않는다(화살표·Space 는 유튜브 몫으로 남는다). Tab 으로만 들어온다.
     // 한국어 줄은 끌어서 고르기(복사)가 되게 기본 동작을 두고, 손을 떼면 포커스만 놓는다(고른 글은 남는다).
     let koPress = false;
@@ -497,9 +528,10 @@
     msg.setAttribute('role', 'status');
     const sr = el('div', 'sr'); // 키보드 낱말 자리를 읽어 주는 곳(화면에는 안 보인다)
     sr.setAttribute('aria-live', 'polite');
+    box.prepend(notice);
     box.append(lines, bar, note, msg);
     shadow.append(style, box, sr);
-    ui = { box, bar, note, lines, en, ko, msg, sr, prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, koBtn, saveBtn, explainBtn, lineKey: '', noteKey: '', tokens: [], wcur: -1, wcurFor: '' };
+    ui = { box, bar, note, notice, lines, en, ko, msg, sr, prevBtn, repeatBtn, nextBtn, hideBtn, pauseBtn, lineBtn, loopBtn, gapBtn, slowBtn, koBtn, saveBtn, explainBtn, lineKey: '', noteKey: '', tokens: [], wcur: -1, wcurFor: '' };
 
     en.addEventListener('click', (e) => {
       const sp = e.target?.closest?.('.w');
@@ -593,6 +625,7 @@
     if (ui.msg.textContent !== msg) ui.msg.textContent = msg;
     host.style.display = show || showMsg ? 'flex' : 'none';
     ui.lines.hidden = ui.bar.hidden = !show;
+    ui.notice.hidden = !(show && !vs().keysNoticeSeen); // 처음 한 번만(알겠어요를 누르면 설정에 남는다)
     if (!show) {
       ui.note.hidden = true;
       return;
@@ -650,7 +683,7 @@
   }
 
   // 낱말이 아닌 조각. 문장 전체 가리기면 그 안의 글자·숫자(한 글자 a·I, x86, café 등)도 가린다 — 사전 낱말이 아니라 누르면 그 줄을 보이기만 한다
-  const HID_TITLE = '가린 낱말 — 누르거나 R 로 보기';
+  const HID_TITLE = '가린 낱말 — 눌러서 보기';
   function appendRest(text, hideAll) {
     if (!hideAll) return void ui.en.append(text);
     let last = 0;
@@ -681,14 +714,15 @@
     const v = vs();
     const cue = S.cues[S.cur];
     const hide = V.HIDE_LABEL[v.hide] ?? '끔';
-    showLabel(ui.hideBtn, v.hide, `가리기 바꾸기 (H) — 지금 ${hide}`);
+    showLabel(ui.hideBtn, v.hide, `가리기 바꾸기 — 지금 ${hide}`);
     ui.pauseBtn.setAttribute('aria-pressed', String(v.pauseEach));
     ui.lineBtn.setAttribute('aria-pressed', String(v.repeatLine));
     ui.gapBtn.setAttribute('aria-pressed', String(v.skipGaps));
     ui.loopBtn.setAttribute('aria-pressed', String(Boolean(S.range)));
+    ui.slowBtn.setAttribute('aria-pressed', String(Boolean(video && video.playbackRate !== 1))); // 지금 속도가 1 이 아님(28-3)
     ui.koBtn.setAttribute('aria-pressed', String(v.ko));
     const saved = cue ? Boolean(Sel.findPhrase(S.phrases, cue.text)) : false;
-    showLabel(ui.saveBtn, saved ? 'on' : 'off', saved ? '이 줄 저장 빼기' : '이 줄 구·문장에 저장');
+    showLabel(ui.saveBtn, saved ? 'on' : 'off', saved ? '이 줄 저장 빼기 (Shift)' : '이 줄 구·문장에 저장 (Shift)');
     ui.saveBtn.setAttribute('aria-pressed', String(saved));
     ui.explainBtn.setAttribute('aria-expanded', String(Boolean(S.note) && S.note.i === S.cur));
     for (const b of [ui.prevBtn, ui.repeatBtn, ui.nextBtn, ui.saveBtn, ui.explainBtn]) b.disabled = !cue;
@@ -742,6 +776,15 @@
     if (act === 'repeatLine') return setVideo(vs().repeatLine ? { repeatLine: false } : { repeatLine: true, pauseEach: false });
     if (act === 'skipGaps') return setVideo({ skipGaps: !vs().skipGaps });
     if (act === 'loop') return loopRange(anchorEl);
+    // 느리게 재생(28-3): 1 ↔ 설정한 느린 속도. 유튜브 메뉴로 바꾼 다른 속도도 1 이 아니면 1 로 돌린다.
+    if (act === 'slow') {
+      if (!video) return;
+      video.playbackRate = V.nextRate(video.playbackRate, vs().slowRate);
+      renderBar();
+      return;
+    }
+    // 자리만 잡은 키(28-2): 동작은 해당 티켓에서 붙인다. 지금은 아무것도 하지 않되 키는 이미 여기서 막혀 유튜브로 넘어가지 않는다.
+    if (act === 'focusMode' || act === 'drill' || act === 'panel') return; // T53d 키보드 저장 · T53e 리스닝 드릴 · T53j 패널
     if (act === 'reveal') {
       S.revealed = i;
       renderLine();
@@ -960,23 +1003,44 @@
     })();
   }
 
-  // ---- 키(27-2): 입력칸 밖·고른 글 없음·우리 다른 화면(패널·카드·메모장) 밖 ----
-  // 360° 영상은 W·A·S·D 로 둘러본다: 그 플레이어에서는 줄 이동 키(A·S·D)를 유튜브에 양보한다
+  // ---- 키(27-2·28-2): 입력칸 밖·고른 글 없음·우리 다른 화면(패널·카드·메모장) 밖 ----
+  // 360° 영상은 W·A·S·D 로 둘러본다: 그 플레이어에서는 줄 이동·키보드 저장 모드 키(A·S·D·W)를 유튜브에 양보한다
   const spherical = () => Boolean(player?.classList.contains('ytp-webgl-spherical') || player?.querySelector('.ytp-webgl-spherical-control'));
+  const inOtherScreen = (path) => path.some((n) => typeof n?.localName === 'string' && n.localName.startsWith('readgloss-') && n !== host);
+  function keyBlocked(e) {
+    const path = e.composedPath();
+    if (Sel.isTypingPath(path, e.isComposing)) return true;
+    if (inOtherScreen(path)) return true;
+    const sel = getSelection();
+    return Boolean(sel && !sel.isCollapsed && String(sel).trim()); // 고른 글이 있으면 readgloss 의 다른 키(D 개념 등) 몫
+  }
+  // Shift 단독(28-2): 누른 뒤 다른 키·마우스 누름이 없고 0.6초 안에 떼면 그 줄 저장
+  let shiftDown = null;
   window.addEventListener('keydown', (e) => {
     if (!e.isTrusted) return; // 페이지 스크립트가 만든 키로 설정(가리기·줄마다 멈춤)을 바꾸지 못하게
+    if (e.key === 'Shift') {
+      if (!e.repeat) shiftDown = { at: Date.now(), interrupted: false }; // 뗀 keyup 을 놓쳤어도 다음 누름에서 새로 잰다
+      return;
+    }
+    if (shiftDown) shiftDown.interrupted = true; // 다른 키가 눌리면 Shift 단독이 아니다
     const act = V.keyAction(e);
     if (!act || !visible()) return;
-    if ((act === 'prev' || act === 'repeat' || act === 'next') && spherical()) return;
-    const path = e.composedPath();
-    if (Sel.isTypingPath(path, e.isComposing)) return;
-    if (path.some((n) => typeof n?.localName === 'string' && n.localName.startsWith('readgloss-') && n !== host)) return;
-    const sel = getSelection();
-    if (sel && !sel.isCollapsed && String(sel).trim()) return; // 고른 글이 있으면 readgloss 의 다른 키(D 개념 등) 몫
+    if ((act === 'prev' || act === 'repeat' || act === 'next' || act === 'focusMode') && spherical()) return;
+    if (keyBlocked(e)) return;
     e.preventDefault();
     e.stopPropagation();
     run(act);
   }, true);
+  window.addEventListener('keyup', (e) => {
+    if (!e.isTrusted || e.key !== 'Shift' || !shiftDown) return;
+    const tap = V.shiftTapAction({ downAt: shiftDown.at, upAt: Date.now(), interrupted: shiftDown.interrupted });
+    shiftDown = null;
+    if (tap !== 'saveLine' || !visible() || S.cur < 0) return;
+    if (keyBlocked(e)) return;
+    saveLine(S.cur);
+  }, true);
+  window.addEventListener('pointerdown', () => { if (shiftDown) shiftDown.interrupted = true; }, true);
+  window.addEventListener('blur', () => { if (shiftDown) shiftDown.interrupted = true; }); // 창을 떠나며 Shift 를 놓친 경우
 
   document.addEventListener('yt-navigate-finish', checkPage);
   setInterval(checkPage, 1000); // 주소 바뀜·플레이어 교체·안내 시간을 함께 본다

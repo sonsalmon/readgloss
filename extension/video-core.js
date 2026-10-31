@@ -305,11 +305,34 @@
   }
   const nextHide = (mode) => HIDE_MODES[(HIDE_MODES.indexOf(mode) + 1) % HIDE_MODES.length] ?? 'off';
 
+  // 느리게 재생(28-3): 0.5~0.9, 0.05 단위. 숫자가 아니면 기본 0.75.
+  const SLOW_MIN = 0.5;
+  const SLOW_MAX = 0.9;
+  const SLOW_STEP = 0.05;
+  const SLOW_DEFAULT = 0.75;
+  function clampSlowRate(v) {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return SLOW_DEFAULT;
+    const snapped = Math.round(Math.round(v / SLOW_STEP) * SLOW_STEP * 100) / 100;
+    return Math.min(SLOW_MAX, Math.max(SLOW_MIN, snapped));
+  }
+  // Z·[느리게]: 1 이 아니면 1 로, 1 이면 느린 속도로. 유튜브 메뉴로 바꾼 속도도 1 이 아니면 1 로 돌린다.
+  const nextRate = (current, slowRate) => (Number(current) === 1 ? clampSlowRate(slowRate) : 1);
+
   // 줄 키(입력칸 밖·고른 글 없음은 부르는 쪽이 본다). 자판과 무관하게 같은 자리(e.code)라 한글 자판이어도 된다.
-  const KEYS = { KeyA: 'prev', KeyS: 'repeat', KeyD: 'next', KeyH: 'hide', KeyR: 'reveal', KeyP: 'pauseEach' };
+  // 28-2 랭플릭스 배치: A 이전 줄 · S 이 줄 처음 · D 다음 줄 · R 문장 반복 · Q 구간 반복 · Z 느리게.
+  // W·L·/ 는 자리만 잡아 두고 해당 티켓(T53d·T53e·T53j)에서 동작을 붙인다.
+  const KEYS = { KeyA: 'prev', KeyS: 'repeat', KeyD: 'next', KeyR: 'repeatLine', KeyQ: 'loop', KeyZ: 'slow', KeyW: 'focusMode', KeyL: 'drill', Slash: 'panel' };
   function keyAction(e) {
     if (!e || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.isComposing || e.repeat) return null;
     return Object.hasOwn(KEYS, e.code) ? KEYS[e.code] : null;
+  }
+  // Shift 단독(28-2): 다른 키·마우스로 끊기지 않았고 0.6초 안에 떼면 이 줄 저장. 시각은 밀리초.
+  const SHIFT_TAP_MS = 600;
+  function shiftTapAction({ downAt, upAt, interrupted } = {}) {
+    if (interrupted) return null;
+    if (!Number.isFinite(downAt) || !Number.isFinite(upAt)) return null;
+    const held = upAt - downAt;
+    return held >= 0 && held <= SHIFT_TAP_MS ? 'saveLine' : null;
   }
 
   // 줄마다 멈춤: 켜져 있고, 이 줄에서 아직 안 멈췄고, 끝 바로 앞~조금 뒤면 멈춘다(그보다 많이 뒤면 건너뛴 것으로 본다).
@@ -510,9 +533,9 @@
   const titleOf = (docTitle) => cleanText(String(docTitle ?? '').replace(/\s+-\s+YouTube$/, '').replace(/^\(\d+\)\s+/, '')).slice(0, MAX_TITLE);
 
   globalThis.readglossVideo = {
-    ID_RE, ASR, GRACE, MAX_CLIP, HIDE_MODES, HIDE_LABEL, KEYS,
+    ID_RE, ASR, GRACE, MAX_CLIP, HIDE_MODES, HIDE_LABEL, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT,
     params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseTrack,
-    langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, maskFlags, nextHide, keyAction, shouldPauseEach, playbackStep,
+    langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, maskFlags, nextHide, clampSlowRate, nextRate, keyAction, shiftTapAction, shouldPauseEach, playbackStep,
     parseT, parseScene, videoIdOf, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf,
   };
 })();

@@ -59,6 +59,7 @@
     { path: 'theme', options: [['auto', '자동'], ['light', '밝게'], ['dark', '어둡게']] },
     { path: 'glossary', options: [['auto', '자동'], ['off', '끄기']] },
     { path: 'video.hide', options: [['off', '끔'], ['hard', '어려운 단어'], ['all', '문장 전체']] },
+    { path: 'video.slowRate', options: [[0.5, '0.5배'], [0.6, '0.6배'], [0.7, '0.7배'], [0.75, '0.75배'], [0.8, '0.8배'], [0.9, '0.9배']] },
   ];
   const TOGGLES = [{ path: 'enabled' }, { path: 'selectionTranslate' }, { path: 'floatingButton.show' }, { path: 'dimWhileReading' }, { path: 'structureHints' }, { path: 'savedMarks' },
     { path: 'video.subs' }, { path: 'video.ko' }, { path: 'video.hard' }, { path: 'video.hoverPause' }, { path: 'video.autoCC' }, { path: 'video.pauseEach' }];
@@ -689,7 +690,7 @@
     structureHints: '문장 구조 표시',
     savedMarks: '단어장 단어 칠하기',
     'video.subs': '유튜브 자막 층 켜기', 'video.ko': '한국어 줄 보이기', 'video.hard': '어려운 단어 칠하기', 'video.hoverPause': '자막에 마우스를 올리면 잠깐 멈춤',
-    'video.autoCC': '자막이 꺼져 있으면 켜기', 'video.pauseEach': '줄마다 멈춤', 'video.hide': '가리기(듣기 연습)', 'video.fontPct': '자막 크기',
+    'video.autoCC': '자막이 꺼져 있으면 켜기', 'video.pauseEach': '줄마다 멈춤', 'video.hide': '가리기(듣기 연습)', 'video.fontPct': '자막 크기', 'video.slowRate': '느리게 속도',
   };
   const LEVEL_HINT = {
     A2: 'A2 이상: 거의 모든 단어에 뜻이 붙어요',
@@ -889,7 +890,7 @@
       h('h3', { class: 'sec', text: '단어 표시' }), choice('mark'),
       h('h3', { class: 'sec', text: '영상 자막' }), toggle('video.subs', '유튜브 영상에서 영어·한국어 두 줄 자막. 유튜브 자막(CC) 단추로 켜고 꺼요. 낱말을 누르면 사전 카드.'),
       toggle('video.ko', '맥 번역(무료)이에요. 자막 위 [풀이]는 AI 문맥 번역.'), toggle('video.hard'), toggle('video.hoverPause'), toggle('video.autoCC', '영상마다 한 번 CC 단추를 눌러요.'),
-      toggle('video.pauseEach', 'P 키로도 바꿔요. A 앞 줄 · S 이 줄 다시 · D 다음 줄.'), choice('video.hide', null, 'H 키로도 바꿔요. 가린 낱말을 누르거나 R 로 그 줄을 보여요.'), slider('video.fontPct'),
+      toggle('video.pauseEach', 'P 키로도 바꿔요. A 앞 줄 · S 이 줄 다시 · D 다음 줄.'), choice('video.hide', null, 'H 키로도 바꿔요. 가린 낱말을 누르거나 R 로 그 줄을 보여요.'), slider('video.fontPct'), choice('video.slowRate', null, 'Z 키나 자막 막대 [느리게]로 1배와 이 속도를 오가요.'),
       h('h3', { class: 'sec', text: '화면' }), slider('opacityInput'), slider('opacityUi'), toggle('dimWhileReading', '메모할 때만 진해지고, 읽을 때는 설정한 투명도로 보여요.'),
       h('h3', { class: 'sec', text: '기타' }), toggle('allowCopy', '체크하지 않으면 복사할 때 주석 글자가 섞이지 않아요.'), toggle('selectionTranslate', '글을 드래그하면 맥 번역 카드가 떠요. 한 단어는 사전 카드로 열려요.'), choice('theme'), toggle('floatingButton.show', '숨겨도 브라우저 툴바의 readgloss 아이콘으로 패널을 열 수 있어요.'),
       h('h3', { class: 'sec', text: '끌 사이트' }), ...blockNodes,
