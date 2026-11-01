@@ -27,7 +27,11 @@
     const url = dl?.['imsc1.1']?.urls?.[0]?.url;
     const lang = String(track?.bcp47 || track?.language || '').trim();
     if (typeof url !== 'string' || !url || !lang) return null;
-    return movieId ? { url, lang, movieId } : { url, lang };
+    if (track?.isForcedNarrative === true) return null; // 외국어 대사만 나오는 강제 자막은 전체 자막을 밀어내지 않게 뺀다
+    const tr = movieId ? { url, lang, movieId } : { url, lang };
+    // 청각장애인용(CC: 대문자·[소리] 표시)은 표시해 두고, 같은 언어 일반 자막이 있으면 그쪽을 고른다
+    if (track?.rawTrackType === 'closedcaptions' || track?.trackType === 'ASSISTIVE') tr.cc = true;
+    return tr;
   }
 
   // 응답의 (result.)timedtexttracks 또는 (result.)textTracks 에서 imsc1.1 주소와 언어만 골라 모은다.

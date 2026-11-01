@@ -235,7 +235,7 @@ test('panel-words 소스: 단어장이 오기 전에는 복습 결과를 저장�
   const at = code.indexOf('async function sendResult(');
   assert.ok(at > 0);
   const head = code.slice(at, at + 500);
-  assert.ok(/if \(!state\) \{[\s\S]*?loadWords\(\);\s*return false;/.test(head), 'state 가 없으면 단어장을 부르고 false');
+  assert.ok(/if \(!state\) \{[\s\S]*?await loadWords\(\);[\s\S]*?불러오지 못해 저장하지 않았어요[\s\S]*?return false;/.test(head), 'state 가 없으면 단어장을 기다리고, 결과에 맞는 문구로 false');
   assert.ok(head.indexOf('if (!state)') < head.indexOf('busy = true'), 'busy 를 켜기 전에 막는다');
 });
 

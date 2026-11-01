@@ -220,3 +220,27 @@ test('video-subs 소스: 넷플릭스 자막은 실린 화 번호(movieId)로 �
   const code = readFileSync(new URL('../extension/video-subs.js', import.meta.url), 'utf8');
   assert.match(code, /String\(track\?\.movieId \?\? ''\)\) \? String\(track\.movieId\) : V\.netflixIdOf\(location\.href\)/);
 });
+
+test('nf-hook: 강제 자막은 빼고, CC 는 cc 표시를 붙인다', async () => {
+  const h = await loadHook();
+  try {
+    const u = (x) => ({ 'imsc1.1': { urls: [{ url: `https://a.1.oca.nflxvideo.net/?${x}` }] } });
+    h.win.JSON.parse(JSON.stringify({ result: { movieId: 1, audioTracks: [], textTracks: [
+      { language: 'en', rawTrackType: 'subtitles', isForcedNarrative: true, downloadables: u('forced') },
+      { language: 'en', rawTrackType: 'closedcaptions', trackType: 'ASSISTIVE', downloadables: u('cc') },
+      { language: 'en', rawTrackType: 'subtitles', trackType: 'PRIMARY', downloadables: u('sub') },
+    ] } }));
+    assert.deepEqual(h.messages[0].tracks.map((t) => [t.url.split('?')[1], t.cc === true]), [['cc', true], ['sub', false]]);
+  } finally {
+    h.restore();
+  }
+});
+
+test('pickTracks: 같은 언어면 일반 자막(manual)을 CC 보다 먼저 고른다', async () => {
+  await import('../extension/video-core.js');
+  const V = globalThis.readglossVideo;
+  const cc = { lang: 'en', kind: 'cc', cues: [{ start: 0, end: 1, text: 'HI.' }], ts: 9 };
+  const sub = { lang: 'en', kind: 'manual', cues: [{ start: 0, end: 1, text: 'Hi.' }], ts: 1 };
+  assert.equal(V.pickTracks([cc, sub]).main, sub);
+  assert.equal(V.pickTracks([cc]).main, cc, 'CC 밖에 없으면 CC');
+});

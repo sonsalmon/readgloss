@@ -301,8 +301,9 @@
           // 자막이 속한 화(movieId)를 쓴다. 없으면(옛 응답) 지금 주소의 화로 본다.
           const videoId = /^\d{1,20}$/.test(String(track?.movieId ?? '')) ? String(track.movieId) : V.netflixIdOf(location.href);
           if (!videoId) return;
-          const tr = { videoId, lang, tlang: '', kind: 'manual', cues, ts: Date.now() };
-          S.tracks = [...S.tracks.filter((x) => !(x.videoId === tr.videoId && x.lang === tr.lang && x.tlang === '' && x.kind === 'manual')), tr].slice(-20);
+          // CC 는 kind 'cc' 로 두어 pickTracks 가 같은 언어 일반 자막('manual')을 먼저 고르게 한다
+          const tr = { videoId, lang, tlang: '', kind: track?.cc === true ? 'cc' : 'manual', cues, ts: Date.now() };
+          S.tracks = [...S.tracks.filter((x) => !(x.videoId === tr.videoId && x.lang === tr.lang && x.tlang === '' && x.kind === tr.kind)), tr].slice(-20);
           if (tr.videoId === S.id) chooseTracks();
         })
         .catch(() => { nfFetching.delete(key); });

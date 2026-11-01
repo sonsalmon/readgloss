@@ -1075,8 +1075,10 @@
       // 단어장(GET /words)이 오기 전에는 고르기 가능 여부(modes)를 모른다. 이때 답을 받으면 상자 5 카드가
       // 고르기 없이 끝날 수 있어서, 단어장이 올 때까지 저장하지 않는다(오면 화면이 다시 그려진다).
       if (!state) {
-        reviewErr = '단어장을 불러오는 중이에요. 잠시 뒤 다시 눌러 주세요';
-        loadWords();
+        reviewErr = '단어장을 불러오는 중이에요';
+        draw();
+        await loadWords();
+        reviewErr = state ? '단어장을 불러왔어요. 다시 답해 주세요' : '단어장을 불러오지 못해 저장하지 않았어요';
         return false;
       }
       busy = true;
