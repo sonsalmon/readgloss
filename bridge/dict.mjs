@@ -92,10 +92,14 @@ export function parseEntry({ headword, homograph, text }) {
 
 const DEFAULT_BIN = join(dirname(fileURLToPath(import.meta.url)), '..', 'native', 'macdict');
 const TIMEOUT_MS = 3000;
+// 맥을 켠 직후 도우미가 처음 뜰 때는 사전을 읽느라 3초를 넘길 수 있다(첫 시험 실행에서 실연동 6개가 한꺼번에 실패).
+// 그래서 띄운 뒤 첫 답까지만 길게 기다린다. 시간 제한을 직접 준 호출(가짜 도우미 시험)은 그 값을 그대로 쓴다.
+const COLD_TIMEOUT_MS = 15000;
 
-// 상주 도우미를 처음 요청 때 띄우고, 한 줄씩 직렬로 주고받는다. 죽거나 3초 안에 답이 없으면 정리하고 다음 요청 때 다시 띄운다.
-export function createDict({ bin = DEFAULT_BIN, args = [], timeoutMs = TIMEOUT_MS } = {}) {
+// 상주 도우미를 처음 요청 때 띄우고, 한 줄씩 직렬로 주고받는다. 죽거나 3초(처음 뜬 뒤 첫 답은 15초) 안에 답이 없으면 정리하고 다음 요청 때 다시 띄운다.
+export function createDict({ bin = DEFAULT_BIN, args = [], timeoutMs = TIMEOUT_MS, coldTimeoutMs = timeoutMs === TIMEOUT_MS ? COLD_TIMEOUT_MS : timeoutMs } = {}) {
   let child = null;
+  let warm = false; // 지금 도우미가 한 번이라도 답했는가
   let pending = null; // { resolve, reject, timer }
   let buf = '';
   let chain = Promise.resolve();
@@ -113,6 +117,7 @@ export function createDict({ bin = DEFAULT_BIN, args = [], timeoutMs = TIMEOUT_M
     if (!existsSync(bin)) throw new DictUnavailableError(bin);
     const c = spawn(bin, args, { stdio: ['pipe', 'pipe', 'ignore'] });
     buf = '';
+    warm = false;
     c.stdout.setEncoding('utf8');
     c.stdout.on('data', (d) => {
       if (child !== c) return; // 버린 도우미의 늦은 출력
@@ -124,6 +129,7 @@ export function createDict({ bin = DEFAULT_BIN, args = [], timeoutMs = TIMEOUT_M
       const p = pending;
       pending = null;
       clearTimeout(p.timer);
+      warm = true;
       try {
         p.resolve(JSON.parse(line));
       } catch {
@@ -158,7 +164,7 @@ export function createDict({ bin = DEFAULT_BIN, args = [], timeoutMs = TIMEOUT_M
         fail(new DictError('timeout'));
         c.kill(); // 응답이 밀린 도우미는 버린다(다음 요청이 새로 띄운다)
         if (child === c) child = null;
-      }, timeoutMs);
+      }, warm ? timeoutMs : coldTimeoutMs);
       pending = { resolve, reject, timer };
       c.stdin.write(`${word}\n`);
     });

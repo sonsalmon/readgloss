@@ -302,7 +302,11 @@
           const videoId = /^\d{1,20}$/.test(String(track?.movieId ?? '')) ? String(track.movieId) : V.netflixIdOf(location.href);
           if (!videoId) return;
           // CC 는 kind 'cc' 로 두어 pickTracks 가 같은 언어 일반 자막('manual')을 먼저 고르게 한다
-          const tr = { videoId, lang, tlang: '', kind: track?.cc === true ? 'cc' : 'manual', cues, ts: Date.now() };
+          const isCc = track?.cc === true;
+          // CC 영어는 소리 표시·화자 이름표를 지우고 대문자 문장을 손질한다(빈 줄은 뺀다)
+          const useCues = isCc && lang === 'en' ? cues.map((c) => ({ ...c, text: V.cleanCcText(c.text) })).filter((c) => c.text) : cues;
+          if (!useCues.length) return;
+          const tr = { videoId, lang, tlang: '', kind: isCc ? 'cc' : 'manual', cues: useCues, ts: Date.now() };
           S.tracks = [...S.tracks.filter((x) => !(x.videoId === tr.videoId && x.lang === tr.lang && x.tlang === '' && x.kind === tr.kind)), tr].slice(-20);
           if (tr.videoId === S.id) chooseTracks();
         })
@@ -317,8 +321,16 @@
 
   function chooseTracks() {
     const mine = S.tracks.filter((t) => t.videoId === S.id);
-    const { main, ko } = V.pickTracks(mine);
-    const key = main ? keyOf(main) : '';
+    const picked = V.pickTracks(mine);
+    const ko = picked.ko;
+    let main = picked.main;
+    // 넷플릭스: 한국어 트랙이 있으면 영어 조각을 한국어 줄 단위로 합친다. 한국어가 늦게 와도 key 가 달라져 다시 시작한다.
+    let mergedBy = '';
+    if (site.name === 'netflix' && main && ko && ko.kind !== 'cc') {
+      main = { ...main, cues: V.mergeByKo(main.cues, ko.cues) };
+      mergedBy = `|ko:${keyOf(ko)}`;
+    }
+    const key = main ? keyOf(main) + mergedBy : '';
     if (key !== S.mainKey) {
       S.mainKey = key;
       S.koKey = '';
