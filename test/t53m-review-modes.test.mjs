@@ -234,8 +234,9 @@ test('panel-words 소스: 단어장이 오기 전에는 복습 결과를 저장�
   const code = readFileSync(new URL('../extension/panel-words.js', import.meta.url), 'utf8');
   const at = code.indexOf('async function sendResult(');
   assert.ok(at > 0);
-  const head = code.slice(at, at + 500);
-  assert.ok(/if \(!state\) \{[\s\S]*?await loadWords\(\);[\s\S]*?불러오지 못해 저장하지 않았어요[\s\S]*?return false;/.test(head), 'state 가 없으면 단어장을 기다리고, 결과에 맞는 문구로 false');
+  const head = code.slice(at, at + 900);
+  assert.ok(/if \(!state\) \{[\s\S]*?loadWords\(\)\.then\([\s\S]*?불러오지 못해 저장하지 않았어요[\s\S]*?return false;/.test(head), 'state 가 없으면 기다리지 않고 false, 단어장이 오면 문구를 고친다');
+  assert.ok(!/if \(!state\) \{[^}]*await loadWords/.test(head), '기다리지 않는다(기다리는 동안 [다음] 경합)');
   assert.ok(head.indexOf('if (!state)') < head.indexOf('busy = true'), 'busy 를 켜기 전에 막는다');
 });
 

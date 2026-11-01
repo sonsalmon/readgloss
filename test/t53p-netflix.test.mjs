@@ -243,4 +243,7 @@ test('pickTracks: 같은 언어면 일반 자막(manual)을 CC 보다 먼저 고
   const sub = { lang: 'en', kind: 'manual', cues: [{ start: 0, end: 1, text: 'Hi.' }], ts: 1 };
   assert.equal(V.pickTracks([cc, sub]).main, sub);
   assert.equal(V.pickTracks([cc]).main, cc, 'CC 밖에 없으면 CC');
+  const kcc = { lang: 'ko', kind: 'cc', cues: [{ start: 0, end: 1, text: '[웃음]' }], ts: 9 };
+  const ksub = { lang: 'ko', kind: 'manual', cues: [{ start: 0, end: 1, text: '안녕' }], ts: 1 };
+  assert.equal(V.pickTracks([kcc, ksub]).ko, ksub, '한국어도 일반 자막 먼저');
 });

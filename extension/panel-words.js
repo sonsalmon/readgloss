@@ -1074,11 +1074,15 @@
     async function sendResult(card, result) {
       // 단어장(GET /words)이 오기 전에는 고르기 가능 여부(modes)를 모른다. 이때 답을 받으면 상자 5 카드가
       // 고르기 없이 끝날 수 있어서, 단어장이 올 때까지 저장하지 않는다(오면 화면이 다시 그려진다).
+      // 기다리지 않고 바로 false 를 돌려준다(기다리는 동안 [다음]이 눌려 카드가 저장 없이 넘어가지 않게).
       if (!state) {
-        reviewErr = '단어장을 불러오는 중이에요';
-        draw();
-        await loadWords();
-        reviewErr = state ? '단어장을 불러왔어요. 다시 답해 주세요' : '단어장을 불러오지 못해 저장하지 않았어요';
+        const waitMsg = '단어장을 불러오는 중이에요. 잠시 뒤 다시 답해 주세요';
+        reviewErr = waitMsg;
+        loadWords().then(() => {
+          if (reviewErr !== waitMsg) return; // 그사이 다른 일이 있었으면 그 문구를 둔다
+          reviewErr = state ? '' : '단어장을 불러오지 못해 저장하지 않았어요';
+          draw();
+        });
         return false;
       }
       busy = true;

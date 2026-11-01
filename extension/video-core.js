@@ -362,7 +362,8 @@
     const list = Array.isArray(tracks) ? tracks.filter((t) => t && Array.isArray(t.cues) && t.cues.length) : [];
     const by = (a, b) => (a.kind === b.kind ? (b.ts ?? 0) - (a.ts ?? 0) : a.kind === 'manual' ? -1 : 1);
     const main = list.filter(isEnglish).sort(by)[0] ?? null;
-    const ko = list.filter(isKorean).sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0))[0] ?? null;
+    // 한국어도 CC(넷플릭스 청각장애인용)보다 일반 자막을 먼저, 그 안에서는 최신 순
+    const ko = list.filter(isKorean).sort((a, b) => (a.kind === 'cc') - (b.kind === 'cc') || (b.ts ?? 0) - (a.ts ?? 0))[0] ?? null;
     return { main, ko };
   }
 
