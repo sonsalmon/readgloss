@@ -21,11 +21,13 @@
   }
 
   // 옛 응답은 timedtexttracks[].ttDownloadables, 2026-11 응답은 textTracks[].downloadables 에 주소가 있다.
-  function trackOf(track) {
+  // movieId: 이 자막이 어느 화의 것인지. 여러 화를 넘기면 모아 둔 자막을 replay 로 다시 보내므로 화를 같이 싣는다.
+  function trackOf(track, movieId) {
     const dl = track?.ttDownloadables ?? track?.downloadables;
     const url = dl?.['imsc1.1']?.urls?.[0]?.url;
     const lang = String(track?.bcp47 || track?.language || '').trim();
-    return typeof url === 'string' && url && lang ? { url, lang } : null;
+    if (typeof url !== 'string' || !url || !lang) return null;
+    return movieId ? { url, lang, movieId } : { url, lang };
   }
 
   // 응답의 (result.)timedtexttracks 또는 (result.)textTracks 에서 imsc1.1 주소와 언어만 골라 모은다.
@@ -35,11 +37,14 @@
     return null;
   }
   function collect(result) {
-    const list = listOf(result) ?? listOf(result?.result);
+    const holder = listOf(result) ? result : listOf(result?.result) ? result.result : null;
+    const list = holder ? listOf(holder) : null;
     if (!list) return;
+    const mid = Number(holder.movieId);
+    const movieId = Number.isSafeInteger(mid) && mid > 0 ? String(mid) : '';
     const fresh = [];
     for (const track of list) {
-      const tr = trackOf(track);
+      const tr = trackOf(track, movieId);
       if (!tr) continue;
       const key = `${tr.lang}|${tr.url}`;
       if (seen.has(key)) continue;

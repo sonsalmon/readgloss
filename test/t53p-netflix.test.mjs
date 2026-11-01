@@ -137,6 +137,8 @@ test('nf-hook: 2026-11 재생 응답(result.textTracks[].downloadables)에서도
     assert.deepEqual(h.messages, [{ source: 'readgloss-nf', type: 'tracks', tracks: [{ url: `${cdn}&en`, lang: 'en' }, { url: `${cdn}&ko`, lang: 'ko' }] }]);
     h.win.JSON.parse(JSON.stringify({ textTracks: [{ language: 'en', downloadables: { 'imsc1.1': { urls: [{ url: `${cdn}&other` }] } } }] }));
     assert.equal(h.messages.length, 1, 'audioTracks 없는 다른 textTracks 는 재생 응답이 아니라 무시');
+    h.win.JSON.parse(JSON.stringify({ result: { movieId: 80004162, audioTracks: [], textTracks: [{ language: 'en', downloadables: { 'imsc1.1': { urls: [{ url: `${cdn}&ep2` }] } } }] } }));
+    assert.deepEqual(h.messages[1].tracks, [{ url: `${cdn}&ep2`, lang: 'en', movieId: '80004162' }], '화 번호(movieId)를 같이 싣는다');
   } finally {
     h.restore();
   }
@@ -211,4 +213,10 @@ test('소스: nfAddTracks 가 nfTrackUrlOk 를 쓰고, [영상] 탭은 adapterFo
   assert.match(rd('panel-video.js'), /V\.adapterFor\?\.\(location\)/);
   assert.doesNotMatch(rd('panel-video.js'), /youtube\\\.com\$\/\.test\(location\.hostname\)/);
   assert.match(rd('panel-words.js'), /연습 페이지에서 파일을 다시 골라 주세요/);
+});
+
+test('video-subs 소스: 넷플릭스 자막은 실린 화 번호(movieId)로 붙이고, 없을 때만 지금 주소의 화로 본다', async () => {
+  const { readFileSync } = await import('node:fs');
+  const code = readFileSync(new URL('../extension/video-subs.js', import.meta.url), 'utf8');
+  assert.match(code, /String\(track\?\.movieId \?\? ''\)\) \? String\(track\.movieId\) : V\.netflixIdOf\(location\.href\)/);
 });
