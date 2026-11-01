@@ -20,17 +20,22 @@
     }
   }
 
+  // 옛 응답은 timedtexttracks[].ttDownloadables, 2026-11 응답은 textTracks[].downloadables 에 주소가 있다.
   function trackOf(track) {
-    const url = track?.ttDownloadables?.['imsc1.1']?.urls?.[0]?.url;
+    const dl = track?.ttDownloadables ?? track?.downloadables;
+    const url = dl?.['imsc1.1']?.urls?.[0]?.url;
     const lang = String(track?.bcp47 || track?.language || '').trim();
     return typeof url === 'string' && url && lang ? { url, lang } : null;
   }
 
-  // 응답의 result.timedtexttracks(또는 parsed.timedtexttracks)에서 imsc1.1 주소와 언어(bcp47)만 골라 모은다.
+  // 응답의 (result.)timedtexttracks 또는 (result.)textTracks 에서 imsc1.1 주소와 언어만 골라 모은다.
+  function listOf(o) {
+    if (Array.isArray(o?.timedtexttracks)) return o.timedtexttracks;
+    if (Array.isArray(o?.textTracks) && Array.isArray(o?.audioTracks)) return o.textTracks; // 재생 응답만(다른 textTracks 와 헷갈리지 않게)
+    return null;
+  }
   function collect(result) {
-    const list = Array.isArray(result?.timedtexttracks)
-      ? result.timedtexttracks
-      : Array.isArray(result?.result?.timedtexttracks) ? result.result.timedtexttracks : null;
+    const list = listOf(result) ?? listOf(result?.result);
     if (!list) return;
     const fresh = [];
     for (const track of list) {

@@ -228,3 +228,20 @@ test('panel-words 소스: 고르기 퀴즈는 진짜 고르기이거나, 고르�
   assert.ok(code.includes("if (shown === 'choice' || choiceFellBack)"));
   assert.ok(!code.includes("(mode === 'choice' && shown === 'flip')"), '옛 넓은 조건이 남으면 안 된다');
 });
+
+test('panel-words 소스: 단어장이 오기 전에는 복습 결과를 저장하지 않는다(상자 5 고르기 빠짐 방지)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const code = readFileSync(new URL('../extension/panel-words.js', import.meta.url), 'utf8');
+  const at = code.indexOf('async function sendResult(');
+  assert.ok(at > 0);
+  const head = code.slice(at, at + 500);
+  assert.ok(/if \(!state\) \{[\s\S]*?loadWords\(\);\s*return false;/.test(head), 'state 가 없으면 단어장을 부르고 false');
+  assert.ok(head.indexOf('if (!state)') < head.indexOf('busy = true'), 'busy 를 켜기 전에 막는다');
+});
+
+test('video-subs 소스: 세로 막대는 넘치면 얇은 스크롤 막대를 보인다', async () => {
+  const { readFileSync } = await import('node:fs');
+  const code = readFileSync(new URL('../extension/video-subs.js', import.meta.url), 'utf8');
+  assert.ok(code.includes('scrollbar-width: thin'));
+  assert.ok(!code.includes('.bar::-webkit-scrollbar { display: none; }'));
+});

@@ -744,9 +744,9 @@
     /* 세로 막대(28-10): 플레이어 왼쪽 가장자리. 숨어 있을 때는 visibility 라 마우스를 받지 않고, 두 줄·막대에 올리면 보인다.
        자리(top·left·max-height)는 layout() 이 플레이어 rect 와 유튜브 조작 막대 높이로 잡는다. */
     .bar { position: fixed; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; align-items: stretch; gap: 4px;
-      width: max-content; max-width: 96px; padding: 4px; overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
+      width: max-content; max-width: 96px; padding: 4px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .45) transparent; overscroll-behavior: contain;
       visibility: hidden; opacity: 0; transition: opacity .15s 1.6s, visibility 0s 1.75s; } /* 숨을 때만 1.75초 늦춰, 두 줄에서 막대까지 마우스를 옮길 시간을 준다 */
-    .bar::-webkit-scrollbar { display: none; }
+    /* 플레이어가 낮아 단추가 다 안 들어가면 얇은 스크롤 막대로 '아래에 더 있음'을 보인다(숨기면 잘린 것처럼 보였다) */
     .box:hover .bar, .box:focus-within .bar, .bar:hover, .bar:focus-within { visibility: visible; opacity: 1; transition: opacity .15s, visibility 0s; }
     /* 단추: 누를 자리 28px 이상, 글자는 자막 크기를 따라 커진다 */
     button { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; padding: 0 7px; cursor: pointer;

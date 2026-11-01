@@ -118,6 +118,30 @@ test('nf-hook: JSON.parse 결과·예외는 그대로 두고 imsc1.1 주소·언
   }
 });
 
+test('nf-hook: 2026-11 재생 응답(result.textTracks[].downloadables)에서도 imsc1.1 주소를 모은다', async () => {
+  const h = await loadHook();
+  try {
+    const cdn = 'https://ipv4-c005-x.1.oca.nflxvideo.net/?o=1&v=326';
+    const payload = {
+      result: {
+        audioTracks: [{ trackType: 'PRIMARY' }],
+        textTracks: [
+          { type: 'timedtext', language: 'en', downloadables: { 'imsc1.1': { urls: [{ url: `${cdn}&en` }] }, 'nflx-cmisc': {} } },
+          { type: 'timedtext', language: 'ko', downloadables: { 'imsc1.1': { urls: [{ url: `${cdn}&ko` }] } } },
+          { type: 'timedtext', language: 'ja', downloadables: { 'nflx-cmisc': { urls: [{ url: `${cdn}&ja` }] } } },
+        ],
+      },
+    };
+    const out = h.win.JSON.parse(JSON.stringify(payload));
+    assert.deepEqual(out, payload, '원래 결과 그대로');
+    assert.deepEqual(h.messages, [{ source: 'readgloss-nf', type: 'tracks', tracks: [{ url: `${cdn}&en`, lang: 'en' }, { url: `${cdn}&ko`, lang: 'ko' }] }]);
+    h.win.JSON.parse(JSON.stringify({ textTracks: [{ language: 'en', downloadables: { 'imsc1.1': { urls: [{ url: `${cdn}&other` }] } } }] }));
+    assert.equal(h.messages.length, 1, 'audioTracks 없는 다른 textTracks 는 재생 응답이 아니라 무시');
+  } finally {
+    h.restore();
+  }
+});
+
 test('nf-hook: 플레이어 API 로 seek(ms)·play·pause·time 을 처리한다', async () => {
   const calls = [];
   const api = {
