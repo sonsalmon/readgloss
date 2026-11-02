@@ -457,6 +457,7 @@
   let isOpen = false;
   let currentMode = 'pad'; // 'pad' | 'list'
   let quotes = {}; // 소제목 key별 인용 보관 { [key]: { exact, prefix, suffix } }
+  let marks = {}; // 소제목 key별 쓰는 칸 모드(29-2) { [key]: 'question' | 'insight' }
   let currentTask = null; // 짐작된 할 일 id
   let currentTaskTitle = ''; // 짐작된 할 일 제목
   let typingTimer = 0;
@@ -724,6 +725,31 @@
     .sec-memo-text {
       flex: 1;
       min-width: 0;
+    }
+    .sec-memo-wrap.mark-question {
+      border-left: 3px solid rgba(251, 113, 133, 0.9);
+      padding-left: 5px;
+    }
+    .sec-memo-wrap.mark-insight {
+      border-left: 3px solid rgba(74, 222, 128, 0.9);
+      padding-left: 5px;
+    }
+    .sec-memo-mark {
+      flex-shrink: 0;
+      font-size: 11px;
+      line-height: 1.4;
+      user-select: none;
+    }
+    .sec-tag-chip {
+      display: inline-block;
+      margin: 0 1px;
+      padding: 0 4px;
+      border-radius: 8px;
+      background: var(--accbg);
+      color: var(--acc);
+      font-size: 10.5px;
+      line-height: 1.5;
+      word-break: keep-all;
     }
     .btn-del {
       all: unset;
@@ -1108,6 +1134,48 @@
       border-color: var(--acc);
       outline: 2px solid var(--acc);
       outline-offset: 0;
+    }
+    .sec-textarea.mark-question {
+      border-color: rgba(251, 113, 133, 0.9);
+    }
+    .sec-textarea.mark-question:focus {
+      border-color: rgba(251, 113, 133, 0.9);
+      outline-color: rgba(251, 113, 133, 0.9);
+    }
+    .sec-textarea.mark-insight {
+      border-color: rgba(74, 222, 128, 0.9);
+    }
+    .sec-textarea.mark-insight:focus {
+      border-color: rgba(74, 222, 128, 0.9);
+      outline-color: rgba(74, 222, 128, 0.9);
+    }
+    .sec-mark-chip {
+      align-self: flex-start;
+      margin: 2px 0 0 8px;
+      padding: 0 5px;
+      border-radius: 8px;
+      font-size: 10.5px;
+      line-height: 1.5;
+      user-select: none;
+      background: var(--card);
+      border: 1px solid var(--bd);
+      color: var(--mut);
+    }
+    .sec-mark-chip.question {
+      border-color: rgba(251, 113, 133, 0.9);
+      color: #be123c;
+    }
+    .sec-mark-chip.insight {
+      border-color: rgba(74, 222, 128, 0.9);
+      color: #15803d;
+    }
+    @media (prefers-color-scheme: dark) {
+      .sec-mark-chip.question {
+        color: #fda4af;
+      }
+      .sec-mark-chip.insight {
+        color: #86efac;
+      }
     }
     .pad-textarea {
       width: 100%;
@@ -1606,14 +1674,24 @@
     const text = (ta.value || '').trim().slice(0, 2000);
     if (!text) return false; // 빈 글로는 고치지 않는다(다리가 거절한다)
     const id = editingMemo.id;
+    const memoCore = globalThis.readglossMemo;
+    const tags = memoCore?.extractTags ? memoCore.extractTags(text) : [];
     const res = await new Promise((resolve) => {
-      chrome.runtime.sendMessage({ type: 'memos', op: 'edit', id, text }, resolve);
+      chrome.runtime.sendMessage({ type: 'memos', op: 'edit', id, text, tags }, resolve);
     });
     if (res?.memo) {
       const idx = currentMemos.findIndex((m) => m.id === id);
-      if (idx !== -1) currentMemos[idx] = res.memo;
+      // mark는 보내지 않았으니 응답에 없으면 원래 표시를 그대로 둔다
+      const editedMemo = { ...res.memo };
+      if (editedMemo.mark === undefined) editedMemo.mark = currentMemos[idx]?.mark ?? null;
+      if (!Array.isArray(editedMemo.tags)) editedMemo.tags = tags;
+      if (idx !== -1) currentMemos[idx] = editedMemo;
       const pIdx = currentPageItems.findIndex((item) => item.kind === 'memo' && item.id === id);
-      if (pIdx !== -1) currentPageItems[pIdx].text = res.memo.text;
+      if (pIdx !== -1) {
+        currentPageItems[pIdx].text = editedMemo.text;
+        currentPageItems[pIdx].tags = editedMemo.tags;
+        if (editedMemo.mark !== undefined) currentPageItems[pIdx].mark = editedMemo.mark;
+      }
       endEdit();
       ta.value = drafts[sectionKey] || '';
       autoResize(ta);
@@ -1683,6 +1761,8 @@
 
     const text = (rawText || '').slice(0, 2000); // 인용만 있는 메모는 빈 글로 보낸다(다리가 허용)
     const headingsChain = getHeadingChain(currentHeadings, sectionKey);
+    const mark = marks[sectionKey] || null;
+    const tags = memoCore?.extractTags ? memoCore.extractTags(text) : [];
 
     let para = null;
     let pos = 0;
@@ -1737,6 +1817,8 @@
         pos,
         quote,
         task,
+        mark,
+        tags,
       }, resolve);
     });
 
@@ -1745,17 +1827,25 @@
       autoResize(ta);
       drafts[sectionKey] = '';
       delete quotes[sectionKey];
+      delete marks[sectionKey]; // 저장하면 모드는 꺼진다
       saveDrafts();
+      applyMarkUI(sectionKey);
 
-      currentMemos.push(res.memo);
+      const savedMemo = { ...res.memo };
+      if (savedMemo.mark === undefined) savedMemo.mark = mark;
+      if (!Array.isArray(savedMemo.tags)) savedMemo.tags = tags;
+
+      currentMemos.push(savedMemo);
       currentPageItems.push({
         kind: 'memo',
-        id: res.memo.id,
-        text: res.memo.text,
-        quote: res.memo.quote,
-        headings: res.memo.headings,
-        ts: res.memo.ts,
-        url: res.memo.url,
+        id: savedMemo.id,
+        text: savedMemo.text,
+        quote: savedMemo.quote,
+        headings: savedMemo.headings,
+        ts: savedMemo.ts,
+        url: savedMemo.url,
+        mark: savedMemo.mark ?? null,
+        tags: savedMemo.tags || [],
       });
 
       // DOM에 즉시 반영
@@ -1767,7 +1857,7 @@
 
           const memosContainer = secEl.querySelector('.sec-memos');
           if (memosContainer) {
-            memosContainer.append(createMemoLine(res.memo, sectionKey));
+            memosContainer.append(createMemoLine(savedMemo, sectionKey));
           }
         }
       }
@@ -1967,6 +2057,7 @@
           id: m.id,
           text: m.text,
           dropQuote: true,
+          tags: globalThis.readglossMemo?.extractTags?.(m.text) || [],
         }, (res) => {
           if (res?.memo) {
             m.quote = null;
@@ -2045,9 +2136,18 @@
     const line = document.createElement('div');
     line.className = 'sec-memo-line';
 
+    const mark = m.mark === 'question' || m.mark === 'insight' ? m.mark : null;
+    if (mark) {
+      wrap.classList.add(`mark-${mark}`);
+      const markEl = document.createElement('span');
+      markEl.className = 'sec-memo-mark';
+      markEl.textContent = mark === 'question' ? '❓' : '💡';
+      line.append(markEl);
+    }
+
     const textEl = document.createElement('div');
     textEl.className = 'sec-memo-text';
-    textEl.textContent = m.text || '';
+    appendMemoText(textEl, m.text || '');
     textEl.onclick = () => jumpToMemo(m);
 
     const delBtn = document.createElement('button');
@@ -2461,6 +2561,7 @@
         if (saveRes?.concept) {
           ta.value = '';
           drafts[sectionKey] = '';
+          delete marks[sectionKey]; // 개념 명령은 모드를 무시한다
           autoResize(ta);
           saveDrafts();
 
@@ -2536,6 +2637,8 @@
         headings: m.headings || [],
         ts: m.ts || 0,
         url: m.url || '',
+        mark: m.mark ?? null,
+        tags: Array.isArray(m.tags) ? m.tags : [],
       }));
 
       const scrapItems = (Array.isArray(scrapsList) ? scrapsList : [])
@@ -2822,6 +2925,79 @@
   }
 
   // 작성 모드 렌더링 (소제목 칸 목록)
+  // 쓰는 칸 모드 칩 글 (29-2)
+  function markChipLabel(mark) {
+    if (mark === 'question') return '❓ 다시 볼 것';
+    if (mark === 'insight') return '💡 깨달음';
+    return '';
+  }
+
+  // 그 칸 쓰는 칸의 모드 표시(칩·테두리)를 지금 상태에 맞춘다
+  function applyMarkUI(sectionKey) {
+    const secEl = shadow?.querySelector(`.sec[data-key="${CSS.escape(sectionKey)}"]`);
+    if (!secEl) return;
+    const mark = marks[sectionKey] || null;
+    const ta = secEl.querySelector('.sec-textarea');
+    if (ta) {
+      ta.classList.toggle('mark-question', mark === 'question');
+      ta.classList.toggle('mark-insight', mark === 'insight');
+    }
+    let chip = secEl.querySelector('.sec-mark-chip');
+    if (!mark) {
+      chip?.remove();
+      return;
+    }
+    if (!chip) {
+      chip = document.createElement('div');
+      chip.className = 'sec-mark-chip';
+      if (ta) secEl.insertBefore(chip, ta);
+      else secEl.append(chip);
+    }
+    chip.classList.toggle('question', mark === 'question');
+    chip.classList.toggle('insight', mark === 'insight');
+    chip.textContent = markChipLabel(mark);
+  }
+
+  // 저장한 메모 글: #태그는 작은 칩, 나머지는 글자 노드로 안전하게 그린다
+  function appendMemoText(el, text) {
+    if (typeof text !== 'string' || !text) return;
+    const re = /(^|\s)#([^\s#]{1,20})(?=$|\s)/g;
+    let last = 0;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const hashIndex = m.index + m[1].length;
+      if (hashIndex > last) {
+        el.append(document.createTextNode(text.slice(last, hashIndex)));
+      }
+      const chip = document.createElement('span');
+      chip.className = 'sec-tag-chip';
+      chip.textContent = `#${m[2]}`;
+      el.append(chip);
+      last = hashIndex + 1 + m[2].length;
+    }
+    if (last < text.length) {
+      el.append(document.createTextNode(text.slice(last)));
+    }
+  }
+
+  // 모드가 켜진 칸에서 Backspace: 칸이 비었거나 커서가 맨 앞이면 모드만 끈다 (29-2)
+  function dropMarkOnBackspace(e) {
+    const ta = e.target;
+    if (!ta?.classList?.contains('sec-textarea')) return false;
+    const key = ta.closest('.sec')?.dataset?.key;
+    if (!key || !marks[key]) return false;
+    if (e.isComposing) return false;
+    if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return false;
+    const isEmpty = ta.value.length === 0;
+    const atStart = ta.selectionStart === 0 && ta.selectionEnd === 0;
+    if (!isEmpty && !atStart) return false;
+    e.preventDefault();
+    delete marks[key];
+    applyMarkUI(key);
+    saveDrafts();
+    return true;
+  }
+
   // 쓰는 칸이 비었거나 커서가 맨 앞일 때 Backspace → 그 칸 인용만 뺀다(23-4). 키 처리는 상자 keydown 한 곳에서.
   function dropQuoteOnBackspace(e) {
     const ta = e.target;
@@ -3051,8 +3227,28 @@
         ta.value = drafts[s.key] || '';
         autoResize(ta);
 
+        const activeMark = marks[s.key] || null;
+        if (activeMark) {
+          ta.classList.add(`mark-${activeMark}`);
+          const chip = document.createElement('div');
+          chip.className = `sec-mark-chip ${activeMark}`;
+          chip.textContent = markChipLabel(activeMark);
+          sec.append(chip);
+        }
+
         ta.addEventListener('input', () => {
           lastTypedAt = Date.now();
+          // 비어 있다가 '? '·'! '를 치면 글을 비우고 그 칸 모드를 켠다 (29-2)
+          const mark = memoCore?.markPrefixOf ? memoCore.markPrefixOf(ta.value) : null;
+          if (mark) {
+            ta.value = '';
+            autoResize(ta);
+            drafts[s.key] = '';
+            marks[s.key] = mark;
+            saveDrafts();
+            applyMarkUI(s.key);
+            return;
+          }
           autoResize(ta);
           drafts[s.key] = ta.value;
           clearTimeout(typingTimer);
@@ -3285,6 +3481,7 @@
           return;
         }
       }
+      if (e.key === 'Backspace' && dropMarkOnBackspace(e)) return;
       if (e.key === 'Backspace' && dropQuoteOnBackspace(e)) return;
       if ((e.key === 'Escape' || e.key === 'Esc') && e.readglossCardClosed) return;
       const action = memoCore?.padKeyV2 ? memoCore.padKeyV2(e) : null;
@@ -3641,13 +3838,14 @@
   }
 
   // 인용을 소제목 칸에 붙이고 메모장을 열거나 갱신 (T45c 계약)
-  function attachQuote(quote, anchorNode, { focusCodeLang = false } = {}) {
+  function attachQuote(quote, anchorNode, { focusCodeLang = false, mark = null } = {}) {
     if (!quote) return;
     currentHeadings = collectHeadings();
     lastHeadingsCount = currentHeadings.length;
     const targetKey = findHeadingKeyForNode(anchorNode, currentHeadings);
 
     quotes[targetKey] = quote;
+    if (mark) marks[targetKey] = mark;
     currentActiveKey = targetKey;
     saveDrafts();
 
@@ -3698,8 +3896,8 @@
     return result;
   }
 
-  // ⌥M with 고른 글 또는 토글 처리 (scrap: Tab 경로에서 스크랩 동시 실행)
-  function handleMemoOpen({ scrap = false } = {}) {
+  // ⌥M with 고른 글 또는 토글 처리 (scrap: Tab 경로에서 스크랩 동시 실행, mark: 29-3 표시)
+  function handleMemoOpen({ scrap = false, mark = null } = {}) {
     const sel = window.getSelection();
     const hasSelection = sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.toString().trim().length > 0;
 
@@ -3770,21 +3968,39 @@
       }
 
       // 3. 드래그 + Tab 경로: 인용을 붙이기 전에(기다리지 말고 동시에) scrapRange 호출
+      //    같은 글이 이미 스크랩돼 있으면 새로 만들지 않고 표시만 바꾼다(29-3)
       if (scrap && range) {
-        const cloned = range.cloneRange();
-        Promise.resolve(globalThis.readglossSelectionUi?.scrapRange?.(cloned, { translation }))
-          .then((res) => {
+        if (existing?.id) {
+          if (mark) globalThis.readglossScrapPage?.setMark?.(existing.id, mark);
+        } else {
+          const cloned = range.cloneRange();
+          const onScrapDone = (res) => {
             if (!res || !res.ok) {
               showPadToastNotice('스크랩은 못 했어요(인용은 붙음)', 2000);
             }
-          })
-          .catch(() => {
-            showPadToastNotice('스크랩은 못 했어요(인용은 붙음)', 2000);
-          });
+          };
+          if (mark) {
+            Promise.resolve(globalThis.readglossSelectionUi?.scrapRange?.(cloned, { translation, mark }))
+              .then(onScrapDone)
+              .catch(() => {
+                showPadToastNotice('스크랩은 못 했어요(인용은 붙음)', 2000);
+              });
+          } else {
+            Promise.resolve(globalThis.readglossSelectionUi?.scrapRange?.(cloned, { translation }))
+              .then(onScrapDone)
+              .catch(() => {
+                showPadToastNotice('스크랩은 못 했어요(인용은 붙음)', 2000);
+              });
+          }
+        }
       }
 
       // 4. 공통 함수를 통해 인용 붙이고 열기 (T45c)
-      attachQuote(extracted, range.startContainer);
+      if (mark) {
+        attachQuote(extracted, range.startContainer, { mark });
+      } else {
+        attachQuote(extracted, range.startContainer);
+      }
       return;
     }
 
@@ -3825,11 +4041,12 @@
     return classes;
   }
 
-  // 단축키 커맨드(memo-open, memo-list) 및 고른 글 단축키(Tab = 인용, D = 개념, C = 코드 인용) (T48, T49)
+  // 단축키 커맨드(memo-open, memo-list) 및 고른 글 단축키(Tab = 인용, D = 개념, C = 코드 인용, ?/! = 표시 인용) (T48, T49, T60b)
   document.addEventListener('keydown', (e) => {
     // 값싼 걸러내기(N8): 단축키 키가 아니면 getSelection·composedPath 계산 없이 바로 나간다
     const k = e.key;
     if (k !== 'Tab' && k !== 'd' && k !== 'D' && k !== 'ㅇ' && k !== 'c' && k !== 'C' && k !== 'ㅊ'
+      && k !== '?' && k !== '!'
       && e.code !== 'KeyD' && e.code !== 'KeyC') return;
     const sel = window.getSelection();
     const hasSelection = Boolean(sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.toString().trim().length > 0);
@@ -3849,6 +4066,10 @@
       e.preventDefault();
       e.stopPropagation();
       handleMemoOpen({ scrap: true });
+    } else if (action === 'question-quote' || action === 'insight-quote') {
+      e.preventDefault();
+      e.stopPropagation();
+      handleMemoOpen({ scrap: true, mark: action === 'question-quote' ? 'question' : 'insight' });
     } else if (action === 'concept') {
       e.preventDefault();
       e.stopPropagation();
