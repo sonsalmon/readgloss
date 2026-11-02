@@ -233,7 +233,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function scraps(msg, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
-  const { op, url, id, task, title, headings, quote, pos, translation, memo, page } = msg;
+  const { op, url, id, task, title, headings, quote, pos, translation, memo, page, mark } = msg;
   let path = '/scraps';
   let init;
   if (op === 'get') {
@@ -243,7 +243,7 @@ async function scraps(msg, retried = false) {
     init = {
       method: 'POST',
       headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ op, url, id, task, title, headings, quote, pos, translation, memo, page }),
+      body: JSON.stringify({ op, url, id, task, title, headings, quote, pos, translation, memo, page, mark }),
     };
   }
   const res = await bridgeFetch(path, init);
@@ -394,7 +394,7 @@ chrome.tabs.onUpdated?.addListener((tabId, changeInfo) => {
 async function memos(msg, retried = false) {
   const token = await getToken(retried);
   if (!token) return { error: 'pair-failed' };
-  const { op, url, id, text, title, headings, para, pos, selection, task, page, quote, dropQuote } = msg;
+  const { op, url, id, text, title, headings, para, pos, selection, task, page, quote, dropQuote, mark, tags } = msg;
   let path = '/memos';
   let init;
   if (op === 'get') {
@@ -404,7 +404,7 @@ async function memos(msg, retried = false) {
     init = {
       method: 'POST',
       headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ op, url, id, text, title, headings, para, pos, selection, task, page, quote, dropQuote }),
+      body: JSON.stringify({ op, url, id, text, title, headings, para, pos, selection, task, page, quote, dropQuote, mark, tags }),
     };
   }
   const res = await bridgeFetch(path, init);
