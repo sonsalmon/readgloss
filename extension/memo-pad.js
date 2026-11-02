@@ -2294,6 +2294,38 @@
         return;
       }
       const md = globalThis.readglossMdList;
+      const clean = md?.cleanForSave ? md.cleanForSave(ta.value) : ta.value.trim();
+
+      // 빈 칸에서 Backspace → 개념 지우기 확인 (Enter 로 확인)
+      if (e.key === 'Backspace' && !clean) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!confirm(`'${item.name}' 개념을 지울까요?`)) return;
+        chrome.runtime.sendMessage({ type: 'concepts', op: 'remove', id }, (r) => {
+          if (chrome.runtime.lastError || !r || r.error) {
+            showErrorMeta(r?.error || '지우지 못했어요');
+            return;
+          }
+          // 지운 뒤 대기 저장이 되살리지 않게
+          clearTimeout(conceptSaveTimers[id]);
+          delete conceptSaveTimers[id];
+          delete pendingConceptSaves[id];
+          closeConceptInlineEdit(id);
+          lineEl.closest('.sec-shape-wrap')?.remove();
+          const pIdx = currentPageItems.findIndex((it) => it.id === id);
+          if (pIdx !== -1) currentPageItems.splice(pIdx, 1);
+          window.dispatchEvent(new CustomEvent('readgloss:concepts-updated', { detail: { id, removed: true } }));
+        });
+        return;
+      }
+
+      let res = null;
+      const plain = !e.metaKey && !e.ctrlKey && !e.altKey;
+      if (md && plain && e.key === 'Enter') {
+        res = e.shiftKey ? md.onShiftEnter(ta.value, ta.selectionStart, ta.selectionEnd) : md.onEnter(ta.value, ta.selectionStart, ta.selectionEnd);
+      } else if (md && plain && e.key === 'Tab') {
+        res = md.onTab(ta.value, ta.selectionStart, ta.selectionEnd, e.shiftKey);
+      }
 
       if (res) {
         e.preventDefault();
