@@ -226,9 +226,10 @@
     return null;
   }
 
-  // 글을 고른 채 단축키 판정 순수 함수 (T48): 'tab-quote' | 'concept' | 'code' | null
-  // Tab = 인용 메모장, d·D·ㅇ·KeyD = 내 개념 칸, c·C·ㅊ·KeyC = 코드 인용(다음 작업용).
-  // 고른 글 없음, 페이지 입력칸, 우리 화면 안, 조합키(shift/alt/ctrl/meta), 한글 조합 중이면 null.
+  // 글을 고른 채 단축키 판정 순수 함수 (T48): 'tab-quote' | 'concept' | 'code' | 'question-quote' | 'insight-quote' | null
+  // Tab = 인용 메모장, d·D·ㅇ·KeyD = 내 개념 칸, c·C·ㅊ·KeyC = 코드 인용,
+  // ? = 다시 볼 것 인용, ! = 깨달음 인용(29-3, 이 두 글자만 Shift 허용).
+  // 고른 글 없음, 페이지 입력칸, 우리 화면 안, Alt·Ctrl·Meta, 한글 조합 중이면 null.
   function shortcutAction(e, ctx) {
     if (!e || typeof e !== 'object') return null;
     const c = (ctx && typeof ctx === 'object') ? ctx : {};
@@ -239,7 +240,8 @@
     const meta = Boolean(e.metaKey ?? e.meta ?? c.metaKey ?? c.meta);
     const composing = Boolean(e.isComposing ?? e.composing ?? c.isComposing ?? c.composing);
 
-    if (shift || alt || ctrl || meta || composing) return null;
+    // ?·!는 Shift를 눌러야 나오는 글자라 아래에서 따로 허용한다
+    if (alt || ctrl || meta || composing) return null;
 
     const hasSelection = Boolean(c.hasSelection ?? e.hasSelection);
     const pageField = Boolean(c.pageField ?? e.pageField);
@@ -249,6 +251,14 @@
 
     const key = e.key;
     const code = e.code;
+
+    if (key === '?') {
+      return 'question-quote';
+    }
+    if (key === '!') {
+      return 'insight-quote';
+    }
+    if (shift) return null;
 
     if (key === 'Tab') {
       return 'tab-quote';
@@ -260,6 +270,33 @@
       return 'code';
     }
     return null;
+  }
+
+  // 쓰는 칸이 비었다가 '?'·'!' 다음 스페이스를 친 순간의 모드 판정 (29-2)
+  // 정확히 '? ' 이면 question, '! ' 이면 insight. '?이름'처럼 붙여 쓰면 null(16-3 그대로).
+  function markPrefixOf(text) {
+    if (text === '? ') return 'question';
+    if (text === '! ') return 'insight';
+    return null;
+  }
+
+  // 메모 글에서 #태그 뽑기 (29-4)
+  // 줄 처음이나 공백 뒤 '#', 이어서 공백·'#' 아닌 글자 1~20자. 겹치면 하나, 앞에서부터 5개.
+  function extractTags(text) {
+    if (typeof text !== 'string' || !text) return [];
+    const re = /(^|\s)#([^\s#]{1,20})(?=$|\s)/g;
+    const tags = [];
+    const seen = new Set();
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const tag = m[2];
+      if (!seen.has(tag)) {
+        seen.add(tag);
+        tags.push(tag);
+        if (tags.length >= 5) break;
+      }
+    }
+    return tags;
   }
 
   // 글을 고른 채 Tab = 고른 글을 인용으로 메모장 열기 (shortcutAction과 합침)
@@ -918,6 +955,8 @@
     formatClock,
     minutesLabel,
     shouldDropQuoteOnBackspace,
+    markPrefixOf,
+    extractTags,
     codeQuoteKind,
     guessCodeLang,
     CODE_LANG_LIST,
