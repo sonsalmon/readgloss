@@ -1575,6 +1575,7 @@
       drafts,
       stash,
       quotes,
+      marks,
       rect: currentRect,
       text: Object.values(drafts).find(Boolean) || '',
     });
@@ -3804,6 +3805,9 @@
       }
       if (res.quotes && typeof res.quotes === 'object') {
         quotes = { ...res.quotes };
+      }
+      if (res.marks && typeof res.marks === 'object') {
+        marks = { ...res.marks };
       }
       // 고치던 중 새로고침했으면 고치기는 그만둔 것이다(고치는 상태는 저장하지 않는다): 보관한 초안을 칸으로 되돌린다
       if (res.stash && typeof res.stash === 'object') {

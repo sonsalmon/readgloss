@@ -297,7 +297,8 @@
       const mark = markOf(memo);
       const el = h('div', { class: 'mark-item' });
       const body = h('div', { class: 'mark-body' });
-      body.append(h('div', { class: 'mark-text', text: memo.text || '' }));
+      // #태그는 아래 칩 줄로 보이니 글에서는 뺀다
+      body.append(h('div', { class: 'mark-text', text: String(memo.text || '').replace(/(^|\s)#[^\s#]{1,20}(?=\s|$)/g, '$1').replace(/[ \t]+$/gm, '').trim() }));
 
       const quoteLine = firstQuoteLine(memo);
       if (quoteLine) body.append(h('div', { class: 'mark-quote', text: quoteLine }));

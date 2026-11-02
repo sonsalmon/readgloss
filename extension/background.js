@@ -544,7 +544,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'memo-state-set') {
     const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
     // 변경 기록 14-3: 쓰던 글·인용은 소제목 칸별로 탭 상태에 둔다
-    const state = { open: !!msg.open, text: typeof msg.text === 'string' ? msg.text : '', drafts: obj(msg.drafts), quotes: obj(msg.quotes), stash: obj(msg.stash) };
+    const state = { open: !!msg.open, text: typeof msg.text === 'string' ? msg.text : '', drafts: obj(msg.drafts), quotes: obj(msg.quotes), marks: obj(msg.marks), stash: obj(msg.stash) };
     storage.set({ [key]: state }).then(() => {
       sendResponse({ ok: true });
     }).catch(() => sendResponse({ error: 'storage-error' }));

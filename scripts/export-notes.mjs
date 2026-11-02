@@ -48,7 +48,6 @@ export function renderMemo(m) {
   const exact = String(m?.quote?.exact ?? '').trim();
   const text = String(m?.text ?? '').trim();
   const mark = m?.mark === 'question' || m?.mark === 'insight' ? m.mark : null;
-  const tags = Array.isArray(m?.tags) ? m.tags.filter((t) => typeof t === 'string' && t.trim()) : [];
 
   // T60a: 표시가 있는 메모는 콜아웃으로 묶는다
   if (mark) {
@@ -59,10 +58,7 @@ export function renderMemo(m) {
     if (text) {
       for (const l of text.split('\n')) lines.push(`> ${l}`);
     }
-    if (tags.length) {
-      lines.push(`> ${tags.map((t) => `#${t.trim()}`).join(' ')}`);
-    }
-    return lines.join('\n');
+    return lines.join('\n'); // #태그는 글 안에 이미 있다(29-4)
   }
 
   if (exact) {
@@ -157,10 +153,6 @@ export function renderMemo(m) {
 
   if (text) {
     lines.push(text);
-  }
-  // 표시 없는 메모도 태그가 있으면 끝에 한 줄 붙인다
-  if (tags.length) {
-    lines.push(tags.map((t) => `#${t.trim()}`).join(' '));
   }
   return lines.join('\n');
 }

@@ -112,11 +112,10 @@ export function exportDay(date, dataDir) {
   return `${out.join('\n').trimEnd()}\n`;
 }
 
-// 표시 메모 한 줄: - 글 #태그 / "인용 첫 줄" — 페이지 제목 (있는 것만)
+// 표시 메모 한 줄: - 글(#태그 포함) / "인용 첫 줄" — 페이지 제목 (있는 것만)
 function markedLine(m) {
   const text = clip(m.text);
-  const tags = Array.isArray(m.tags) ? m.tags.filter((t) => typeof t === 'string' && t) : [];
-  const head = [text, tags.map((t) => `#${t}`).join(' ')].filter(Boolean).join(' ');
+  const head = text; // #태그는 글 안에 이미 있다(29-4)
   const quoteFirst = String(m.quote?.exact ?? '').split('\n')[0].trim();
   const parts = [head];
   if (quoteFirst) parts.push(`"${clip(quoteFirst)}"`);

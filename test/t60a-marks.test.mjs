@@ -242,7 +242,7 @@ function seedMemos(db) {
   put('m_000000000001', {
     url: 'https://example.com/a',
     title: 'Page A',
-    text: '서버 권한 확인',
+    text: '서버 권한 확인 #다시보기 #보안',
     quote: { exact: 'first line\nsecond line' },
     mark: 'question',
     tags: ['다시보기', '보안'],
@@ -259,7 +259,7 @@ function seedMemos(db) {
   put('m_000000000003', {
     url: 'https://example.com/a',
     title: 'Page A',
-    text: '표시 없는 메모',
+    text: '표시 없는 메모 #태그',
     tags: ['태그'],
     ts: DAY + 2,
   }, DAY + 2);
@@ -294,7 +294,7 @@ test('export-day: 그날 표시 메모가 있으면 끝에 다시 볼 것·깨�
 
 // ---- 학습노트 ----
 
-test('export-notes: 표시 메모는 help·tip 콜아웃, 표시 없으면 지금 모양 + 태그 한 줄, 앞머리 tags 합침', () => {
+test('export-notes: 표시 메모는 help·tip 콜아웃, 표시 없으면 지금 모양(태그는 글 안, 두 번 안 찍음), 앞머리 tags 합침', () => {
   const { dir, db } = tempDb();
   try {
     seedMemos(db);
@@ -317,9 +317,10 @@ test('export-notes: 표시 메모는 help·tip 콜아웃, 표시 없으면 지�
     assert.equal(docs.size, 1);
     const note = [...docs.values()][0];
 
-    assert.match(note, /> \[!help\] 다시 볼 것\n> first line\n> second line\n> 서버 권한 확인\n> #다시보기 #보안/);
+    assert.match(note, /> \[!help\] 다시 볼 것\n> first line\n> second line\n> 서버 권한 확인 #다시보기 #보안\n\n/);
     assert.match(note, /> \[!tip\] 깨달음\n> 깨달음 메모/);
-    assert.match(note, /표시 없는 메모\n#태그/);
+    assert.match(note, /표시 없는 메모 #태그/);
+    assert.doesNotMatch(note, /#태그\s*\n#태그/);
     assert.match(note, /tags: \["다시보기", "보안", "태그"\]/);
     // 기존 나중에 볼 것 모양은 그대로
     assert.match(note, /> \[!question\] 나중에 볼 것: IDOR/);
