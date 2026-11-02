@@ -80,7 +80,7 @@ test('panel-words.js: ES 모듈 import/export 없음, manifest 에서 panel.js �
   assert.doesNotMatch(readFileSync(new URL('../extension/panel-words.js', import.meta.url), 'utf8'), /^\s*(import|export)\s/m);
   const js = JSON.parse(readFileSync(new URL('../extension/manifest.json', import.meta.url), 'utf8')).content_scripts[0].js;
   assert.ok(js.indexOf('panel-words.js') > js.indexOf('panel.js'));
-  assert.deepEqual(js.slice(js.indexOf('panel-words.js') + 1), ['panel-study.js', 'vendor/approx-string-match.js', 'scrap-core.js', 'scrap.js', 'md-list.js', 'concept-core.js', 'concept.js', 'memo-core.js', 'study-time-core.js', 'study-time.js', 'memo-pad.js', 'selection-core.js', 'selection.js', 'opacity.js', 'video-core.js', 'video-subs.js', 'panel-video.js']); // T14c·T28·T29b·T34a·T40a·T51: 공부 기록 탭이 바로 뒤
+  assert.deepEqual(js.slice(js.indexOf('panel-words.js') + 1), ['panel-study.js', 'panel-marks.js', 'vendor/approx-string-match.js', 'scrap-core.js', 'scrap.js', 'md-list.js', 'concept-core.js', 'concept.js', 'memo-core.js', 'study-time-core.js', 'study-time.js', 'memo-pad.js', 'selection-core.js', 'selection.js', 'opacity.js', 'video-core.js', 'video-subs.js', 'panel-video.js']); // T14c·T28·T29b·T34a·T40a·T51: 공부 기록 탭이 바로 뒤, T60c: 다시 볼 것 탭
 });
 
 // ---- T14c: 구·문장 / 내 사전 ----

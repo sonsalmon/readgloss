@@ -25,7 +25,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["text.js", "settings-core.js", "glossary-core.js", "paragraph-core.js", "annotate-core.js", "content.js", "paragraph.js", "annotate.js", "structure-core.js", "structure.js", "saved-marks-core.js", "saved-marks.js", "panel.js", "panel-scraps.js", "panel-concepts.js", "panel-words.js", "panel-study.js", "vendor/approx-string-match.js", "scrap-core.js", "scrap.js", "md-list.js", "concept-core.js", "concept.js", "memo-core.js", "study-time-core.js", "study-time.js", "memo-pad.js", "selection-core.js", "selection.js", "opacity.js", "video-core.js", "video-subs.js", "panel-video.js"],
+      "js": ["text.js", "settings-core.js", "glossary-core.js", "paragraph-core.js", "annotate-core.js", "content.js", "paragraph.js", "annotate.js", "structure-core.js", "structure.js", "saved-marks-core.js", "saved-marks.js", "panel.js", "panel-scraps.js", "panel-concepts.js", "panel-words.js", "panel-study.js", "panel-marks.js", "vendor/approx-string-match.js", "scrap-core.js", "scrap.js", "md-list.js", "concept-core.js", "concept.js", "memo-core.js", "study-time-core.js", "study-time.js", "memo-pad.js", "selection-core.js", "selection.js", "opacity.js", "video-core.js", "video-subs.js", "panel-video.js"],
       "all_frames": false
     },
     {
