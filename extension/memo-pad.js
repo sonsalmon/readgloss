@@ -726,6 +726,95 @@
       flex: 1;
       min-width: 0;
     }
+    /* T61c: 저장한 메모를 마크다운 문법으로 그린 모양(한 줄 메모와 비슷한 여백). */
+    .sec-memo-text > *:first-child {
+      margin-top: 0;
+    }
+    .sec-memo-text > *:last-child {
+      margin-bottom: 0;
+    }
+    .sec-memo-text p {
+      margin: 2px 0;
+    }
+    .sec-memo-text h1 {
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin: 4px 0 2px;
+    }
+    .sec-memo-text h2 {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin: 4px 0 2px;
+    }
+    .sec-memo-text h3 {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin: 4px 0 2px;
+    }
+    .sec-memo-text ul,
+    .sec-memo-text ol {
+      margin: 2px 0;
+      padding-left: 18px;
+    }
+    .sec-memo-text li {
+      margin: 0;
+    }
+    .sec-memo-text ul[data-type="taskList"] {
+      list-style: none;
+      padding-left: 0;
+    }
+    .sec-memo-text ul[data-type="taskList"] li {
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
+    }
+    .sec-memo-text ul[data-type="taskList"] li > label {
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .sec-memo-text ul[data-type="taskList"] li > div {
+      flex: 1;
+      min-width: 0;
+    }
+    .sec-memo-text blockquote {
+      border-left: 3px solid var(--bd);
+      margin: 2px 0;
+      padding-left: 8px;
+      color: var(--mut);
+    }
+    .sec-memo-text code,
+    .sec-memo-text pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 3px;
+    }
+    .sec-memo-text code {
+      font-size: 0.9em;
+      padding: 1px 3px;
+    }
+    .sec-memo-text pre {
+      padding: 6px 8px;
+      margin: 2px 0;
+      overflow-x: auto;
+    }
+    .sec-memo-text pre code {
+      background: none;
+      padding: 0;
+    }
+    .sec-memo-text hr {
+      border: none;
+      border-top: 1px solid var(--bd);
+      margin: 6px 0;
+    }
+    @media (prefers-color-scheme: dark) {
+      .sec-memo-text code,
+      .sec-memo-text pre {
+        background: rgba(255, 255, 255, 0.1);
+      }
+    }
     .sec-memo-wrap.mark-question {
       border-left: 3px solid rgba(251, 113, 133, 0.9);
       padding-left: 5px;
@@ -2257,7 +2346,14 @@
     const textEl = document.createElement('div');
     textEl.className = 'sec-memo-text';
     appendMemoText(textEl, m.text || '');
-    textEl.onclick = () => jumpToMemo(m);
+    textEl.onclick = (e) => {
+      // 링크를 누르면 그 메모로 가지 않고 링크를 연다.
+      if (e.target?.closest?.('a')) {
+        e.stopPropagation();
+        return;
+      }
+      jumpToMemo(m);
+    };
 
     const delBtn = document.createElement('button');
     delBtn.className = 'btn-del';
@@ -3099,9 +3195,14 @@
     chip.textContent = markChipLabel(mark);
   }
 
-  // 저장한 메모 글: #태그는 작은 칩, 나머지는 글자 노드로 안전하게 그린다
+  // 저장한 메모 글: T61c 는 마크다운으로 그리고, 묶음이 없으면 예전처럼 글자·#태그 칩으로 그린다
   function appendMemoText(el, text) {
     if (typeof text !== 'string' || !text) return;
+    const renderer = globalThis.readglossRichInput?.renderMarkdown;
+    if (typeof renderer === 'function') {
+      renderer(text, el);
+      return;
+    }
     const re = /(^|\s)#([^\s#]{1,20})(?=$|\s)/g;
     let last = 0;
     let m;

@@ -281,14 +281,16 @@
   }
 
   // 메모 글에서 #태그 뽑기 (29-4)
+  // 마크다운 이스케이프(\_·\* 등)를 먼저 풀고 본다(30-4). 예: '#tag\_name' → 'tag_name'.
   // 줄 처음이나 공백 뒤 '#', 이어서 공백·'#' 아닌 글자 1~20자. 겹치면 하나, 앞에서부터 5개.
   function extractTags(text) {
     if (typeof text !== 'string' || !text) return [];
+    const plain = text.replace(/\\([\\`*_{}\[\]()#+\-.!~|>])/g, '$1');
     const re = /(^|\s)#([^\s#]{1,20})(?=$|\s)/g;
     const tags = [];
     const seen = new Set();
     let m;
-    while ((m = re.exec(text)) !== null) {
+    while ((m = re.exec(plain)) !== null) {
       const tag = m[2];
       if (!seen.has(tag)) {
         seen.add(tag);
