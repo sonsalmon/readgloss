@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test --test-concurrency=1",
+    "build:vendor": "node scripts/build-vendor.mjs",
     "build:dict": "swiftc -O native/macdict.swift -o native/macdict",
     "build:mt": "swiftc -O -parse-as-library native/mt.swift -o native/mt",
     "build:native": "npm run build:dict && npm run build:mt",
@@ -19,5 +20,15 @@
     "scraps": "node scripts/scraps-cli.mjs",
     "tasks:recheck": "node scripts/tasks-recheck.mjs",
     "e2e": "node e2e/youtube.e2e.mjs"
+  },
+  "devDependencies": {
+    "@tiptap/core": "3.32.2",
+    "@tiptap/extension-list": "3.32.2",
+    "@tiptap/extensions": "3.32.2",
+    "@tiptap/markdown": "3.32.2",
+    "@tiptap/pm": "3.32.2",
+    "@tiptap/starter-kit": "3.32.2",
+    "esbuild": "0.28.2",
+    "happy-dom": "21.0.4"
   }
 }

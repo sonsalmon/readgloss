@@ -166,6 +166,95 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
+    /* T61c: 메모 글을 마크다운으로 그린 모양(작은 여백). */
+    .mark-text > *:first-child {
+      margin-top: 0;
+    }
+    .mark-text > *:last-child {
+      margin-bottom: 0;
+    }
+    .mark-text p {
+      margin: 2px 0;
+    }
+    .mark-text h1 {
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin: 4px 0 2px;
+    }
+    .mark-text h2 {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin: 4px 0 2px;
+    }
+    .mark-text h3 {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin: 4px 0 2px;
+    }
+    .mark-text ul,
+    .mark-text ol {
+      margin: 2px 0;
+      padding-left: 18px;
+    }
+    .mark-text li {
+      margin: 0;
+    }
+    .mark-text ul[data-type="taskList"] {
+      list-style: none;
+      padding-left: 0;
+    }
+    .mark-text ul[data-type="taskList"] li {
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
+    }
+    .mark-text ul[data-type="taskList"] li > label {
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .mark-text ul[data-type="taskList"] li > div {
+      flex: 1;
+      min-width: 0;
+    }
+    .mark-text blockquote {
+      border-left: 3px solid var(--rg-border, #d0d7de);
+      margin: 2px 0;
+      padding-left: 8px;
+      color: var(--rg-muted, #656d76);
+    }
+    .mark-text code,
+    .mark-text pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 3px;
+    }
+    .mark-text code {
+      font-size: 0.9em;
+      padding: 1px 3px;
+    }
+    .mark-text pre {
+      padding: 6px 8px;
+      margin: 2px 0;
+      overflow-x: auto;
+    }
+    .mark-text pre code {
+      background: none;
+      padding: 0;
+    }
+    .mark-text hr {
+      border: none;
+      border-top: 1px solid var(--rg-border, #d0d7de);
+      margin: 6px 0;
+    }
+    @media (prefers-color-scheme: dark) {
+      .mark-text code,
+      .mark-text pre {
+        background: rgba(255, 255, 255, 0.1);
+      }
+    }
     .mark-quote {
       color: var(--rg-muted, #888);
       font-size: 12px;
@@ -298,7 +387,12 @@
       const el = h('div', { class: 'mark-item' });
       const body = h('div', { class: 'mark-body' });
       // #태그는 아래 칩 줄로 보이니 글에서는 뺀다
-      body.append(h('div', { class: 'mark-text', text: String(memo.text || '').replace(/(^|\s)#[^\s#]{1,20}(?=\s|$)/g, '$1').replace(/[ \t]+$/gm, '').trim() }));
+      const textEl = h('div', { class: 'mark-text' });
+      const plain = String(memo.text || '').replace(/(^|\s)#[^\s#]{1,20}(?=\s|$)/g, '$1').replace(/[ \t]+$/gm, '').trim();
+      const richRender = globalThis.readglossRichInput?.renderMarkdown;
+      if (typeof richRender === 'function') richRender(plain, textEl);
+      else textEl.textContent = plain;
+      body.append(textEl);
 
       const quoteLine = firstQuoteLine(memo);
       if (quoteLine) body.append(h('div', { class: 'mark-quote', text: quoteLine }));

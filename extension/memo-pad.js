@@ -726,6 +726,95 @@
       flex: 1;
       min-width: 0;
     }
+    /* T61c: 저장한 메모를 마크다운 문법으로 그린 모양(한 줄 메모와 비슷한 여백). */
+    .sec-memo-text > *:first-child {
+      margin-top: 0;
+    }
+    .sec-memo-text > *:last-child {
+      margin-bottom: 0;
+    }
+    .sec-memo-text p {
+      margin: 2px 0;
+    }
+    .sec-memo-text h1 {
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin: 4px 0 2px;
+    }
+    .sec-memo-text h2 {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin: 4px 0 2px;
+    }
+    .sec-memo-text h3 {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin: 4px 0 2px;
+    }
+    .sec-memo-text ul,
+    .sec-memo-text ol {
+      margin: 2px 0;
+      padding-left: 18px;
+    }
+    .sec-memo-text li {
+      margin: 0;
+    }
+    .sec-memo-text ul[data-type="taskList"] {
+      list-style: none;
+      padding-left: 0;
+    }
+    .sec-memo-text ul[data-type="taskList"] li {
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
+    }
+    .sec-memo-text ul[data-type="taskList"] li > label {
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .sec-memo-text ul[data-type="taskList"] li > div {
+      flex: 1;
+      min-width: 0;
+    }
+    .sec-memo-text blockquote {
+      border-left: 3px solid var(--bd);
+      margin: 2px 0;
+      padding-left: 8px;
+      color: var(--mut);
+    }
+    .sec-memo-text code,
+    .sec-memo-text pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 3px;
+    }
+    .sec-memo-text code {
+      font-size: 0.9em;
+      padding: 1px 3px;
+    }
+    .sec-memo-text pre {
+      padding: 6px 8px;
+      margin: 2px 0;
+      overflow-x: auto;
+    }
+    .sec-memo-text pre code {
+      background: none;
+      padding: 0;
+    }
+    .sec-memo-text hr {
+      border: none;
+      border-top: 1px solid var(--bd);
+      margin: 6px 0;
+    }
+    @media (prefers-color-scheme: dark) {
+      .sec-memo-text code,
+      .sec-memo-text pre {
+        background: rgba(255, 255, 255, 0.1);
+      }
+    }
     .sec-memo-wrap.mark-question {
       border-left: 3px solid rgba(251, 113, 133, 0.9);
       padding-left: 5px;
@@ -1149,6 +1238,108 @@
       border-color: rgba(74, 222, 128, 0.9);
       outline-color: rgba(74, 222, 128, 0.9);
     }
+    /* T61b: 쓰는 칸이 Tiptap 편집기일 때 — 테두리·여백·포커스는 .sec-textarea 규칙을 그대로 쓰고 칸 안 모양만 더한다. */
+    .sec-textarea.rg-rich {
+      position: relative;
+      min-height: 88px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      outline: none;
+    }
+    .sec-textarea.rg-rich > *:first-child {
+      margin-top: 0;
+    }
+    .sec-textarea.rg-rich p {
+      margin: 0 0 2px;
+    }
+    .sec-textarea.rg-rich h1 {
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin: 4px 0 2px;
+    }
+    .sec-textarea.rg-rich h2 {
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin: 4px 0 2px;
+    }
+    .sec-textarea.rg-rich h3 {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin: 4px 0 2px;
+    }
+    .sec-textarea.rg-rich ul,
+    .sec-textarea.rg-rich ol {
+      margin: 2px 0;
+      padding-left: 18px;
+    }
+    .sec-textarea.rg-rich li {
+      margin: 0;
+    }
+    .sec-textarea.rg-rich ul[data-type="taskList"] {
+      list-style: none;
+      padding-left: 0;
+    }
+    .sec-textarea.rg-rich ul[data-type="taskList"] li {
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
+    }
+    .sec-textarea.rg-rich ul[data-type="taskList"] li > label {
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .sec-textarea.rg-rich ul[data-type="taskList"] li > div {
+      flex: 1;
+      min-width: 0;
+    }
+    .sec-textarea.rg-rich blockquote {
+      border-left: 3px solid var(--bd);
+      margin: 2px 0;
+      padding-left: 8px;
+      color: var(--mut);
+    }
+    .sec-textarea.rg-rich code,
+    .sec-textarea.rg-rich pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 3px;
+    }
+    .sec-textarea.rg-rich code {
+      font-size: 0.9em;
+      padding: 1px 3px;
+    }
+    .sec-textarea.rg-rich pre {
+      padding: 6px 8px;
+      margin: 2px 0;
+      overflow-x: auto;
+    }
+    .sec-textarea.rg-rich pre code {
+      background: none;
+      padding: 0;
+    }
+    .sec-textarea.rg-rich hr {
+      border: none;
+      border-top: 1px solid var(--bd);
+      margin: 6px 0;
+    }
+    .sec-textarea.rg-rich p.is-editor-empty:first-child::before {
+      content: attr(data-placeholder);
+      float: left;
+      height: 0;
+      pointer-events: none;
+      color: var(--mut);
+      opacity: 0.7;
+    }
+    @media (prefers-color-scheme: dark) {
+      .sec-textarea.rg-rich code,
+      .sec-textarea.rg-rich pre {
+        background: rgba(255, 255, 255, 0.1);
+      }
+    }
     .sec-mark-chip {
       align-self: flex-start;
       margin: 2px 0 0 8px;
@@ -1337,6 +1528,7 @@
 
   function removeHost() {
     if (host) {
+      destroyRichEditors(shadow);
       host.remove();
       host = null;
       shadow = null;
@@ -1672,7 +1864,11 @@
 
   // 메모 고치기(다시 열기 뒤): 칸 글로 그 메모 글을 바꾼다(다리 op edit)
   async function performEdit(sectionKey, ta) {
-    const text = (ta.value || '').trim().slice(0, 2000);
+    const text = (ta.value || '').trim();
+    if (text.length > 2000) {
+      showErrorMeta(`2000자를 넘었어요 (${text.length}자) — 줄여서 다시 저장해 주세요`);
+      return false; // 자르지 않고 초안을 그대로 둔다
+    }
     if (!text) return false; // 빈 글로는 고치지 않는다(다리가 거절한다)
     const id = editingMemo.id;
     const memoCore = globalThis.readglossMemo;
@@ -1695,7 +1891,7 @@
       }
       endEdit();
       ta.value = drafts[sectionKey] || '';
-      autoResize(ta);
+      autoResizeField(ta);
       saveDrafts();
       rebuildSectionsUI();
       showSuccessMeta('고쳤어요');
@@ -1737,6 +1933,11 @@
   function insertTextAtCursor(ta, text) {
     if (!ta) return;
     ta.focus();
+    // 편집기 덮개는 setRangeText 가 곧바로 update → input 을 쏜다(execCommand 는 shadow DOM 에서 믿기 어렵다).
+    if (ta.rgEditor) {
+      ta.setRangeText(text);
+      return;
+    }
     let inserted = false;
     try {
       inserted = document.execCommand('insertText', false, text);
@@ -1760,7 +1961,11 @@
     const allowable = canSaveFn ? canSaveFn(rawText, currentQuote) : (Boolean(rawText) || Boolean(currentQuote));
     if (!allowable) return false; // 빈 글이고 인용도 없으면 저장하지 않음
 
-    const text = (rawText || '').slice(0, 2000); // 인용만 있는 메모는 빈 글로 보낸다(다리가 허용)
+    if (rawText.length > 2000) {
+      showErrorMeta(`2000자를 넘었어요 (${rawText.length}자) — 줄여서 다시 저장해 주세요`);
+      return false; // 자르지 않고 초안을 그대로 둔다
+    }
+    const text = rawText; // 인용만 있는 메모는 빈 글로 보낸다(다리가 허용)
     const headingsChain = getHeadingChain(currentHeadings, sectionKey);
     const mark = marks[sectionKey] || null;
     const tags = memoCore?.extractTags ? memoCore.extractTags(text) : [];
@@ -1825,7 +2030,7 @@
 
     if (res?.memo) {
       ta.value = '';
-      autoResize(ta);
+      autoResizeField(ta);
       drafts[sectionKey] = '';
       delete quotes[sectionKey];
       delete marks[sectionKey]; // 저장하면 모드는 꺼진다
@@ -1956,6 +2161,37 @@
       ta.style.overflowY = 'auto';
     } else {
       ta.style.overflowY = 'hidden';
+    }
+  }
+
+  // 편집기(.rg-rich)는 내용에 맞춰 늘어나므로 높이를 직접 정하지 않고 상한만 둔다(목록 높이 절반, 작으면 5줄).
+  function autoResizeRich(ta) {
+    const memoCore = globalThis.readglossMemo;
+    const container = shadow?.querySelector('.sections-container');
+    const listHeight = container ? container.clientHeight : 300;
+
+    let lineHeight = 20;
+    if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+      try {
+        const cs = window.getComputedStyle(ta);
+        const parsed = parseFloat(cs.lineHeight);
+        if (Number.isFinite(parsed) && parsed > 0) lineHeight = parsed;
+      } catch {}
+    }
+
+    const maxH = memoCore?.textareaHeight
+      ? memoCore.textareaHeight({ scrollHeight: Number.MAX_SAFE_INTEGER, lineHeight, listHeight })
+      : Math.max(5 * lineHeight, listHeight > 0 ? listHeight / 2 : 5 * lineHeight);
+    ta.style.maxHeight = `${maxH}px`;
+  }
+
+  // 쓰는 칸이 편집기면 상한만, textarea 면 높이를 맞춘다.
+  function autoResizeField(ta) {
+    if (!ta) return;
+    if (ta.classList?.contains?.('rg-rich')) {
+      autoResizeRich(ta);
+    } else {
+      autoResize(ta);
     }
   }
 
@@ -2149,7 +2385,14 @@
     const textEl = document.createElement('div');
     textEl.className = 'sec-memo-text';
     appendMemoText(textEl, m.text || '');
-    textEl.onclick = () => jumpToMemo(m);
+    textEl.onclick = (e) => {
+      // 링크를 누르면 그 메모로 가지 않고 링크를 연다.
+      if (e.target?.closest?.('a')) {
+        e.stopPropagation();
+        return;
+      }
+      jumpToMemo(m);
+    };
 
     const delBtn = document.createElement('button');
     delBtn.className = 'btn-del';
@@ -2573,9 +2816,15 @@
       }
 
       // 없으면 ! -> 개념 저장, ? -> 정의 빈 개념 저장
+      const defText = String(cmd.definition || '').replace(/^\n+/, ''); // 정의 앞 빈 줄은 뺀다
       const cleanDef = cmd.kind === 'concept'
-        ? (globalThis.readglossMdList?.cleanForSave ? globalThis.readglossMdList.cleanForSave(cmd.definition) : cmd.definition)
+        ? (globalThis.readglossMdList?.cleanForSave ? globalThis.readglossMdList.cleanForSave(defText) : defText)
         : '';
+      // 개념 정의 상한(500자). 넘으면 자르지 않고 알린다.
+      if (cleanDef.length > 500) {
+        showErrorMeta(`500자를 넘었어요 (${cleanDef.length}자) — 줄여서 다시 저장해 주세요`);
+        return;
+      }
       const headingsChain = getHeadingChain(currentHeadings, sectionKey);
       const seen = {
         url: location.href,
@@ -2595,7 +2844,7 @@
           ta.value = '';
           drafts[sectionKey] = '';
           delete marks[sectionKey]; // 개념 명령은 모드를 무시한다
-          autoResize(ta);
+          autoResizeField(ta);
           saveDrafts();
 
           const c = saveRes.concept;
@@ -2991,9 +3240,14 @@
     chip.textContent = markChipLabel(mark);
   }
 
-  // 저장한 메모 글: #태그는 작은 칩, 나머지는 글자 노드로 안전하게 그린다
+  // 저장한 메모 글: T61c 는 마크다운으로 그리고, 묶음이 없으면 예전처럼 글자·#태그 칩으로 그린다
   function appendMemoText(el, text) {
     if (typeof text !== 'string' || !text) return;
+    const renderer = globalThis.readglossRichInput?.renderMarkdown;
+    if (typeof renderer === 'function') {
+      renderer(text, el);
+      return;
+    }
     const re = /(^|\s)#([^\s#]{1,20})(?=$|\s)/g;
     let last = 0;
     let m;
@@ -3022,7 +3276,8 @@
     if (e.isComposing) return false;
     if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return false;
     const isEmpty = ta.value.length === 0;
-    const atStart = ta.selectionStart === 0 && ta.selectionEnd === 0;
+    // 편집기 덮개는 맨 앞에서 selectionEnd 를 1로 준다(근사값). 커서가 접혀 있으면 맨 앞으로 본다.
+    const atStart = ta.selectionStart === 0 && (ta.selectionEnd === 0 || ta.rgEditor?.state?.selection?.empty === true);
     if (!isEmpty && !atStart) return false;
     e.preventDefault();
     delete marks[key];
@@ -3039,10 +3294,15 @@
     if (!key) return false;
     const memoCore = globalThis.readglossMemo;
     const hasQuote = Boolean(quotes[key]?.exact);
+    const selStart = ta.selectionStart;
+    // 편집기 덮개는 맨 앞에서 selectionEnd 를 1로 준다(근사값). 커서가 접혀 있으면 0으로 넘긴다.
+    const selEnd = selStart === 0 && (ta.selectionEnd === 0 || ta.rgEditor?.state?.selection?.empty === true)
+      ? 0
+      : ta.selectionEnd;
     const shouldDrop = memoCore?.shouldDropQuoteOnBackspace?.({
       key: e.key, composing: e.isComposing,
       mods: { shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey, meta: e.metaKey },
-      value: ta.value, selStart: ta.selectionStart, selEnd: ta.selectionEnd, hasQuote,
+      value: ta.value, selStart, selEnd, hasQuote,
     });
     if (!shouldDrop) return false;
     e.preventDefault();
@@ -3059,8 +3319,28 @@
     return true;
   }
 
+  // 편집기 keydown(ProseMirror)보다 먼저 모드·인용 Backspace 를 처리한다.
+  function attachRichBackspace(ta) {
+    ta.addEventListener('keydown', (e) => {
+      if (e.key !== 'Backspace') return;
+      if (dropMarkOnBackspace(e) || dropQuoteOnBackspace(e)) {
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+      }
+    }, true);
+  }
+
+  // 다시 그리기 전에 붙어 있던 Tiptap 편집기를 정리한다(문서 리스너가 남지 않게).
+  function destroyRichEditors(rootEl) {
+    if (!rootEl) return;
+    for (const el of rootEl.querySelectorAll('.sec-textarea')) {
+      el.rgEditor?.destroy?.();
+    }
+  }
+
   function renderPadUI(root) {
     currentMode = 'pad';
+    destroyRichEditors(root);
     root.replaceChildren();
 
     const style = document.createElement('style');
@@ -3253,12 +3533,26 @@
           sec.append(quoteEl);
         }
 
-        const ta = document.createElement('textarea');
-        ta.className = 'sec-textarea';
-        ta.maxLength = 2000;
-        ta.placeholder = '메모할 내용을 적으세요...';
-        ta.value = drafts[s.key] || '';
-        autoResize(ta);
+        const richEl = globalThis.readglossRichInput?.create?.({
+          value: drafts[s.key] || '',
+          placeholder: '메모할 내용을 적으세요...',
+          maxLength: 2000,
+          onMarkPrefix: (mark) => {
+            drafts[s.key] = '';
+            marks[s.key] = mark;
+            saveDrafts();
+            applyMarkUI(s.key);
+          },
+        });
+        const ta = richEl || document.createElement('textarea');
+        ta.classList.add('sec-textarea');
+        const isRich = Boolean(ta.rgEditor);
+        if (!isRich) {
+          ta.maxLength = 2000;
+          ta.placeholder = '메모할 내용을 적으세요...';
+          ta.value = drafts[s.key] || '';
+        }
+        autoResizeField(ta);
 
         const activeMark = marks[s.key] || null;
         if (activeMark) {
@@ -3272,17 +3566,20 @@
         ta.addEventListener('input', () => {
           lastTypedAt = Date.now();
           // 비어 있다가 '? '·'! '를 치면 글을 비우고 그 칸 모드를 켠다 (29-2)
-          const mark = memoCore?.markPrefixOf ? memoCore.markPrefixOf(ta.value) : null;
-          if (mark) {
-            ta.value = '';
-            autoResize(ta);
-            drafts[s.key] = '';
-            marks[s.key] = mark;
-            saveDrafts();
-            applyMarkUI(s.key);
-            return;
+          // 편집기일 때는 rich-input 의 입력 규칙(onMarkPrefix)이 같은 일을 하므로 여기서는 보지 않는다.
+          if (!isRich) {
+            const mark = memoCore?.markPrefixOf ? memoCore.markPrefixOf(ta.value) : null;
+            if (mark) {
+              ta.value = '';
+              autoResize(ta);
+              drafts[s.key] = '';
+              marks[s.key] = mark;
+              saveDrafts();
+              applyMarkUI(s.key);
+              return;
+            }
           }
-          autoResize(ta);
+          autoResizeField(ta);
           drafts[s.key] = ta.value;
           clearTimeout(typingTimer);
           typingTimer = setTimeout(() => {
@@ -3290,6 +3587,7 @@
           }, 200);
         });
 
+        // 편집기일 때는 capture 로 먼저 잡아 ProseMirror 붙여넣기보다 앞선다(15자 미만은 기본 동작에 맡긴다).
         ta.addEventListener('paste', async (e) => {
           const pastedText = e.clipboardData?.getData('text/plain') || '';
           const cleanText = pastedText.trim().replace(/\s+/g, ' ');
@@ -3297,8 +3595,9 @@
           // 공백 정리해 15자 미만이면 기본 동작
           if (cleanText.length < 15) return;
 
-          // 15자 이상이면 기본 동작을 막음
+          // 15자 이상이면 기본 동작을 막음(편집기는 ProseMirror 붙여넣기 처리까지 멈춘다)
           e.preventDefault();
+          if (isRich) e.stopImmediatePropagation();
 
           // 1. 시작 시점 상태 캡처: 대상 칸 key 고정 (FX-F 1번)
           const memoCore = globalThis.readglossMemo;
@@ -3436,7 +3735,10 @@
             clearInterval(keepAliveInterval);
             lastTypedAt = Date.now();
           }
-        });
+        }, isRich);
+
+        // 편집기 keydown(ProseMirror)보다 먼저 모드·인용 Backspace 를 처리한다.
+        if (isRich) attachRichBackspace(ta);
 
         sec.append(ta);
       } else {
@@ -3522,7 +3824,8 @@
       if (action === 'save') {
         e.preventDefault();
         const ta = box.querySelector(`.sec[data-key="${CSS.escape(key)}"] .sec-textarea`);
-        const cmd = memoCore?.parseConceptCommand ? memoCore.parseConceptCommand(ta?.value || '') : null;
+        const cmdText = memoCore?.unescapeMd ? memoCore.unescapeMd(ta?.value || '') : (ta?.value || '');
+        const cmd = memoCore?.parseConceptCommand ? memoCore.parseConceptCommand(cmdText.replace(/^\n+/, '')) : null;
         if (cmd) {
           handleConceptCommand(key, ta, cmd);
         } else {
@@ -3532,6 +3835,7 @@
         // 대상을 지금 잡아 둔다: 이벤트가 끝난 뒤 e.target 은 메모장 host 로 바뀌어(shadow 재지정) host 높이를 망가뜨린다
         const ta = e.target;
         if (ta?.classList?.contains('sec-textarea')) setTimeout(() => autoResize(ta), 0);
+        if (ta?.classList?.contains('rg-rich')) setTimeout(() => autoResizeField(ta), 0);
       } else if (action === 'fold') {
         if (e.readglossCardClosed) return;
         e.preventDefault();
@@ -3562,6 +3866,7 @@
   // 목록 모드 렌더링
   async function openListUI(root) {
     currentMode = 'list';
+    destroyRichEditors(root);
     root.replaceChildren();
 
     const style = document.createElement('style');
@@ -4233,6 +4538,11 @@
   function getActiveKind(activeEl) {
     if (!activeEl || activeEl === document.body || activeEl === document.documentElement) {
       return 'none';
+    }
+    // 메모장 host(또는 그 shadow 안 편집기)는 페이지 입력칸이 아니라 우리 화면이다.
+    const rootNode = typeof activeEl.getRootNode === 'function' ? activeEl.getRootNode() : null;
+    if (host && (activeEl === host || rootNode?.host === host)) {
+      return 'our-host';
     }
     const tag = (activeEl.localName || activeEl.tagName || '').toLowerCase();
     if (tag === 'iframe') {
