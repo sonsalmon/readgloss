@@ -10,10 +10,12 @@
   }
 
   // 쓰는 칸과 그리기 편집기가 같은 스키마를 쓰도록 확장 목록을 한 곳에 둔다.
-  function extensionsFor({ placeholder = '', maxLength = 2000, rules = null } = {}) {
+  // 글자 수 상한(CharacterCount)은 넣지 않는다: 긴 초안·붙여넣기를 막아 글이 사라지는 것을 피하고,
+  // 저장할 때 마크다운 길이로 막는다(memo-pad).
+  function extensionsFor({ placeholder = '', rules = null } = {}) {
     const T = globalThis.readglossTiptap;
     if (!T) return [];
-    const { StarterKit, Markdown, TaskList, TaskItem, Placeholder, CharacterCount } = T;
+    const { StarterKit, Markdown, TaskList, TaskItem, Placeholder } = T;
     const list = [
       StarterKit.configure({
         link: { openOnClick: false, autolink: false },
@@ -22,7 +24,6 @@
       TaskItem.configure({ nested: true }),
       Markdown,
       Placeholder.configure({ placeholder }),
-      CharacterCount.configure({ limit: maxLength }),
     ];
     if (rules) list.push(rules);
     return list;
@@ -107,12 +108,40 @@
 
     editor = new Editor({
       element: host,
-      extensions: extensionsFor({ placeholder, maxLength, rules }),
+      extensions: extensionsFor({ placeholder, rules }),
       content: '',
+      injectCSS: false,
     });
 
     const dom = editor.view.dom;
     dom.classList.add('rg-rich');
+
+    // 첫 텍스트 블록(문단·제목·목록 첫 줄·할 일)을 찾는다.
+    function firstTextblock(doc) {
+      let first = null;
+      doc.descendants((node) => {
+        if (first) return false;
+        if (node.isTextblock) {
+          first = node;
+          return false;
+        }
+        return true;
+      });
+      return first;
+    }
+
+    function firstTextblockPos(doc) {
+      let pos = null;
+      doc.descendants((node, p) => {
+        if (pos !== null) return false;
+        if (node.isTextblock) {
+          pos = p + 1;
+          return false;
+        }
+        return true;
+      });
+      return pos;
+    }
 
     // 초기값은 마크다운으로 넣는다. setContent 는 update 를 쏘지 않는다.
     editor.commands.setContent(String(value ?? ''), { contentType: 'markdown', emitUpdate: false });
@@ -123,9 +152,30 @@
       dom.dispatchEvent(new EventCtor('input', { bubbles: true }));
     });
 
-    const getValue = () => trimEnd(editor.getMarkdown());
+    const getValue = () => {
+      const doc = editor.state.doc;
+      let special = false;
+      doc.descendants((node) => {
+        if (node.type.name === 'horizontalRule' || node.type.name === 'codeBlock') {
+          special = true;
+          return false;
+        }
+        return true;
+      });
+      // 빈 목록(`- `)이 '-' 로 보이지 않게, 글자가 공백뿐이고 가로줄·코드블록도 없으면 빈 글이다.
+      if (!special && !doc.textContent.trim()) return '';
+      return trimEnd(editor.getMarkdown());
+    };
 
-    const atStart = () => editor.state.selection.from <= 1;
+    // 맨 앞 = 선택이 비어 있고, 첫 텍스트 블록 안 offset 0. 목록·인용·할 일 첫 줄도 같다.
+    const atStart = () => {
+      const { selection, doc } = editor.state;
+      if (!selection.empty) return false;
+      const first = firstTextblock(doc);
+      if (!first) return false;
+      const $from = selection.$from;
+      return $from.parent === first && $from.parentOffset === 0;
+    };
     const atEnd = () => editor.state.selection.to >= editor.state.doc.content.size - 1;
 
     // ponytail: 글자 자리를 정확히 세지 않는다. 호출자는 맨 앞이냐(0)만 쓰고,
@@ -134,7 +184,9 @@
       get: getValue,
       set: (next) => {
         editor.commands.setContent(String(next ?? ''), { contentType: 'markdown', emitUpdate: false });
-        editor.commands.focus('end');
+        // 포커스는 빼앗지 않고 커서만 문서 끝으로 옮긴다.
+        const end = editor.state.doc.content.size - 1;
+        editor.commands.setTextSelection(end > 0 ? end : 1);
       },
     });
 
@@ -157,9 +209,10 @@
     });
 
     dom.setSelectionRange = (start) => {
-      // ponytail: 자리를 세지 않는다. s === 0 이면 맨 앞, 아니면 끝(근사).
+      // ponytail: 자리를 세지 않는다. s === 0 이면 첫 텍스트 블록 맨 앞, 아니면 끝(근사).
       if (start === 0) {
-        editor.commands.setTextSelection(1);
+        const pos = firstTextblockPos(editor.state.doc);
+        editor.commands.setTextSelection(pos === null ? 1 : pos);
       } else {
         editor.commands.focus('end');
       }
@@ -203,6 +256,7 @@
       editable: false,
       extensions: extensionsFor(),
       content: '',
+      injectCSS: false,
     });
     return renderEditor;
   }

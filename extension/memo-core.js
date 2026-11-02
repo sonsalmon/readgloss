@@ -280,12 +280,18 @@
     return null;
   }
 
+  // 마크다운 이스케이프를 푼다. 예: 'snake\_case' → 'snake_case' (30-4).
+  function unescapeMd(text) {
+    if (typeof text !== 'string' || !text) return '';
+    return text.replace(/\\([\\`*_{}\[\]()#+\-.!~|>])/g, '$1');
+  }
+
   // 메모 글에서 #태그 뽑기 (29-4)
   // 마크다운 이스케이프(\_·\* 등)를 먼저 풀고 본다(30-4). 예: '#tag\_name' → 'tag_name'.
   // 줄 처음이나 공백 뒤 '#', 이어서 공백·'#' 아닌 글자 1~20자. 겹치면 하나, 앞에서부터 5개.
   function extractTags(text) {
     if (typeof text !== 'string' || !text) return [];
-    const plain = text.replace(/\\([\\`*_{}\[\]()#+\-.!~|>])/g, '$1');
+    const plain = unescapeMd(text);
     const re = /(^|\s)#([^\s#]{1,20})(?=$|\s)/g;
     const tags = [];
     const seen = new Set();
@@ -959,6 +965,7 @@
     shouldDropQuoteOnBackspace,
     markPrefixOf,
     extractTags,
+    unescapeMd,
     codeQuoteKind,
     guessCodeLang,
     CODE_LANG_LIST,

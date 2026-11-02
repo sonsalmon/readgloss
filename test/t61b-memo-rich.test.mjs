@@ -6,7 +6,8 @@ import { Window } from 'happy-dom';
 
 // happy-dom 창을 전역에 세운 뒤 묶음과 덮개를 고전 스크립트처럼 읽는다.
 const window = new Window({ url: 'https://example.test' });
-// Mod-Enter 를 ⌘(meta)로 보게 한다(prosemirror-keymap 은 읽을 때 플랫폼을 본다).
+// Mod-Enter 를 ⌘(meta)로 보게 한다(prosemirror-keymap 은 묶음을 읽을 때 플랫폼을 본다).
+const originalPlatform = window.navigator.platform;
 Object.defineProperty(window.navigator, 'platform', { value: 'MacIntel', configurable: true });
 globalThis.window = window;
 globalThis.document = window.document;
@@ -40,16 +41,20 @@ function mount(options) {
 
 test('(가) ⌘Enter 는 HardBreak 줄바꿈을 넣지 않고 글을 그대로 둔다', () => {
   const el = mount({ value: 'abcd' });
-  el.rgEditor.commands.setTextSelection(3);
-  el.dispatchEvent(new window.KeyboardEvent('keydown', {
-    key: 'Enter',
-    metaKey: true,
-    bubbles: true,
-    cancelable: true,
-  }));
-  assert.equal(el.value, 'abcd');
-  assert.equal(el.rgEditor.state.doc.textContent, 'abcd');
-  el.rgEditor.destroy();
+  try {
+    el.rgEditor.commands.setTextSelection(3);
+    el.dispatchEvent(new window.KeyboardEvent('keydown', {
+      key: 'Enter',
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    }));
+    assert.equal(el.value, 'abcd');
+    assert.equal(el.rgEditor.state.doc.textContent, 'abcd');
+  } finally {
+    el.rgEditor.destroy();
+    Object.defineProperty(window.navigator, 'platform', { value: originalPlatform, configurable: true });
+  }
 });
 
 test('Shift+Enter 줄바꿈은 남는다', () => {

@@ -1240,8 +1240,8 @@
     }
     /* T61b: 쓰는 칸이 Tiptap 편집기일 때 — 테두리·여백·포커스는 .sec-textarea 규칙을 그대로 쓰고 칸 안 모양만 더한다. */
     .sec-textarea.rg-rich {
+      position: relative;
       min-height: 88px;
-      max-height: 40vh;
       overflow-y: auto;
       white-space: pre-wrap;
       word-wrap: break-word;
@@ -1864,7 +1864,11 @@
 
   // 메모 고치기(다시 열기 뒤): 칸 글로 그 메모 글을 바꾼다(다리 op edit)
   async function performEdit(sectionKey, ta) {
-    const text = (ta.value || '').trim().slice(0, 2000);
+    const text = (ta.value || '').trim();
+    if (text.length > 2000) {
+      showErrorMeta(`2000자를 넘었어요 (${text.length}자) — 줄여서 다시 저장해 주세요`);
+      return false; // 자르지 않고 초안을 그대로 둔다
+    }
     if (!text) return false; // 빈 글로는 고치지 않는다(다리가 거절한다)
     const id = editingMemo.id;
     const memoCore = globalThis.readglossMemo;
@@ -1887,7 +1891,7 @@
       }
       endEdit();
       ta.value = drafts[sectionKey] || '';
-      autoResize(ta);
+      autoResizeField(ta);
       saveDrafts();
       rebuildSectionsUI();
       showSuccessMeta('고쳤어요');
@@ -1957,7 +1961,11 @@
     const allowable = canSaveFn ? canSaveFn(rawText, currentQuote) : (Boolean(rawText) || Boolean(currentQuote));
     if (!allowable) return false; // 빈 글이고 인용도 없으면 저장하지 않음
 
-    const text = (rawText || '').slice(0, 2000); // 인용만 있는 메모는 빈 글로 보낸다(다리가 허용)
+    if (rawText.length > 2000) {
+      showErrorMeta(`2000자를 넘었어요 (${rawText.length}자) — 줄여서 다시 저장해 주세요`);
+      return false; // 자르지 않고 초안을 그대로 둔다
+    }
+    const text = rawText; // 인용만 있는 메모는 빈 글로 보낸다(다리가 허용)
     const headingsChain = getHeadingChain(currentHeadings, sectionKey);
     const mark = marks[sectionKey] || null;
     const tags = memoCore?.extractTags ? memoCore.extractTags(text) : [];
@@ -2022,7 +2030,7 @@
 
     if (res?.memo) {
       ta.value = '';
-      autoResize(ta);
+      autoResizeField(ta);
       drafts[sectionKey] = '';
       delete quotes[sectionKey];
       delete marks[sectionKey]; // 저장하면 모드는 꺼진다
@@ -2153,6 +2161,37 @@
       ta.style.overflowY = 'auto';
     } else {
       ta.style.overflowY = 'hidden';
+    }
+  }
+
+  // 편집기(.rg-rich)는 내용에 맞춰 늘어나므로 높이를 직접 정하지 않고 상한만 둔다(목록 높이 절반, 작으면 5줄).
+  function autoResizeRich(ta) {
+    const memoCore = globalThis.readglossMemo;
+    const container = shadow?.querySelector('.sections-container');
+    const listHeight = container ? container.clientHeight : 300;
+
+    let lineHeight = 20;
+    if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+      try {
+        const cs = window.getComputedStyle(ta);
+        const parsed = parseFloat(cs.lineHeight);
+        if (Number.isFinite(parsed) && parsed > 0) lineHeight = parsed;
+      } catch {}
+    }
+
+    const maxH = memoCore?.textareaHeight
+      ? memoCore.textareaHeight({ scrollHeight: Number.MAX_SAFE_INTEGER, lineHeight, listHeight })
+      : Math.max(5 * lineHeight, listHeight > 0 ? listHeight / 2 : 5 * lineHeight);
+    ta.style.maxHeight = `${maxH}px`;
+  }
+
+  // 쓰는 칸이 편집기면 상한만, textarea 면 높이를 맞춘다.
+  function autoResizeField(ta) {
+    if (!ta) return;
+    if (ta.classList?.contains?.('rg-rich')) {
+      autoResizeRich(ta);
+    } else {
+      autoResize(ta);
     }
   }
 
@@ -2777,9 +2816,15 @@
       }
 
       // 없으면 ! -> 개념 저장, ? -> 정의 빈 개념 저장
+      const defText = String(cmd.definition || '').replace(/^\n+/, ''); // 정의 앞 빈 줄은 뺀다
       const cleanDef = cmd.kind === 'concept'
-        ? (globalThis.readglossMdList?.cleanForSave ? globalThis.readglossMdList.cleanForSave(cmd.definition) : cmd.definition)
+        ? (globalThis.readglossMdList?.cleanForSave ? globalThis.readglossMdList.cleanForSave(defText) : defText)
         : '';
+      // 개념 정의 상한(500자). 넘으면 자르지 않고 알린다.
+      if (cleanDef.length > 500) {
+        showErrorMeta(`500자를 넘었어요 (${cleanDef.length}자) — 줄여서 다시 저장해 주세요`);
+        return;
+      }
       const headingsChain = getHeadingChain(currentHeadings, sectionKey);
       const seen = {
         url: location.href,
@@ -2799,7 +2844,7 @@
           ta.value = '';
           drafts[sectionKey] = '';
           delete marks[sectionKey]; // 개념 명령은 모드를 무시한다
-          autoResize(ta);
+          autoResizeField(ta);
           saveDrafts();
 
           const c = saveRes.concept;
@@ -3507,7 +3552,7 @@
           ta.placeholder = '메모할 내용을 적으세요...';
           ta.value = drafts[s.key] || '';
         }
-        autoResize(ta);
+        autoResizeField(ta);
 
         const activeMark = marks[s.key] || null;
         if (activeMark) {
@@ -3534,7 +3579,7 @@
               return;
             }
           }
-          autoResize(ta);
+          autoResizeField(ta);
           drafts[s.key] = ta.value;
           clearTimeout(typingTimer);
           typingTimer = setTimeout(() => {
@@ -3779,7 +3824,8 @@
       if (action === 'save') {
         e.preventDefault();
         const ta = box.querySelector(`.sec[data-key="${CSS.escape(key)}"] .sec-textarea`);
-        const cmd = memoCore?.parseConceptCommand ? memoCore.parseConceptCommand(ta?.value || '') : null;
+        const cmdText = memoCore?.unescapeMd ? memoCore.unescapeMd(ta?.value || '') : (ta?.value || '');
+        const cmd = memoCore?.parseConceptCommand ? memoCore.parseConceptCommand(cmdText.replace(/^\n+/, '')) : null;
         if (cmd) {
           handleConceptCommand(key, ta, cmd);
         } else {
@@ -3789,6 +3835,7 @@
         // 대상을 지금 잡아 둔다: 이벤트가 끝난 뒤 e.target 은 메모장 host 로 바뀌어(shadow 재지정) host 높이를 망가뜨린다
         const ta = e.target;
         if (ta?.classList?.contains('sec-textarea')) setTimeout(() => autoResize(ta), 0);
+        if (ta?.classList?.contains('rg-rich')) setTimeout(() => autoResizeField(ta), 0);
       } else if (action === 'fold') {
         if (e.readglossCardClosed) return;
         e.preventDefault();
