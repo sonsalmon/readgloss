@@ -2,10 +2,12 @@
 // CSS Custom Highlight API(readgloss-scrap)를 사용하며 페이지 DOM 글은 바꾸지 않는다.
 (() => {
   const HIGHLIGHT_NAME = 'readgloss-scrap';
+  const QUESTION_NAME = 'readgloss-scrap-question';
+  const INSIGHT_NAME = 'readgloss-scrap-insight';
   const FLASH_NAME = 'readgloss-scrap-flash';
   const STYLE_ID = 'readgloss-scrap-style';
 
-  // 스타일 주입: ::highlight(readgloss-scrap) (23-1: 배경만 칠하고 글자색은 정하지 않는다)
+  // 스타일 주입: ::highlight(...) (23-1: 배경만 칠하고 글자색은 정하지 않는다, 29-3: 표시별 분홍·초록)
   function ensureStyle() {
     if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
@@ -13,6 +15,12 @@
     style.textContent = `
       ::highlight(${HIGHLIGHT_NAME}) {
         background-color: rgba(250, 204, 21, .28);
+      }
+      ::highlight(${QUESTION_NAME}) {
+        background-color: rgba(251, 113, 133, .28);
+      }
+      ::highlight(${INSIGHT_NAME}) {
+        background-color: rgba(74, 222, 128, .28);
       }
       ::highlight(${FLASH_NAME}) {
         background-color: rgba(250, 204, 21, .55);
@@ -83,15 +91,27 @@
   const scrapRanges = new Map(); // id -> Range
   const found = new Set(); // Set<id>
 
-  // Highlight API 로 형광펜 칠하기
+  // Highlight API 로 형광펜 칠하기(표시별로 세 이름에 나눠 담는다)
   function applyHighlights() {
     ensureStyle();
     if (typeof CSS === 'undefined' || !CSS.highlights || typeof Highlight === 'undefined') return;
-    const ranges = [...scrapRanges.values()];
-    if (ranges.length > 0) {
-      CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...ranges));
-    } else {
-      CSS.highlights.delete(HIGHLIGHT_NAME);
+    const core = globalThis.readglossScrap;
+    const groups = new Map([
+      [HIGHLIGHT_NAME, []],
+      [QUESTION_NAME, []],
+      [INSIGHT_NAME, []],
+    ]);
+    for (const [id, range] of scrapRanges.entries()) {
+      if (!range) continue;
+      const name = core?.highlightNameFor ? core.highlightNameFor(knownScraps.get(id)?.mark) : HIGHLIGHT_NAME;
+      (groups.get(name) || groups.get(HIGHLIGHT_NAME)).push(range);
+    }
+    for (const [name, ranges] of groups.entries()) {
+      if (ranges.length > 0) {
+        CSS.highlights.set(name, new Highlight(...ranges));
+      } else {
+        CSS.highlights.delete(name);
+      }
     }
   }
 
@@ -844,6 +864,26 @@
     }
   }
 
+  // 스크랩 표시(mark) 바꾸기(29-3): 다리 scraps op:'mark' 를 거쳐, 성공하면 이 페이지 형광펜 색을 다시 칠한다.
+  // mark 는 'question'|'insight'|null. 다른 값은 표시 없음으로 본다.
+  const cleanMark = (mark) => (mark === 'question' || mark === 'insight' ? mark : null);
+  function setMark(id, mark) {
+    if (!id || typeof chrome === 'undefined' || !chrome.runtime?.id) return Promise.resolve({ ok: false, error: 'no-runtime' });
+    const value = cleanMark(mark);
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'scraps', op: 'mark', id, mark: value }, (res) => {
+        if (chrome.runtime.lastError || !res || res.error) {
+          resolve({ ok: false, error: res?.error || 'no-response' });
+          return;
+        }
+        const scrap = knownScraps.get(id);
+        if (scrap) knownScraps.set(id, { ...scrap, mark: value });
+        applyHighlights();
+        resolve({ ok: true });
+      });
+    });
+  }
+
   // 지우기 뒤 형광펜을 걷고 기억에서 뺀다 (다리 응답이 성공했을 때만 부른다)
   function remove(id) {
     unpaint(id);
@@ -855,6 +895,7 @@
     unpaint,
     update,
     remove,
+    setMark,
     scrollTo,
     found,
     get scraps() {

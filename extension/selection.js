@@ -850,7 +850,7 @@
   }
 
   // 스크랩 메시지 전송 및 형광펜 칠하기 공통 함수(saveScrap 과 scrapRange 가 같이 쓴다)
-  async function submitScrap({ headings, quote, pos, translation = '', task = null }) {
+  async function submitScrap({ headings, quote, pos, translation = '', task = null, mark = null }) {
     const message = core.scrapMessage({
       url: location.href,
       title: document.title,
@@ -860,6 +860,8 @@
       translation,
       task,
     });
+    // 표시(mark)는 있을 때만 싣는다(29-3: 없으면 칸을 보내지 않는다)
+    if (mark === 'question' || mark === 'insight') message.mark = mark;
     const r = await send(message);
     if (r && !r.error) {
       globalThis.readglossScrapPage?.paint(Array.isArray(r.scraps) ? r.scraps : []);
@@ -869,7 +871,8 @@
   }
 
   // 선택 Range 로 스크랩을 저장한다 (T46: 확인 메시지 없이, 같은 글이면 그대로 성공)
-  async function scrapRange(range, { translation: givenTranslation = '' } = {}) {
+  // opts.mark: 'question'|'insight'|null — 새 스크랩에 표시를 함께 저장한다(29-3).
+  async function scrapRange(range, { translation: givenTranslation = '', mark = null } = {}) {
     if (!range) return { ok: false, error: 'no-range' };
     const scrapPage = globalThis.readglossScrapPage;
     const qInfo = scrapPage?.quoteForRange ? scrapPage.quoteForRange(range) : null;
@@ -893,6 +896,7 @@
       pos,
       translation,
       task,
+      mark,
     });
     if (res.ok) {
       return { ok: true, scrap: res.scrap };

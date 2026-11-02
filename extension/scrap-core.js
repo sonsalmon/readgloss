@@ -8,6 +8,15 @@
   const APPROX_MAX_EXACT = 1000; // 인용이 이보다 길면 근사 검색 안 함(시간 상한)
   const APPROX_MAX_REPEAT = 20; // 같은 글자가 이만큼 연속이면 근사 검색 안 함(반복 문자 때문에 느려짐)
 
+  // 메모 표시(mark)에 맞는 Highlight 이름(29-3). 표시가 없거나 모르는 값이면 지금 노랑 스크랩.
+  const HIGHLIGHT_NAMES = {
+    question: 'readgloss-scrap-question',
+    insight: 'readgloss-scrap-insight',
+  };
+  function highlightNameFor(mark) {
+    return HIGHLIGHT_NAMES[mark] || 'readgloss-scrap';
+  }
+
   // 선택 문장의 앞뒤 문맥(최대 32자)과 인용 추출.
   function quoteOf(fullText, start, end) {
     if (typeof fullText !== 'string') {
@@ -411,6 +420,8 @@
   globalThis.readglossScrap = {
     quoteOf,
     findQuote,
+    highlightNameFor,
+    HIGHLIGHT_NAMES,
     MAX_ERRORS_RATIO,
     skipsIndex,
     indexText,

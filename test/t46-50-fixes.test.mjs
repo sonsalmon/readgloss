@@ -83,7 +83,7 @@ test('N5: 번역을 close 전에 읽어 scrapRange 에 넘긴다', () => {
   const fn = padSrc.slice(padSrc.indexOf('function handleMemoOpen'), padSrc.indexOf('// 선택이 비었으면 지금처럼 토글'));
   assert.ok(fn.indexOf('currentTranslation') < fn.indexOf('readglossSelectionUi?.close?.()'));
   assert.match(fn, /scrapRange\?\.\(cloned, \{ translation \}\)/);
-  assert.match(selectionSrc, /async function scrapRange\(range, \{ translation: givenTranslation = '' \} = \{\}\)/);
+  assert.match(selectionSrc, /async function scrapRange\(range, \{ translation: givenTranslation = '', mark = null \} = \{\}\)/);
   assert.match(selectionSrc, /scrapRange: \(range, opts\) => scrapRange\(range, opts\)/);
 });
 
