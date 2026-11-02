@@ -283,7 +283,9 @@
   // 마크다운 이스케이프를 푼다. 예: 'snake\_case' → 'snake_case' (30-4).
   function unescapeMd(text) {
     if (typeof text !== 'string' || !text) return '';
-    return text.replace(/\\([\\`*_{}\[\]()#+\-.!~|>])/g, '$1');
+    return text
+      .replace(/\\([\\`*_{}\[\]()#+\-.!~|>])/g, '$1')
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'); // 직렬화기가 & < > 를 엔티티로 바꾼다
   }
 
   // 메모 글에서 #태그 뽑기 (29-4)
