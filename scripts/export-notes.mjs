@@ -47,6 +47,23 @@ export function renderMemo(m) {
   const lines = [];
   const exact = String(m?.quote?.exact ?? '').trim();
   const text = String(m?.text ?? '').trim();
+  const mark = m?.mark === 'question' || m?.mark === 'insight' ? m.mark : null;
+  const tags = Array.isArray(m?.tags) ? m.tags.filter((t) => typeof t === 'string' && t.trim()) : [];
+
+  // T60a: 표시가 있는 메모는 콜아웃으로 묶는다
+  if (mark) {
+    lines.push(mark === 'question' ? '> [!help] 다시 볼 것' : '> [!tip] 깨달음');
+    if (exact) {
+      for (const l of exact.split('\n')) lines.push(`> ${l}`);
+    }
+    if (text) {
+      for (const l of text.split('\n')) lines.push(`> ${l}`);
+    }
+    if (tags.length) {
+      lines.push(`> ${tags.map((t) => `#${t.trim()}`).join(' ')}`);
+    }
+    return lines.join('\n');
+  }
 
   if (exact) {
     if (m?.quote?.table) {
@@ -140,6 +157,10 @@ export function renderMemo(m) {
 
   if (text) {
     lines.push(text);
+  }
+  // 표시 없는 메모도 태그가 있으면 끝에 한 줄 붙인다
+  if (tags.length) {
+    lines.push(tags.map((t) => `#${t.trim()}`).join(' '));
   }
   return lines.join('\n');
 }
@@ -406,10 +427,14 @@ export function renderNoteDocs(data, tasks = {}) {
     }
     const noteDate = Number.isFinite(minTs) && minTs !== Infinity ? dateOf(minTs) : dateOf(Date.now());
 
-    // 그 페이지 개념들의 태그 모음
+    // 그 페이지 개념·메모 태그 모음
     const pageTags = new Set();
     for (const it of pageItems) {
       if (it.kind === 'concept' && Array.isArray(it.raw?.tags)) {
+        for (const t of it.raw.tags) {
+          if (t && typeof t === 'string') pageTags.add(t.trim());
+        }
+      } else if (it.kind === 'memo' && Array.isArray(it.raw?.tags)) {
         for (const t of it.raw.tags) {
           if (t && typeof t === 'string') pageTags.add(t.trim());
         }

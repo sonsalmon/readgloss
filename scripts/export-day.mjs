@@ -44,7 +44,7 @@ const tr = (p) => p.context?.translation || p.translation;
 export function exportDay(date, dataDir) {
   const on = (v) => Number.isFinite(v?.ts) && dateOf(v.ts) === date;
   const byTs = (a, b) => a.ts - b.ts;
-  const { words, mydict } = loadData(dataDir);
+  const { words, mydict, memos = [] } = loadData(dataDir);
   const saved = pairs(words.saved).filter(([, v]) => on(v)).sort((a, b) => byTs(a[1], b[1]));
   const all = entries(words.phrases).filter(on).sort(byTs);
   const expressions = all.filter((p) => p.kind === 'expression');
@@ -93,7 +93,36 @@ export function exportDay(date, dataDir) {
   }
   const kinds = Object.entries(counts);
   if (kinds.length) out.push(`공부 기록: ${kinds.map(([k, n]) => `${k} ${n}`).join(', ')}`);
+
+  // T60a: 그날 표시(mark)한 메모를 절로 모은다. 없으면 절을 쓰지 않는다.
+  const marked = (Array.isArray(memos) ? memos : [])
+    .filter((m) => on(m) && (m.mark === 'question' || m.mark === 'insight'))
+    .sort(byTs);
+  if (marked.length) {
+    if (out[out.length - 1] !== '') out.push('');
+    out.push('## 다시 볼 것·깨달음 (readgloss)', '');
+    for (const [mark, heading] of [['question', '### ❓ 다시 볼 것'], ['insight', '### 💡 깨달음']]) {
+      const items = marked.filter((m) => m.mark === mark);
+      if (!items.length) continue;
+      out.push(heading, '');
+      for (const m of items) out.push(markedLine(m));
+      out.push('');
+    }
+  }
   return `${out.join('\n').trimEnd()}\n`;
+}
+
+// 표시 메모 한 줄: - 글 #태그 / "인용 첫 줄" — 페이지 제목 (있는 것만)
+function markedLine(m) {
+  const text = clip(m.text);
+  const tags = Array.isArray(m.tags) ? m.tags.filter((t) => typeof t === 'string' && t) : [];
+  const head = [text, tags.map((t) => `#${t}`).join(' ')].filter(Boolean).join(' ');
+  const quoteFirst = String(m.quote?.exact ?? '').split('\n')[0].trim();
+  const parts = [head];
+  if (quoteFirst) parts.push(`"${clip(quoteFirst)}"`);
+  let line = `- ${parts.filter(Boolean).join(' / ')}`;
+  if (typeof m.title === 'string' && m.title.trim()) line += ` — ${clip(m.title)}`;
+  return line;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

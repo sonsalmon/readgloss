@@ -1,12 +1,14 @@
 // bridge/memos.mjs
 // 메모 저장소: SQLite db(nodes, edges)를 이용한 memo 점·선 관리.
 import { randomBytes } from 'node:crypto';
-import { TASK_RE, normalizeUrl } from './scraps.mjs';
+import { TASK_RE, isMark, normalizeUrl } from './scraps.mjs';
 
 export const MEMO_ID_RE = /^m_[0-9a-f]{12}$/;
 
 export const LIMIT = {
   text: 2000,
+  tagsCount: 5,
+  tagLength: 20,
   headingsCount: 3,
   headingLength: 200,
   exact: 300,
@@ -20,6 +22,19 @@ export const LIMIT = {
   quoteTranslation: 2000,
   tutorTitle: 120,
 };
+
+// 태그 목록 검사: 없으면(null·undefined) 빈 배열, 형식이 틀리면 null
+function parseTags(v) {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v) || v.length > LIMIT.tagsCount) return null;
+  const tags = [];
+  for (const t of v) {
+    if (typeof t !== 'string' || t.length < 1 || t.length > LIMIT.tagLength) return null;
+    if (/\s/.test(t) || t.includes('#')) return null;
+    tags.push(t);
+  }
+  return tags;
+}
 
 // 요청 본문 파싱 및 상한 검사
 export function parseMemoOp(v) {
@@ -204,6 +219,17 @@ export function parseMemoOp(v) {
       task = v.task;
     }
 
+    // 10. mark ('question'|'insight'|null) — 없으면 표시 없음
+    let mark = null;
+    if (v.mark !== undefined && v.mark !== null) {
+      if (!isMark(v.mark)) return null;
+      mark = v.mark;
+    }
+
+    // 11. tags (문자열 배열 ≤5개, 각 1~20자, 공백·# 없음) — 없으면 빈 배열
+    const tags = parseTags(v.tags);
+    if (tags === null) return null;
+
     return {
       op: 'save',
       text: v.text,
@@ -215,6 +241,8 @@ export function parseMemoOp(v) {
       selection,
       quote,
       task,
+      mark,
+      tags,
     };
   }
 
@@ -228,10 +256,25 @@ export function parseMemoOp(v) {
       dropQuote = true;
     }
 
+    // mark 가 없으면(undefined) 기존 값을 두고, null 이면 지운다
+    const markGiven = v.mark !== undefined;
+    let mark = null;
+    if (markGiven && v.mark !== null) {
+      if (!isMark(v.mark)) return null;
+      mark = v.mark;
+    }
+
+    // tags 가 없으면 기존 값을 둔다
+    const tagsGiven = v.tags !== undefined && v.tags !== null;
+    const tags = tagsGiven ? parseTags(v.tags) : [];
+    if (tags === null) return null;
+
     return {
       op: 'edit',
       id: v.id,
       text: v.text,
+      ...(markGiven ? { mark } : {}),
+      ...(tagsGiven ? { tags } : {}),
       ...(dropQuote ? { dropQuote: true } : {}),
     };
   }
@@ -307,6 +350,8 @@ function formatMemo(node) {
         }
       : null,
     task: d.task ?? null,
+    mark: isMark(d.mark) ? d.mark : null,
+    tags: Array.isArray(d.tags) ? [...d.tags] : [],
     ts: node.ts ?? 0,
   };
 }
@@ -358,6 +403,8 @@ export function createMemos({ db, now = Date.now }) {
         selection: op.selection,
         quote: op.quote ?? null,
         task: op.task,
+        mark: op.mark ?? null,
+        tags: Array.isArray(op.tags) ? [...op.tags] : [],
         ts: nowTs,
       };
 
@@ -398,6 +445,15 @@ export function createMemos({ db, now = Date.now }) {
 
       if (op.dropQuote === true) {
         delete data.quote;
+      }
+
+      // 표시는 null 이면 지우고, tags 는 보낼 때만 다시 쓴다
+      if (op.mark !== undefined) {
+        if (op.mark === null) delete data.mark;
+        else data.mark = op.mark;
+      }
+      if (op.tags !== undefined) {
+        data.tags = [...op.tags];
       }
 
       // ts 는 유지한다

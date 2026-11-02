@@ -9,6 +9,8 @@ export const TASK_RE = /^(?:S\d-\d{2}[a-z]?|BUF-\d{2}|[a-z0-9][a-z0-9-]{1,39})$/
 // 글 안에서 id를 찾는 형식(앞뒤가 영숫자·하이픈이 아닐 때만 — S1-02b를 S1-02로 읽지 않게).
 export const TASK_FIND_RE = /(?<![A-Za-z0-9-])(?:S\d-\d{2}[a-z]?|BUF-\d{2})(?![A-Za-z0-9])/;
 export const SCRAP_ID_RE = /^[0-9a-f]{12}$/;
+// 메모·스크랩 표시: 'question'(다시 볼 것) | 'insight'(깨달음). 그 밖은 표시 없음.
+export const isMark = (v) => v === 'question' || v === 'insight';
 const LIMIT = {
   exact: 1000,
   prefix: 64,
@@ -101,6 +103,13 @@ export function parseScrapOp(v) {
     const memo = strField(v.memo, LIMIT.memo, '');
     if (translation === null || memo === null) return null;
 
+    // mark 는 선택 칸. 없으면 기존 값을 두고, null 이면 표시를 뺀다(apply 에서 판단)
+    let mark = null;
+    if (v.mark !== undefined && v.mark !== null) {
+      if (!isMark(v.mark)) return null;
+      mark = v.mark;
+    }
+
     return {
       op: 'save',
       task,
@@ -111,7 +120,14 @@ export function parseScrapOp(v) {
       pos,
       translation,
       memo,
+      ...(v.mark !== undefined ? { mark } : {}),
     };
+  }
+
+  if (v.op === 'mark') {
+    if (typeof v.id !== 'string' || !SCRAP_ID_RE.test(v.id)) return null;
+    if (!isMark(v.mark) && v.mark !== null) return null;
+    return { op: 'mark', id: v.id, mark: v.mark };
   }
 
   if (v.op === 'remove') {
@@ -189,6 +205,7 @@ function load(file, now) {
             pos: s.pos,
             translation: s.translation,
             memo: s.memo,
+            mark: isMark(s.mark) ? s.mark : null,
             ts: s.ts,
           });
         }
@@ -224,6 +241,7 @@ export function createScraps({ file, db, now = Date.now }) {
           pos: n.data.pos,
           translation: n.data.translation,
           memo: n.data.memo,
+          mark: isMark(n.data.mark) ? n.data.mark : null,
           ts: n.data.ts,
         });
       }
@@ -245,6 +263,7 @@ export function createScraps({ file, db, now = Date.now }) {
     pos: s.pos,
     translation: s.translation,
     memo: s.memo,
+    mark: s.mark ?? null,
     ts: s.ts,
   });
 
@@ -323,6 +342,7 @@ export function createScraps({ file, db, now = Date.now }) {
           pos: op.pos,
           translation: op.translation,
           memo: existing ? existing.memo : op.memo,
+          mark: op.mark !== undefined ? op.mark : (existing ? existing.mark : null),
           ts: existing ? existing.ts : now(),
         };
         scraps.set(id, scrap);
@@ -343,6 +363,25 @@ export function createScraps({ file, db, now = Date.now }) {
         const existing = scraps.get(op.id);
         if (!existing) return null;
         existing.memo = op.memo;
+        scraps.set(op.id, existing);
+        if (db) {
+          db.put({
+            id: existing.id,
+            kind: 'scrap',
+            key: existing.url,
+            data: existing,
+            ts: existing.ts,
+          });
+        } else {
+          persist();
+        }
+        return all();
+      }
+
+      if (op.op === 'mark') {
+        const existing = scraps.get(op.id);
+        if (!existing) return null;
+        existing.mark = op.mark;
         scraps.set(op.id, existing);
         if (db) {
           db.put({
