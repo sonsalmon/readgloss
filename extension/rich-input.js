@@ -30,6 +30,13 @@
 
     const rules = Extension.create({
       name: RULE,
+      addKeyboardShortcuts() {
+        // ⌘·Ctrl+Enter 는 저장이라 HardBreak(Mod-Enter)보다 먼저 처리해 줄바꿈을 넣지 않는다.
+        // Shift+Enter 줄바꿈은 HardBreak 그대로 둔다.
+        return {
+          'Mod-Enter': () => true,
+        };
+      },
       addInputRules() {
         const list = [];
 

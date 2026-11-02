@@ -510,5 +510,5 @@ test('manifest.json: memo-core.js 뒤에 study-time-core.js, study-time.js 순�
   assert.ok(memoCoreIdx !== -1, 'memo-core.js 존재');
   assert.equal(studyCoreIdx, memoCoreIdx + 1, 'study-time-core.js는 memo-core.js 바로 뒤');
   assert.equal(studyIdx, memoCoreIdx + 2, 'study-time.js는 study-time-core.js 바로 뒤');
-  assert.equal(memoPadIdx, memoCoreIdx + 3, 'memo-pad.js는 study-time.js 뒤');
+  assert.equal(memoPadIdx, memoCoreIdx + 5, 'memo-pad.js는 study-time.js·편집기 묶음·rich-input.js 뒤'); // T61b
 });
