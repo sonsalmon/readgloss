@@ -959,7 +959,12 @@
         class: 'btn', type: 'button', text: '자막 위치 조정',
         onclick: () => window.dispatchEvent(new CustomEvent('readgloss:subs-adjust')),
       }),
-      h('p', { class: 'hint', text: '영상 위 자막을 위아래로 끌어 옮긴 뒤 [적용]을 눌러요.' }));
+      h('p', { class: 'hint', text: '영상 위 자막을 위아래로 끌어 옮긴 뒤 [적용]을 눌러요.' }),
+      // 키 안내는 [알겠어요] 뒤로 다시 볼 길이 없어서, 여기서 다시 띄운다(keysNoticeSeen 끄기)
+      h('button', {
+        class: 'btn', type: 'button', text: '키 안내 다시 보기',
+        onclick: () => ctx.setSettings({ video: { keysNoticeSeen: false } }),
+      }));
 
     // 기본값 복원: 한 번 더 눌러야 한다. 끌 사이트 목록은 남기고, 용어집을 켤 사이트는 기본 목록으로.
     let armed = 0;

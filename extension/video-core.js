@@ -387,6 +387,60 @@
     return out;
   }
 
+  // 넷플릭스: 영어는 짧은 조각, 한국어는 긴 줄이라 한국어 한 줄이 영어 여러 줄에 반복된다.
+  // 같은 한국어 줄에 걸린 연속 영어 줄을 한 줄로 합친다(alignKo 와 같은 겹침 규칙). 길이가 maxDur 초·maxChars 글자를 넘으면 끊는다.
+  function mergeByKo(main, ko, { maxDur = 12, maxChars = 160 } = {}) {
+    const a = Array.isArray(main) ? main : [];
+    const b = Array.isArray(ko) ? [...ko].sort((x, y) => x.start - y.start) : [];
+    if (!a.length || !b.length) return a.slice();
+    const idx = new Array(a.length).fill(-1);
+    let j = 0;
+    for (let i = 0; i < a.length; i++) {
+      while (j < b.length && b[j].end <= a[i].start) j++;
+      let best = 0;
+      for (let k = j; k < b.length && b[k].start < a[i].end; k++) {
+        const ov = Math.min(a[i].end, b[k].end) - Math.max(a[i].start, b[k].start);
+        if (ov > best) {
+          best = ov;
+          idx[i] = k;
+        }
+      }
+    }
+    const out = [];
+    let prev = -2;
+    for (let i = 0; i < a.length; i++) {
+      const c = a[i];
+      const last = out[out.length - 1];
+      if (last && idx[i] !== -1 && idx[i] === prev
+        && c.end - last.start <= maxDur && last.text.length + 1 + String(c.text ?? '').length <= maxChars) {
+        last.end = c.end;
+        last.text = `${last.text} ${c.text}`;
+        if (c.words) last.words = [...(last.words ?? []), ...c.words];
+      } else {
+        out.push({ ...c, ...(c.words ? { words: [...c.words] } : {}) });
+      }
+      prev = idx[i];
+    }
+    return out;
+  }
+
+  // 넷플릭스 CC(청각장애인용) 영어 자막 손질: 소리 표시·화자 이름표를 지우고, 전부 대문자면 문장식으로 바꾼다.
+  // ponytail: 소문자로 바꾸면 고유명사(Jake 등)의 대문자는 잃는다. 알려진 한계.
+  function cleanCcText(text) {
+    let s = String(text ?? '').replace(/\[[^\]]*\]|\([^)]*\)/g, '');
+    s = s.split('\n').map((line) => line.replace(/^\s*-?\s*[A-Z0-9][A-Z0-9 ]*:\s*/, '').replace(/^[\s-]+|[\s-]+$/g, '')).filter(Boolean).join('\n');
+    s = s.replace(/[ \t]{2,}/g, ' ').trim();
+    if (!s) return '';
+    const letters = s.match(/[A-Za-z]/g) ?? [];
+    const upper = s.match(/[A-Z]/g) ?? [];
+    if (letters.length >= 4 && upper.length / letters.length > 0.8) {
+      s = s.toLowerCase()
+        .replace(/(^|[.?!]\s+|\n)([a-z])/g, (_, p, c) => p + c.toUpperCase())
+        .replace(/\bi(?='(?:m|ve|ll|d)\b|\b)/g, 'I');
+    }
+    return s;
+  }
+
   // 지금 줄: 시작이 t 보다 이른 마지막 줄의 번호(없으면 -1). 줄은 시작 순.
   function activeIndex(cues, t) {
     const list = Array.isArray(cues) ? cues : [];
@@ -1020,7 +1074,7 @@
     ID_RE, ASR, GRACE, MAX_CLIP, MAX_ROUND: ROUND_MAX, ROUND_MIN, ROUND_TARGET, ROUND_MAX, HIDE_MODES, HIDE_LABEL, HIDE_TYPES, KEYS, SLOW_MIN, SLOW_MAX, SLOW_STEP, SLOW_DEFAULT, DRILL_DOUBLE, MODES, MODE_LABEL,
     params, decodeEntities, cleanText, normalizeCues, groupWords, parseJson3, parseXml, parseVtt, parseSrt, parseImsc, subFormatOf, parseTrack,
     validPolish, polishedCues,
-    langOf, isEnglish, isKorean, pickTracks, alignKo, activeIndex, isLive, tokenize, shuffleTiles, tileCheck, bandOf, minPFor, tokenColor, phraseSpans, tooltipModel, hideTypes, maskFlags, nextHide, drillSpace, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
+    langOf, isEnglish, isKorean, pickTracks, alignKo, mergeByKo, cleanCcText, activeIndex, isLive, tokenize, shuffleTiles, tileCheck, bandOf, minPFor, tokenColor, phraseSpans, tooltipModel, hideTypes, maskFlags, nextHide, drillSpace, clampSlowRate, nextRate, keyAction, shiftTapAction, focusStart, focusStep, shouldAutoFocus, shouldPauseEach, playbackStep,
     parseT, parseScene, nfTrackUrlOk, videoIdOf, netflixIdOf, adapterFor, sceneUrl, validClip, clipOfCue, clipAt, sceneOf, lineMessage, contextOf, annotateBatch, previewWords, koPlan, fontPx, fmtTime, titleOf, barModel, xToTime, subLayout, rounds,
   };
 })();
